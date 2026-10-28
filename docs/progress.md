@@ -67,8 +67,33 @@ are in place.
 - `job_skills` derived from occupation profile, not from parsing `description_raw` — free-text
   skill extraction (Use Case C) is a separate future pipeline.
 
+## Phase 2 follow-up — Decouple ingestion / migrate / api (2026-10-28)
+
+### Done
+- Restructured `app/` into `app/ingestion/` (source schema + synthetic data generator, simulating
+  an upstream data-engineering pipeline), `app/api/` (FastAPI service), and shared `app/db.py`.
+- Split `requirements.txt` into `requirements-base.txt`, `requirements-api.txt`,
+  `requirements-ingestion.txt`, `requirements-migrate.txt`, and a dev-only union
+  `requirements-dev.txt`.
+- Three separate Dockerfiles: `Dockerfile.api` (production, lean), `Dockerfile.migrate` (one-off
+  Alembic job), `Dockerfile.seed` (dev/local-only data generator, never shipped to prod).
+- `docker-compose.yml`: `migrate` and `seed` added as one-off services under `profiles: ["tools"]`
+  so they never start on a plain `docker compose up`.
+- Generator no longer owns DDL — removed `drop_all`/`create_all`, replaced with
+  `TRUNCATE ... RESTART IDENTITY CASCADE`. Schema is owned exclusively by Alembic migrations.
+- **Verified end-to-end**: fresh volume → `docker compose run --rm migrate` (creates 11 tables) →
+  `docker compose run --rm seed` (2000 candidates, 1000 jobs confirmed via SQL count) →
+  `docker compose up -d api` → `/health` and `/readiness` both return 200. Local pytest suite
+  (2 tests) passes against the new import paths.
+- Noted and documented trade-off: API image grew slightly (245MB → 289MB) because it now bundles
+  SQLAlchemy/psycopg2 ahead of Phase 3's need to query the database — a deliberate choice, not an
+  oversight. Full rationale: `docs/adr/0001-decouple-ingestion-migrate-api.md`.
+
+### Phase 2 — status: COMPLETE (including this follow-up)
+
 ### Next
-- Phase 2 follow-up (optional, before Phase 3): data-quality checks module (duplicate detection,
-  identifier validation, missing-value report) and a data dictionary.
+- Phase 2 optional extra (can be deferred into Phase 3 if preferred): data-quality checks module
+  (duplicate detection, identifier validation, missing-value report) and a data dictionary.
 - Phase 3: matching engine MVP — deterministic skill extraction/normalization, candidate-job
-  scoring, eligibility constraints, ranking, skill-gap calculation, course recommendations.
+  scoring, eligibility constraints, ranking, skill-gap calculation, course recommendations. This
+  is where `app/matching/` gets created, living alongside `app/api/` in the production image.

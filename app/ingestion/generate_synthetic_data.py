@@ -1,6 +1,11 @@
 """Deterministic synthetic data generator for JME.
 
-Run with: python -m app.generate_synthetic_data
+Run with: python -m app.ingestion.generate_synthetic_data
+
+This module simulates the boundary of an upstream data-engineering-owned
+pipeline: in a real deployment, candidates/jobs/skills source data would be
+ingested from an external system of record, not generated here. It is not
+shipped in the API's production image (see docker/Dockerfile.seed).
 
 Scale (documented assumption, see docs/assumptions-register.md A4):
   candidates=2000, jobs=1000, skills=300, occupations=150, courses=100
@@ -12,12 +17,13 @@ Deliberate imperfections introduced (per PRD/brief, so matching is non-trivial):
   - some candidates/jobs in locations with no exact matches
 """
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from faker import Faker
+from sqlalchemy import text
 
 from app.db import Base, SessionLocal, engine
-from app.models import (
+from app.ingestion.source_models import (
     Candidate,
     CandidateSkill,
     CandidateSkillAssessment,
@@ -91,9 +97,13 @@ OCCUPATION_TITLES = [
 COMPANY_NAMES_EXTRA = ["Acme", "Globex", "Initech", "Umbrella", "Stark", "Wayne"]
 
 
-def reset_schema():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+def truncate_all():
+    """Clear existing rows without touching DDL. Schema creation/changes are
+    owned exclusively by Alembic migrations (docker/Dockerfile.migrate), never
+    by this ingestion script — keeps the DDL/DML responsibility split clean."""
+    table_names = [t.name for t in reversed(Base.metadata.sorted_tables)]
+    with engine.begin() as conn:
+        conn.execute(text(f"TRUNCATE TABLE {', '.join(table_names)} RESTART IDENTITY CASCADE"))
 
 
 def generate():
@@ -171,7 +181,7 @@ def generate():
             desired_salary_min=rng.randint(30, 90) * 1000 if has_salary else None,
             desired_salary_max=rng.randint(90, 160) * 1000 if has_salary else None,
             primary_occupation_id=occ.id if occ else None,
-            created_at=datetime.utcnow() - timedelta(days=rng.randint(0, 365)),
+            created_at=datetime.now(timezone.utc) - timedelta(days=rng.randint(0, 365)),
         )
         session.add(candidate)
         session.flush()
@@ -208,7 +218,7 @@ def generate():
                         candidate_id=candidate.id,
                         skill_id=assessed_skill.id,
                         result=rng.choice(list(AssessmentResult)),
-                        assessed_at=datetime.utcnow() - timedelta(days=rng.randint(0, 180)),
+                        assessed_at=datetime.now(timezone.utc) - timedelta(days=rng.randint(0, 180)),
                     )
                 )
 
@@ -232,7 +242,7 @@ def generate():
             salary_min=rng.randint(30, 90) * 1000 if has_salary else None,
             salary_max=rng.randint(90, 160) * 1000 if has_salary else None,
             employment_type=rng.choice(list(EmploymentType)),
-            posted_at=datetime.utcnow() - timedelta(days=rng.randint(0, 90)),
+            posted_at=datetime.now(timezone.utc) - timedelta(days=rng.randint(0, 90)),
         )
         session.add(job)
         session.flush()
@@ -255,6 +265,6 @@ def generate():
 
 
 if __name__ == "__main__":
-    reset_schema()
+    truncate_all()
     generate()
     print("Synthetic data generated.")

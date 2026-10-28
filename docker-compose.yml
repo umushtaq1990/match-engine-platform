@@ -5,6 +5,8 @@ services:
       dockerfile: docker/Dockerfile.api
     ports:
       - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://jme:jme_dev_password@db:5432/jme
     depends_on:
       db:
         condition: service_healthy
@@ -13,6 +15,33 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  # One-off job: applies Alembic migrations. Not a long-running service.
+  # Run explicitly: docker compose run --rm migrate
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.migrate
+    environment:
+      DATABASE_URL: postgresql+psycopg2://jme:jme_dev_password@db:5432/jme
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # One-off job: generates synthetic source data. Dev/local only — simulates
+  # an upstream data-engineering pipeline, never deployed to production.
+  # Run explicitly: docker compose run --rm seed
+  seed:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.seed
+    environment:
+      DATABASE_URL: postgresql+psycopg2://jme:jme_dev_password@db:5432/jme
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
 
   db:
     image: postgres:16

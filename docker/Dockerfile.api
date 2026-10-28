@@ -2,11 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY app/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY app/requirements-base.txt app/requirements-api.txt ./
+RUN pip install --no-cache-dir -r requirements-api.txt
 
-COPY app/ .
+COPY app/db.py ./app/db.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/api/ ./app/api/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

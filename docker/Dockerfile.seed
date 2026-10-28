@@ -1,0 +1,14 @@
+# Dev/local-only image: simulates an upstream data-engineering pipeline
+# producing source data. Never deployed as part of the production API.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY app/requirements-base.txt app/requirements-ingestion.txt ./
+RUN pip install --no-cache-dir -r requirements-ingestion.txt
+
+COPY app/db.py ./app/db.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/ingestion/ ./app/ingestion/
+
+CMD ["python", "-m", "app.ingestion.generate_synthetic_data"]
