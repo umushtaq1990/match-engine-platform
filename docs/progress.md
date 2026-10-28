@@ -25,6 +25,21 @@ Note: an unrelated pre-existing container (`livekit-server`) is running on the s
 - Dev Postgres credentials in `docker-compose.yml` are local-only placeholders (`jme` / `jme_dev_password`), not used beyond localhost. Will move to `.env` + secrets management before anything beyond local dev.
 - Docker Desktop WSL2 VM currently allocates 16 CPUs / ~7.4 GiB RAM — sufficient for this milestone. Will revisit once Postgres + Qdrant + API + any local model run concurrently (host has 16GB RAM total, 8GB VRAM).
 
+### Done (continued)
+- `.gitignore` added (venv, caches, env files, generated data).
+- `pytest` + `httpx` added as dev deps (`app/requirements-dev.txt`); first tests
+  (`tests/test_health.py`) written and verified passing locally (2 passed).
+- First git commit made (`63fc4ab`): scaffold, tests, and Phase 0 docs.
+- `docs/PRD.md` written (product requirements, use cases A–F, confidentiality boundary, DoD).
+- `docs/requirements.md` and `docs/assumptions-register.md` written, closing out Phase 0
+  deliverables.
+
+### Phase 0 / Phase 1 — status: COMPLETE
+All Phase 0 deliverables (requirements, assumptions register, PRD) and Phase 1 deliverables
+(working dev environment, repo, reproducible setup, hardware inventory, baseline resource report)
+are in place.
+
 ### Next
-- Phase 1 continuation: pin dependency versions properly (requirements.txt done), add `.gitignore`, add `pytest` + first test for `/health`.
-- Phase 0 docs: `docs/requirements.md`, `docs/assumptions-register.md`.
+- Phase 2: data model + synthetic dataset. Define schema (candidates, jobs, skills, occupations,
+  courses), decide dataset scale (see assumption A4), build deterministic generator, add data
+  quality checks.
