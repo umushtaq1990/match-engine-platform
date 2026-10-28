@@ -20,6 +20,8 @@ services:
       POSTGRES_USER: jme
       POSTGRES_PASSWORD: jme_dev_password
       POSTGRES_DB: jme
+    ports:
+      - "5432:5432"
     volumes:
       - jme_db_data:/var/lib/postgresql/data
     healthcheck:
