@@ -8,7 +8,10 @@ RUN pip install --no-cache-dir mlflow==3.17.2 psycopg2-binary==2.9.9
 
 EXPOSE 5000
 
-CMD ["mlflow", "server", \
-     "--backend-store-uri", "postgresql+psycopg2://jme:jme_dev_password@db:5432/mlflow", \
-     "--default-artifact-root", "/mlflow-artifacts", \
-     "--host", "0.0.0.0", "--port", "5000"]
+# Backend store URI comes from the MLFLOW_BACKEND_STORE_URI env var (set in
+# docker-compose.yml from .env) rather than being baked in here — shell form
+# so it's expanded at container start, not image build time.
+CMD mlflow server \
+    --backend-store-uri "$MLFLOW_BACKEND_STORE_URI" \
+    --default-artifact-root /mlflow-artifacts \
+    --host 0.0.0.0 --port 5000

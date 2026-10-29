@@ -10,6 +10,8 @@ COPY app/__init__.py ./app/__init__.py
 COPY app/ingestion/source_models.py ./app/ingestion/source_models.py
 COPY app/ingestion/quality_models.py ./app/ingestion/quality_models.py
 COPY app/ingestion/__init__.py ./app/ingestion/__init__.py
+COPY app/evaluation/eval_models.py ./app/evaluation/eval_models.py
+COPY app/evaluation/__init__.py ./app/evaluation/__init__.py
 COPY alembic.ini ./alembic.ini
 COPY alembic/ ./alembic/
 

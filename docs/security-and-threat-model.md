@@ -37,12 +37,15 @@ token issuer and identity model for a user concept that doesn't exist yet.
 
 ## Secrets handling
 
-- Dev Postgres credentials and the dev API key are both plaintext placeholders in
-  `docker-compose.yml`/env defaults — acceptable only because nothing here leaves localhost (A7,
-  A9 in `docs/assumptions-register.md`).
-- Before any shared or deployed environment: move both to `.env` files excluded from git (already
-  the case — see `.gitignore`) or a real secrets manager, and replace the dev API key default
-  entirely (remove the fallback, fail closed if `JME_API_KEY` is unset).
+- **Updated in Phase 7**: `docker-compose.yml` no longer contains any credential values — Postgres
+  user/password/db, the MLflow backend DB name, and `JME_API_KEY` are all `${VAR}` references
+  populated from `.env` (git-ignored; `.env.example` is the committed template). The compose file
+  itself can be published without leaking a secret.
+- The values in `.env` are still local-dev placeholders, not rotated/managed secrets — acceptable
+  only because nothing here leaves localhost (A7, A9 in `docs/assumptions-register.md`).
+- Before any shared or deployed environment: replace the placeholder values with real secrets from
+  a secrets manager, and remove the API key's dev fallback entirely (fail closed if `JME_API_KEY`
+  is unset, rather than defaulting to `dev-local-key-change-me`).
 
 ## Input handling
 

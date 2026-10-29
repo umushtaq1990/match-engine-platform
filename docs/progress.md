@@ -285,11 +285,67 @@ see assumption A5b in `docs/assumptions-register.md`.
 
 ### Phase 6 — status: COMPLETE
 
+## Phase 7 — Portability: env-based secrets + fresh-volume verification (2026-10-29)
+
+### Done
+- All hardcoded dev credentials removed from `docker-compose.yml`. `.env.example` (committed) +
+  `.env` (git-ignored, already anticipated by `.gitignore`) now hold `POSTGRES_USER`,
+  `POSTGRES_PASSWORD`, `POSTGRES_DB`, `MLFLOW_DB_NAME`, `JME_API_KEY`. Compose's built-in `.env`
+  variable substitution (`${VAR}`) wires these into `db`, `api`, `migrate`, `seed`, `dataquality`,
+  and `mlflow` — no `env_file:` directive needed, no secrets committed.
+- `docker/Dockerfile.mlflow`: backend-store URI was previously baked into the image's `CMD` at
+  build time; changed to shell form reading `MLFLOW_BACKEND_STORE_URI` at container start
+  (set from `.env` in compose), so rotating the password doesn't require an image rebuild.
+- **Verified the env var is actually wired through, not just falling back to a hardcoded
+  default**: rotated `JME_API_KEY` in `.env`, recreated the `api` container, confirmed the old key
+  now gets 401 and the new one gets 200 — then reverted.
+
+### Fresh-volume portability test (the actual point of this phase)
+Tore down all containers *and volumes* (`docker compose --profile tools down -v`) to simulate a
+genuinely fresh checkout, then rebuilt and brought the stack up from nothing. This caught two real
+bugs that a quick manual spot-check would have missed:
+
+- **Bug 1 — `docker compose build` silently skips profiled services.** `migrate`/`seed`/
+  `dataquality` carry `profiles: ["tools"]` (by design, so they never auto-start). A bare
+  `docker compose build` only rebuilds default-profile services — it silently left `migrate`
+  running a stale image built before the data-quality and evaluation migrations existed. Running
+  `migrate` against the fresh volume applied only the first of three migrations and stopped with
+  no error, because Alembic correctly considered that stale image's single migration file "head."
+  Fix: rebuild profiled services explicitly with `docker compose --profile tools build`. This is
+  now the documented way to rebuild everything from a clean checkout — a plain `docker compose
+  build` is not sufficient.
+- **Bug 2 — `Dockerfile.migrate` was missing `app/evaluation/eval_models.py`.** `alembic/env.py`
+  imports `eval_models` so autogenerate can see the evaluation tables; the Phase 4 migration
+  landed without ever updating `Dockerfile.migrate`'s COPY list to match (previously masked by
+  reusing an already-migrated dev volume, which never re-ran `env.py`'s imports against a truly
+  fresh target in a freshly-built image). Fixed by adding `app/evaluation/{eval_models.py,
+  __init__.py}` to the image.
+
+Both were only found because this phase does what its name says — proves it from zero, not from a
+machine that's accumulated months of incremental state. After both fixes: fresh volume → `migrate`
+(all 3 migrations apply, 15 tables + `alembic_version` confirmed via `\dt`) → `seed` (2000
+candidates / 1000 jobs confirmed) → `dataquality` (10/10 checks pass) → `api` + `mlflow` (both
+report healthy) → real API calls succeed with the `.env`-configured key. Full test suite (53
+tests) still passes throughout.
+
+### Decisions
+- `docker/postgres-init/01-create-mlflow-db.sql` still hardcodes the literal database name
+  `mlflow` (init scripts run before any app code and can't read compose env var substitution) —
+  documented in the file that it must be kept in sync with `.env`'s `MLFLOW_DB_NAME` if ever
+  changed from the default. Not worth a templating mechanism for a single literal in a dev-only
+  default.
+- `docs/assumptions-register.md` A7/A9 updated: secrets now live in `.env` (git-ignored) instead of
+  the compose file itself — meaningfully better for a published portfolio repo (no credentials in
+  git history going forward) — but values are still local-dev placeholders, not rotated/managed
+  secrets; the "before any shared/deployed environment" trigger is unchanged.
+
+### Phase 7 — status: COMPLETE
+
 ### Next
 Remaining phases to finish the full end-to-end architecture, per the original brief and
-`docs/prd.md`'s phase references: Phase 7 (portability — clean-checkout/disconnected deployment
-validation), Phase 8 (CI/CD + dependency/image scanning), Phase 9 (performance/observability —
-including the N+1 query fix and full-population evaluation this unblocks), Phase 10 (offline
-deployment validation), Phase 11 (cloud/Azure decision), Phase 12 (Kubernetes), Phase 13
-(production-readiness gap assessment). Scoring-weight comparison and Use Case C remain deferred
-per the user's explicit instruction above until the phase plan is finished.
+`docs/prd.md`'s phase references: Phase 8 (CI/CD + dependency/image scanning — should also add an
+automated fresh-volume smoke test so Phase 7's two bugs can never regress silently again), Phase 9
+(performance/observability — including the N+1 query fix and full-population evaluation this
+unblocks), Phase 10 (offline deployment validation), Phase 11 (cloud/Azure decision), Phase 12
+(Kubernetes), Phase 13 (production-readiness gap assessment). Scoring-weight comparison and Use
+Case C remain deferred per the user's explicit instruction until the phase plan is finished.
