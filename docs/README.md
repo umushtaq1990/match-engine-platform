@@ -40,6 +40,10 @@ update it whenever a doc is added, renamed, or removed.
 - [kubernetes.md](kubernetes.md) — local-cluster deployment (verified end-to-end), Azure-shaped
   overlay (documented, not provisioned), real bugs found and fixed (Phase 12)
 
+## Production readiness
+- [production-readiness.md](production-readiness.md) — honest Definition-of-Done gap assessment,
+  load test results and the bottleneck found and fixed, what's still missing (Phase 13)
+
 ## Operations
 - [hardware-inventory.md](hardware-inventory.md) — measured dev machine specs and sizing
   implications
@@ -57,9 +61,8 @@ below): each is written when its phase produces something real to document, not 
 - `infrastructure-sizing.md` — CPU/RAM/storage/network sizing methodology and scenarios (Phase 9).
   Absorbs `hardware-inventory.md` as its measured baseline input, and a cost section absorbs what
   would otherwise be a separate `cost-model.md` (cost is derived directly from sizing)
-- `deployment-runbook.md` (Phase 7), `backup-and-recovery.md` (Phase 9/13) — merged into
-  `production-readiness.md` instead of kept standalone if any of them end up thin
-- `production-readiness.md` (Phase 13)
+- `deployment-runbook.md` (Phase 7), `backup-and-recovery.md` — never built as standalone docs;
+  backup/restore is recorded as an open gap in `production-readiness.md` instead
 - `interview-preparation.md` (end of project)
 - A prioritized task backlog, a known-issues list, a benchmark-results directory (raw measured
   output — CSV/JSON, not prose), and a record of implemented/unimplemented security controls —

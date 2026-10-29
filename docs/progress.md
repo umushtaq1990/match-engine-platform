@@ -579,3 +579,51 @@ decision gate (assumption A1), not a build phase, and it's now resolved and reco
 - kubelet-cadvisor RBAC scraping not wired (documented reasoning in `docs/kubernetes.md`).
 
 ### Phase 12 — status: COMPLETE
+
+## Phase 13 — Production readiness gap assessment (2026-10-29)
+
+### Done
+- `scripts/load_test.py`: lightweight concurrent load test (plain `httpx` + `ThreadPoolExecutor`,
+  no new dependency — already in `requirements-dev.txt`). Chose this over adding k6/Locust/wrk
+  since the methodology stays fully visible in-repo for a one-off measurement at this scale.
+- **Ran it and found a real bottleneck, not assumed one existed**: 3 runs at concurrency 5/20/50
+  all plateaued at ~15 req/s throughput while latency scaled roughly linearly with load (p50
+  0.30s → 1.33s → 3.38s) — the signature of work queuing behind one constrained resource.
+  Root-caused (not guessed) to `docker/Dockerfile.api` running a single `uvicorn` worker process;
+  scoring is CPU-bound synchronous Python, serialized by the GIL in that one process.
+- **Fixed and verified**: added `--workers 4`. Re-ran concurrency=20: throughput 14.2 → 56.1 req/s
+  (~4x), p50 1.33s → 0.34s, p95 1.84s → 0.57s.
+- **A second real bug found while verifying the first fix, not shipped silently broken**: with 4
+  worker processes, `/metrics` under repeated scraping showed counts *alternating* (122, 124, 122,
+  124...) instead of accumulating — each scrape just hit whichever worker happened to answer.
+  Fixed with `prometheus_client`'s documented multiprocess mode (`PROMETHEUS_MULTIPROC_DIR` +
+  `MultiProcessCollector`, `app/api/main.py`); verified by sending requests in two batches and
+  confirming the count accumulated correctly (3 → 8) rather than resetting or duplicating.
+- Rebuilt the `api` image, reloaded it into the local `kind` cluster, and did a live rolling
+  restart of the `jme-api` Deployment — zero-downtime, confirmed by a real authenticated call
+  succeeding immediately after, demonstrating the actual payoff of running 2 replicas behind a
+  Service (not just a theoretical benefit).
+- `docs/production-readiness.md` written: the full, honest Definition-of-Done scorecard (✅/🟡 per
+  item, not silently checked), load test results and the two bugs found/fixed, a summary of every
+  other phase's documented gaps in one place, and what's still missing before any real
+  "production ready" claim. `docs/prd.md`'s own DoD checklist updated to match — no item marked
+  done that isn't, no item hidden that's a known gap.
+
+### Explicitly not done in this phase (recorded as open gaps, not silently dropped)
+- No automated tests for `rank.py` orchestration or route-level API behavior.
+- No sustained soak test, no multi-endpoint load mix, no load test against the Kubernetes
+  deployment, no chaos/failure-injection testing.
+- No backup/restore procedure for the Postgres volume.
+- Azure overlay still unverified against real infrastructure (per the resolved A1 decision).
+
+### Phase 13 — status: COMPLETE
+
+## All 13 phases complete (2026-10-29)
+
+Per the original brief's 13-phase plan, every phase (0 through 13) now has a corresponding,
+verified entry in this log. Remaining work is explicitly deferred by the user's own instruction,
+not forgotten: scoring-weight comparison (the evaluation harness's first real comparative use),
+Use Case C (free-text extraction, to be built NLP/embedding-first per assumption A5b), Use Case F
+(never scheduled), and domain-model genericization (the repo was renamed to
+`match-engine-platform` with that future in mind, per the discussion before Phase 8, but the
+Candidate/Job-specific code itself was deliberately left unchanged).

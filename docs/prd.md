@@ -100,19 +100,25 @@ of known limitations.
 
 ## 9. Success Criteria / Definition of Done (v1)
 
+Status as of Phase 13 — see `docs/production-readiness.md` for the full honest assessment behind
+each line (✅ done, 🟡 partial/gap documented, not a silent checkbox):
+
 Functional:
-- [ ] Synthetic data generates reproducibly from a fixed seed
-- [ ] Use cases A–F work end-to-end against synthetic data
-- [ ] Ranking quality is evaluated (Precision@K, NDCG@K, etc.), not just "it runs"
+- [x] Synthetic data generates reproducibly from a fixed seed
+- [~] Use cases A–F work end-to-end against synthetic data (A/B/D/E done; C/F not built — deferred)
+- [x] Ranking quality is evaluated (Precision@K, NDCG@K, etc.), not just "it runs"
 
 Engineering:
-- [ ] Automated tests cover matching logic and API endpoints
-- [ ] Application runs fully containerized from a clean checkout
-- [ ] CI pipeline runs lint + tests + build on every change
+- [~] Automated tests cover matching logic and API endpoints (matching logic: yes; `rank.py`
+  orchestration and route-level API behavior: verified manually, not automated — real gap)
+- [x] Application runs fully containerized from a clean checkout
+- [x] CI pipeline runs lint + tests + build on every change
 
 Operational:
-- [ ] CPU/RAM/latency/error-rate are observable
-- [ ] At least one load test has been run and bottlenecks identified
+- [~] CPU/RAM/latency/error-rate are observable (latency/error-rate: yes; CPU/RAM: wired but not
+  rendering on this dev host — see `docs/observability.md`)
+- [x] At least one load test has been run and bottlenecks identified (Phase 13 — found and fixed a
+  real single-worker-process bottleneck, see `docs/production-readiness.md`)
 
 Security:
 - [ ] No secrets in source control

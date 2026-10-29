@@ -12,6 +12,19 @@ COPY app/matching/ ./app/matching/
 COPY app/ingestion/__init__.py ./app/ingestion/__init__.py
 COPY app/ingestion/source_models.py ./app/ingestion/source_models.py
 
+# Required for the multiprocess Prometheus metrics fix in app/api/main.py -
+# must exist and be set before uvicorn forks its workers.
+ENV PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus_multiproc
+RUN mkdir -p /tmp/prometheus_multiproc
+
 EXPOSE 8000
 
-CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --workers 4: found via load testing (Phase 13, docs/production-readiness.md)
+# that a single worker process bottlenecks under concurrent load (throughput
+# plateaus ~15 req/s regardless of concurrency; latency scales linearly
+# instead) because scoring is CPU-bound synchronous Python, serialized by
+# the GIL within one process. 4 is a reasonable default for this exercise's
+# traffic, not auto-detected from core count - a real deployment would size
+# this from measured core count and expected concurrency, not copy this
+# number unexamined.
+CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
