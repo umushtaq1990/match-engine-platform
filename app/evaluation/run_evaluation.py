@@ -11,9 +11,20 @@ documented, measured reason: rank_jobs_for_candidate costs ~2s/candidate due
 to the known N+1 query limitation in app/matching/profiles.py (see
 docs/matching-engine.md). Full-population evaluation is a Phase 9 follow-up
 once that's optimized, not attempted here.
+
+Tracking split (deliberate, not duplicated): MLflow tracks run-level
+params/aggregate metrics (a browsable, comparable experiment history across
+scoring-weight configs). Postgres (evaluation_candidate_results) keeps the
+per-candidate detail rows, for drill-down and a future dashboard — a
+different consumer/granularity, not the same data twice. MLflow logging is
+best-effort: if the tracking server is unreachable, the run still completes
+and persists to Postgres; only the MLflow log is skipped (with a warning).
 """
+import logging
+import os
 from datetime import datetime, timezone
 
+import mlflow
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -25,12 +36,40 @@ from app.ingestion.source_models import Candidate
 from app.matching.rank import rank_jobs_for_candidate
 from app.matching.scoring import WEIGHTS
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_K = 10
 DEFAULT_SAMPLE_SIZE = 50
+MLFLOW_EXPERIMENT_NAME = "jme-matching"
+MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
 
 
 def _config_label() -> str:
     return "weights:" + ",".join(f"{k}={v}" for k, v in WEIGHTS.items())
+
+
+def _log_to_mlflow(run: EvaluationRun) -> None:
+    # Avoids a UnicodeEncodeError on Windows consoles (cp1252 can't encode the
+    # emoji MLflow prints for "view run at: <url>") — official suppression
+    # flag, not a workaround; the console confirmation isn't needed here since
+    # results are already printed by this script below.
+    os.environ.setdefault("MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT", "true")
+    try:
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+        with mlflow.start_run(run_name=f"eval-run-{run.id}"):
+            mlflow.log_params({**WEIGHTS, "k": run.k, "sample_size": run.sample_size})
+            mlflow.log_metrics({
+                "precision_at_k": float(run.precision_at_k_avg),
+                "recall_at_k": float(run.recall_at_k_avg),
+                "ndcg_at_k": float(run.ndcg_at_k_avg),
+                "mrr": float(run.mrr_avg),
+            })
+    except Exception:
+        logger.warning(
+            "MLflow logging failed (tracking server unreachable?) — "
+            "evaluation run still persisted to Postgres.", exc_info=True
+        )
 
 
 def run_evaluation(
@@ -83,6 +122,7 @@ def run_evaluation(
 
     session.commit()
     session.refresh(run)
+    _log_to_mlflow(run)
     return run, per_candidate
 
 

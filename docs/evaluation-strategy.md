@@ -41,11 +41,29 @@ evaluation is a Phase 9 follow-up, once the N+1 query cost is addressed — not 
 
 ## Results storage
 
-Same two-level pattern as `data_quality_runs`/`data_quality_check_results`:
-`evaluation_runs` (one row per run: k, sample size, excluded count, config label, averaged
-metrics) and `evaluation_candidate_results` (per-candidate detail). `config_label` captures the
-exact scoring weights used, so future weight changes can be compared against this run rather than
-guessed about.
+Split by purpose, not duplicated across two systems tracking the same thing:
+- **MLflow** (`docker/Dockerfile.mlflow`, always-on service at `http://localhost:5000`, backend
+  store: a dedicated `mlflow` Postgres database on the same instance) tracks **run-level**
+  params (scoring weights, k, sample size) and aggregate metrics — a browsable, comparable
+  experiment history across scoring-weight configs, exactly the "show what was tried" capability
+  this phase needed.
+- **Postgres** (`evaluation_runs`/`evaluation_candidate_results`, same two-level pattern as
+  `data_quality_runs`) keeps the **per-candidate detail** rows — for drill-down analysis and a
+  future dashboard, which queries Postgres more naturally than MLflow's own store.
+
+MLflow logging is best-effort: `run_evaluation.py` always persists to Postgres first; if the
+MLflow server is unreachable, the run still completes and only the MLflow log is skipped (with a
+warning), not treated as a fatal error.
+
+### A real bug caught and fixed while wiring this up
+First run against the live MLflow server crashed with `UnicodeEncodeError` — MLflow prints a
+confirmation emoji (`🏃 View run at: ...`) to stdout after a run finishes, which this Windows
+console (cp1252) can't encode. The crash happened *during* `mlflow.end_run()`, before the run was
+marked `FINISHED` in MLflow's backend, leaving a stuck `RUNNING` run behind even though the
+params/metrics had already been logged successfully (verified via MLflow's REST API before
+concluding this). Fixed using MLflow's own supported suppression flag
+(`MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT`), not a workaround; the stuck run was deleted via the
+MLflow API once the fix was confirmed on a clean re-run.
 
 ## Baseline result (run #1, measured, 2026-10-29)
 

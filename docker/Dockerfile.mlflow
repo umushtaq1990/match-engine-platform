@@ -1,0 +1,14 @@
+# MLflow tracking server: always-on service (like api/db), not a one-off job -
+# its UI/API must be reachable at any time to browse past experiment runs.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir mlflow==3.17.2 psycopg2-binary==2.9.9
+
+EXPOSE 5000
+
+CMD ["mlflow", "server", \
+     "--backend-store-uri", "postgresql+psycopg2://jme:jme_dev_password@db:5432/mlflow", \
+     "--default-artifact-root", "/mlflow-artifacts", \
+     "--host", "0.0.0.0", "--port", "5000"]

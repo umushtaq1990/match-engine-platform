@@ -210,9 +210,33 @@ see assumption A5b in `docs/assumptions-register.md`.
 - No DB-fixture-based tests for `ground_truth.py`/`run_evaluation.py` — verified manually against
   real data instead, consistent with how `rank.py`/`data_quality.py` were verified.
 
+## Phase 4 follow-up — MLflow experiment tracking (2026-10-29)
+
+### Done
+- MLflow added as an always-on service (`docker/Dockerfile.mlflow`, port 5000), not a one-off
+  job — its UI/API needs to be reachable at any time to browse past runs, unlike migrate/seed/
+  dataquality. Backend store: a dedicated `mlflow` Postgres database on the same instance
+  (`docker/postgres-init/01-create-mlflow-db.sql` for fresh environments; created manually on
+  the existing dev volume since Postgres only runs init scripts on first volume creation).
+- Deliberate split, not duplication: MLflow tracks run-level params/aggregate metrics (browsable
+  experiment history); Postgres `evaluation_candidate_results` keeps per-candidate detail
+  (different consumer — future dashboard drill-down).
+- `run_evaluation.py` logs to MLflow after persisting to Postgres; best-effort (a failed MLflow
+  log doesn't fail the run).
+- **Bug caught and fixed during verification**: first live run crashed with `UnicodeEncodeError`
+  (MLflow's confirmation emoji print, incompatible with this Windows console's cp1252 encoding),
+  leaving a run stuck in `RUNNING` status even though metrics had already logged successfully —
+  confirmed via MLflow's REST API before concluding the data was intact. Fixed via MLflow's own
+  `MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT` flag; stuck run deleted once the fix was verified on a
+  clean re-run (`eval-run-3`, status `FINISHED`).
+- `app/requirements-evaluation.txt` uses `mlflow-skinny` (client only, no UI/server deps) —
+  same "don't ship unused dependencies" discipline applied to the API/dataquality images.
+- Full test suite (47 tests) still passes; 3 legitimate runs preserved in Postgres, 1 clean run
+  in MLflow.
+
 ### Next
-- Try at least one alternative scoring-weight configuration and compare its run against
-  baseline run #1 — this is the natural next step now that the harness exists, and the first real
+- Try at least one alternative scoring-weight configuration and compare its MLflow run against
+  the baseline — this is the natural next step now that the harness exists, and the first real
   use of why it was built.
 - Resume Use Case C (free-text extraction) when ready, now that an evaluation harness exists to
   measure the embedding-based approach against (per the A5b decision).
