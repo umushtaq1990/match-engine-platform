@@ -130,7 +130,8 @@ if __name__ == "__main__":
     session = SessionLocal()
     run, _ = run_evaluation(session)
     print(f"Evaluation run #{run.id} at {run.run_at}")
-    print(f"  k={run.k}, sample_size={run.sample_size}, excluded_no_ground_truth={run.excluded_no_ground_truth}")
+    print(f"  k={run.k}, sample_size={run.sample_size}, "
+          f"excluded_no_ground_truth={run.excluded_no_ground_truth}")
     print(f"  config: {run.config_label}")
     print(f"  Precision@{run.k}: {run.precision_at_k_avg}")
     print(f"  Recall@{run.k}:    {run.recall_at_k_avg}")

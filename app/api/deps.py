@@ -13,7 +13,6 @@ import secrets
 
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader
-from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 

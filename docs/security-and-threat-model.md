@@ -58,13 +58,19 @@ token issuer and identity model for a user concept that doesn't exist yet.
 - No request bodies are accepted yet (all current endpoints are GET with path/query params only),
   so no JSON payload validation surface exists to harden beyond what Pydantic already does.
 
-## Dependency/image scanning
+## Dependency/image scanning (Phase 8)
 
-Explicitly deferred to Phase 8 per `docs/requirements.md` ("Container/dependency scanning
-introduced in Phase 8, not deferred to the end") — not done here. Each Dockerfile already only
-installs the narrow `requirements-*.txt` its own image needs (documented since Phase 2's
-decoupling work), which limits scan surface once scanning is added, but that's a side effect of
-the image-separation design, not a substitute for actually scanning.
+- **Image scanning**: `.github/workflows/ci.yml`'s `build-and-scan` job builds all 5 service
+  images and scans each with Trivy (`aquasecurity/trivy-action`, severity CRITICAL+HIGH). Each
+  Dockerfile already only installs the narrow `requirements-*.txt` its own image needs (Phase 2's
+  decoupling work), which limits scan surface — a side effect of the image-separation design, not
+  a substitute for actually scanning.
+- **Dependency scanning**: `.github/dependabot.yml` runs weekly against the `pip` (`app/`),
+  `docker`, and `github-actions` ecosystems.
+- **Not yet a hard gate**: Trivy currently runs report-only (`exit-code: 0`). No findings have been
+  triaged into a known-acceptable baseline yet, so failing the build on every CRITICAL finding
+  today would likely fail on base-image CVEs nobody has looked at, not real newly-introduced risk.
+  Turning this into an actual blocking gate is a documented follow-up, not a silent omission.
 
 ## Known gaps carried into later phases
 

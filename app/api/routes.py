@@ -53,7 +53,9 @@ def get_job_matches_for_candidate(
 ):
     """Use Case A: rank jobs for a candidate."""
     try:
-        results = rank_jobs_for_candidate(db, candidate_id, top_k=top_k, include_ineligible=include_ineligible)
+        results = rank_jobs_for_candidate(
+            db, candidate_id, top_k=top_k, include_ineligible=include_ineligible
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return [_to_match_out(r) for r in results]

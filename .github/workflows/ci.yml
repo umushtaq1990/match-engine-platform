@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r app/requirements-dev.txt
+      - run: python -m ruff check .
+      - run: python -m pytest tests/ -q
+
+  # Builds every service image and scans it for known vulnerabilities.
+  # Report-only for now (exit-code 0): no findings have been triaged yet, so
+  # turning this into a hard gate immediately would mean failing builds on
+  # base-image CVEs nobody has looked at. Tightening this into an actual gate
+  # (e.g. fail on CRITICAL) is a follow-up once there's a known-acceptable
+  # baseline — see docs/security-and-threat-model.md.
+  build-and-scan:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [api, migrate, seed, dataquality, mlflow]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.image }} image
+        run: docker build -f docker/Dockerfile.${{ matrix.image }} -t match-engine-${{ matrix.image }}:ci .
+      - name: Scan ${{ matrix.image }} image (Trivy, report-only)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: match-engine-${{ matrix.image }}:ci
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+          format: "table"
+
+  # The whole point: prove the stack comes up clean from nothing, the same
+  # way a fresh checkout would. Phase 7 found two real bugs (a stale profiled
+  # image, a missing Dockerfile COPY) that only a from-zero run like this
+  # catches — see docs/progress.md Phase 7 for the write-up. This job exists
+  # so those can't silently regress again.
+  fresh-volume-smoke-test:
+    needs: build-and-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write CI env file
+        run: cp .env.example .env
+      - name: Build every service image (including profiled tools)
+        run: docker compose --profile tools build
+      - name: Start db
+        run: docker compose up -d db
+      - name: Wait for db healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' jme-db-1 2>/dev/null || echo "starting")
+            [ "$status" = "healthy" ] && exit 0
+            sleep 2
+          done
+          echo "db never became healthy" && docker compose logs db && exit 1
+      - name: Run migrations
+        run: docker compose run --rm migrate
+      - name: Confirm all tables exist
+        run: |
+          count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from information_schema.tables where table_schema='public';")
+          echo "table count: $count"
+          [ "$(echo $count | xargs)" = "16" ]
+      - name: Seed synthetic data
+        run: docker compose run --rm seed
+      - name: Confirm seeded row counts
+        run: |
+          candidates=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from candidates;" | xargs)
+          jobs=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from jobs;" | xargs)
+          echo "candidates=$candidates jobs=$jobs"
+          [ "$candidates" = "2000" ] && [ "$jobs" = "1000" ]
+      - name: Run data quality checks
+        run: docker compose run --rm dataquality
+      - name: Start api and mlflow
+        run: docker compose up -d api mlflow
+      - name: Wait for api and mlflow healthy
+        run: |
+          for svc in jme-api-1 jme-mlflow-1; do
+            for i in $(seq 1 30); do
+              status=$(docker inspect -f '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo "starting")
+              [ "$status" = "healthy" ] && break
+              sleep 2
+            done
+            [ "$status" = "healthy" ] || { echo "$svc never became healthy"; docker compose logs; exit 1; }
+          done
+      - name: Smoke-test the API (health, auth, real data)
+        run: |
+          set -e
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)" = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/candidates/1/job-matches)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $api_key" http://localhost:8000/candidates/1/job-matches)" = "200"
+      - name: Tear down
+        if: always()
+        run: docker compose --profile tools down -v

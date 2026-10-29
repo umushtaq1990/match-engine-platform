@@ -24,10 +24,10 @@ from sqlalchemy import text
 
 from app.db import Base, SessionLocal, engine
 from app.ingestion.source_models import (
+    AssessmentResult,
     Candidate,
     CandidateSkill,
     CandidateSkillAssessment,
-    AssessmentResult,
     Course,
     CourseSkill,
     EmploymentType,
@@ -151,8 +151,9 @@ def generate():
     levels = ["intro", "intermediate", "advanced"]
     for i in range(N_COURSES):
         anchor_skill = skills[i % len(skills)]
+        course_suffix = rng.choice(["Fundamentals", "Masterclass", "Bootcamp", "Certification"])
         course = Course(
-            title=f"{anchor_skill.name} {rng.choice(['Fundamentals', 'Masterclass', 'Bootcamp', 'Certification'])}",
+            title=f"{anchor_skill.name} {course_suffix}",
             provider=rng.choice(["Coursera", "Udemy", "LinkedIn Learning", "Local College", "edX"]),
             level=rng.choice(levels),
             duration_hours=rng.choice([4, 8, 20, 40, 80]),
@@ -162,8 +163,9 @@ def generate():
         session.add(CourseSkill(course_id=course.id, skill_id=anchor_skill.id, coverage_weight=1.0))
         for extra in rng.sample(skills, k=rng.randint(0, 2)):
             if extra.id != anchor_skill.id:
+                coverage_weight = round(rng.uniform(0.2, 0.6), 2)
                 session.add(
-                    CourseSkill(course_id=course.id, skill_id=extra.id, coverage_weight=round(rng.uniform(0.2, 0.6), 2))
+                    CourseSkill(course_id=course.id, skill_id=extra.id, coverage_weight=coverage_weight)
                 )
 
     session.flush()
