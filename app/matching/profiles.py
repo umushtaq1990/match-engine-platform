@@ -15,8 +15,11 @@ from app.ingestion.source_models import (
     Candidate,
     CandidateSkill,
     CandidateSkillAssessment,
+    Course,
+    CourseSkill,
     Job,
     JobSkill,
+    OccupationSkill,
     RequirementLevel,
     Skill,
 )
@@ -120,3 +123,27 @@ def load_all_job_profiles(session: Session) -> list[JobProfile]:
 def load_all_candidate_profiles(session: Session) -> list[CandidateProfile]:
     candidate_ids = session.execute(select(Candidate.id)).scalars().all()
     return [load_candidate_profile(session, cid) for cid in candidate_ids]
+
+
+def load_occupation_skill_profile(session: Session, occupation_id: int) -> dict[int, float]:
+    rows = session.execute(
+        select(OccupationSkill.skill_id, OccupationSkill.importance).where(
+            OccupationSkill.occupation_id == occupation_id
+        )
+    ).all()
+    return {skill_id: float(importance) for skill_id, importance in rows}
+
+
+def load_course_skill_coverage(session: Session) -> dict[int, dict[int, float]]:
+    """course_id -> {skill_id: coverage_weight}, for every course."""
+    rows = session.execute(
+        select(CourseSkill.course_id, CourseSkill.skill_id, CourseSkill.coverage_weight)
+    ).all()
+    coverage: dict[int, dict[int, float]] = {}
+    for course_id, skill_id, weight in rows:
+        coverage.setdefault(course_id, {})[skill_id] = float(weight)
+    return coverage
+
+
+def load_course_titles(session: Session) -> dict[int, str]:
+    return dict(session.execute(select(Course.id, Course.title)).all())

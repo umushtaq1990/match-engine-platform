@@ -151,8 +151,31 @@ tests run less often).
 - `app/matching/` is not yet wired into `docker/Dockerfile.api` or exposed via FastAPI endpoints
   — that's Phase 6. Keeping the image unchanged until there's an actual endpoint using this code.
 
+## Phase 3 follow-up — Course recommendations, Use Case E (2026-10-29)
+
+### Done
+- `app/matching/course_recommendations.py`: occupation-target skill gap (reuses `OccupationSkill`
+  from Phase 2 as the skill-frequency/importance table — no new schema needed) +
+  `recommend_courses()` ranking by importance-weighted coverage + DB-aware
+  `recommend_courses_for_candidate()` entry point.
+- Design note: this is a *different* kind of gap from `skill_gap.py` (Use Case D) — gap against a
+  candidate's target occupation profile, not against one specific job posting.
+- Added 3 loader functions to `profiles.py`: `load_occupation_skill_profile`,
+  `load_course_skill_coverage`, `load_course_titles`.
+- 6 new unit tests (pure, no DB) — 33 total tests now passing.
+- **Verified against real data**: candidate without 3 occupation-relevant skills got 5 ranked
+  course recommendations; top result (Java Bootcamp) correctly outranked a course where the same
+  skill was only a minor tangential match (React Fundamentals) — a real demonstration of the
+  scoring discounting weak matches on intentionally noisy synthetic course data.
+- `docs/matching-engine.md` updated with full design + verified example output.
+- Candidates without a `primary_occupation_id` (~5% by design) explicitly cannot use this use
+  case yet — raises rather than silently returning an empty/misleading result.
+
+### Explicitly deferred
+- Multi-course "set cover" optimization (minimal combination of courses closing the whole gap).
+- Use Case C (free-text skill extraction).
+
 ### Next
-- Phase 3 follow-up: Use Case E (course recommendations, builds directly on skill_gap.py's
-  output) and Use Case C (free-text skill extraction via the existing skill_synonyms table).
+- Use Case C (free-text skill extraction via the existing skill_synonyms table), or
 - Phase 4: evaluation — build a labeled evaluation set, measure Precision@K/NDCG@K, compare
   alternative scoring weights instead of treating the current ones as final.

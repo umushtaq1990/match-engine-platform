@@ -63,6 +63,37 @@ Ran both ranking directions against the live seeded Postgres instance:
   `missing required skills: Java` and skill-gap `not_recorded=['Java']`, while candidates #493/
   #1034 show a perfect skill match with an empty gap report.
 
+## Course recommendations (Use Case E)
+
+Different "gap" from Use Case D: this one is computed against a candidate's **target
+occupation's** skill profile (`OccupationSkill`, built in Phase 2 — its `importance` field *is*
+the skill-frequency/importance table this use case needs, reused rather than rebuilt), not
+against a single job posting. A candidate's `primary_occupation_id` is treated as their target
+role.
+
+`app/matching/course_recommendations.py`:
+- `analyze_occupation_skill_gap()` — splits the occupation's skill profile into `present`
+  (candidate already has it), `confirmed_absent`, and `not_recorded`, same evidence distinction as
+  Use Case D.
+- `recommend_courses()` — ranks courses by `coverage_score`: the share of the candidate's
+  *importance-weighted* total gap that a single course covers (`CourseSkill.coverage_weight` ×
+  `OccupationSkill.importance`, summed over covered skills, normalized by total gap weight).
+- `recommend_courses_for_candidate()` — DB-aware entry point. Raises explicitly (not a silent
+  empty result) if the candidate has no `primary_occupation_id` — about 5% of the synthetic
+  dataset by design (see `docs/data-model.md`), so this use case doesn't apply to every candidate.
+
+**MVP scope, documented**: ranks individual courses independently. Does not solve "minimal set of
+courses to close the whole gap" (a set-cover problem) — a reasonable improvement to evaluate in
+Phase 4/5, not built now.
+
+**Verified against real data**: for candidate #1 (target occupation #30), gap = 3 skills not yet
+demonstrated (Accounting, Java, Cybersecurity; none confirmed absent), total weighted gap 2.07.
+Top recommendation: "Java Bootcamp" (coverage_score 0.43, Java as its primary anchor skill) —
+correctly ranked above "React Fundamentals" (coverage_score 0.18), which only covers Java as one
+of the generator's intentionally-injected *tangential* course skills, not its subject. This is the
+scoring correctly discounting a weak/secondary match relative to a course centered on the actual
+gap skill — not a bug, a demonstration of the formula working on realistically noisy data.
+
 ## Known limitations (v0.1)
 
 - **N+1 queries**: `load_all_job_profiles`/`load_all_candidate_profiles` issue one query per row.
