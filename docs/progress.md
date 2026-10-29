@@ -30,7 +30,7 @@ Note: an unrelated pre-existing container (`livekit-server`) is running on the s
 - `pytest` + `httpx` added as dev deps (`app/requirements-dev.txt`); first tests
   (`tests/test_health.py`) written and verified passing locally (2 passed).
 - First git commit made (`63fc4ab`): scaffold, tests, and Phase 0 docs.
-- `docs/PRD.md` written (product requirements, use cases A–F, confidentiality boundary, DoD).
+- `docs/prd.md` written (product requirements, use cases A–F, confidentiality boundary, DoD).
 - `docs/requirements.md` and `docs/assumptions-register.md` written, closing out Phase 0
   deliverables.
 

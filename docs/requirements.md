@@ -3,7 +3,7 @@
 Status: v0.1 — captures what is known today; updated as phases progress.
 
 ## Functional requirements
-See `docs/PRD.md` Section 5 (Use Cases A–F) for the authoritative list. Summary:
+See `docs/prd.md` Section 5 (Use Cases A–F) for the authoritative list. Summary:
 - Candidate-to-job and job-to-candidate ranked matching with explanations
 - Free-text skill extraction into a canonical taxonomy
 - Skill-gap analysis distinguishing "not recorded" vs "assessed and absent"
@@ -53,7 +53,7 @@ free (existing hardware, open-source tooling). Any Azure spend is a future decis
 Phase 11, not assumed now.
 
 ## Acceptance criteria
-See `docs/PRD.md` Section 9 (Definition of Done) — functional, engineering, operational,
+See `docs/prd.md` Section 9 (Definition of Done) — functional, engineering, operational,
 security, and architecture checklists, to be revisited and checked off per phase.
 
 ## Known / unknown / assumed
