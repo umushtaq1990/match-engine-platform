@@ -1,3 +1,10 @@
+# Pinned so container names (jme-db-1, etc.) are stable regardless of the
+# checkout directory name - Compose otherwise derives the project name from
+# the folder it's run in, which differs between a local clone ("JME") and a
+# CI checkout ("match-engine-platform"), breaking any script (including
+# ci.yml's fresh-volume-smoke-test) that references a container by name.
+name: jme
+
 services:
   api:
     build:
