@@ -1,0 +1,17 @@
+# One-off job image: runs data-quality checks over existing source data.
+# No Faker/Alembic — this job only reads via SQL and writes its own result
+# tables, so it needs nothing beyond the base DB-connectivity dependencies.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY app/requirements-base.txt ./
+RUN pip install --no-cache-dir -r requirements-base.txt
+
+COPY app/db.py ./app/db.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/ingestion/__init__.py ./app/ingestion/__init__.py
+COPY app/ingestion/quality_models.py ./app/ingestion/quality_models.py
+COPY app/ingestion/data_quality.py ./app/ingestion/data_quality.py
+
+CMD ["python", "-m", "app.ingestion.data_quality"]
