@@ -110,7 +110,23 @@ are in place.
   not just trusting the printed output. Full writeup: `docs/data-quality.md`.
 - 6 new unit tests for the pass/warn/fail threshold logic (8 total tests now passing).
 
+## Test layout — mirror source packages, not Docker images (2026-10-29)
+
+Restructured `tests/` into `tests/api/` and `tests/ingestion/`, mirroring `app/api/` and
+`app/ingestion/` — not the Docker image boundaries (`api`/`migrate`/`seed`/`dataquality`), since
+those are a many-to-many relationship with source files (e.g. `app/db.py` ships in every image;
+`quality_models.py` ships in both `migrate` and `dataquality`) and would force test duplication.
+Verified: all 8 tests still pass after the move (`git mv`, history preserved).
+
+Noted for later: current tests are all pure unit tests (no DB/Docker required). The manual
+build-and-curl verification done throughout this project (e.g. confirming containers are
+healthy, row counts match) is effectively integration/smoke testing and should eventually become
+scripted tests under `tests/integration/` — not built yet, since no such tests exist to move, but
+the distinction matters for Phase 8 CI design (fast unit tests run always; slower integration
+tests run less often).
+
 ### Next
 - Phase 3: matching engine MVP — deterministic skill extraction/normalization, candidate-job
   scoring, eligibility constraints, ranking, skill-gap calculation, course recommendations. This
-  is where `app/matching/` gets created, living alongside `app/api/` in the production image.
+  is where `app/matching/` and `tests/matching/` get created, living alongside `app/api/` in the
+  production image.
