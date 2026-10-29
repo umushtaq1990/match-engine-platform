@@ -485,9 +485,39 @@ verified working.
 ### Phase 9 — status: COMPLETE (performance fix, full-population eval, and observability all
 done; load testing and alerting explicitly out of scope for this phase, noted as open items)
 
+## Azure decision resolved, before Phase 11/12 (2026-10-29)
+
+User's call: no real Azure subscription will be used. Phase 12 (Kubernetes) tests entirely against
+a local cluster; manifests are written Azure-shaped (documented mapping to AKS/ACR/Azure Database
+for PostgreSQL/AGIC) but never actually provisioned — zero cloud cost, still an architecturally
+honest deliverable. Recorded as the resolution to assumption A1 in `docs/assumptions-register.md`.
+
+## Phase 10 — Offline / disconnected deployment (2026-10-29)
+
+### Done
+- `scripts/package-offline-bundle.sh`: builds all 5 custom images + pulls the 4 third-party ones,
+  `docker save`s all 9 into `dist/offline-bundle/images.tar`, and copies everything a container
+  image doesn't carry itself (compose file, `.env.example`, postgres-init/prometheus/grafana
+  config) alongside it. `dist/` added to `.gitignore` (756MB build artifact, regenerable, not
+  source).
+- **Verified for real, not assumed**: full teardown (`down -v`) → `docker rmi -f` all 9 images,
+  confirmed gone → `docker load` from the tar alone, confirmed all 9 reloaded → brought the entire
+  stack up using only `--pull never` (Compose's flag that errors instead of silently pulling if
+  anything's missing) — db → migrate (3/3 migrations) → seed (2000/1000 rows) → dataquality
+  (10/10 checks) → api/mlflow/prometheus/cadvisor/grafana (all healthy, authenticated API call
+  returned 200, Prometheus scrape targets `up`). Nothing reached the network.
+- `docs/offline-deployment.md` written, including the honest limitation: this proves Compose's
+  pull logic never fires, not literal NIC-disconnected hardware (none available), and Docker
+  Engine/Compose itself is the one assumed prerequisite that can't be bundled.
+- Not automated in CI — a 756MB artifact plus double image handling (delete + reload) isn't worth
+  the CI minutes for a check that's really "does `--pull never` work," which Compose itself
+  guarantees; verified by hand instead, same reasoning as other DB-touching orchestration checks
+  in this project.
+
+### Phase 10 — status: COMPLETE
+
 ### Next
-Remaining phases to finish the full end-to-end architecture, per the original brief and
-`docs/prd.md`'s phase references: Phase 10 (offline deployment validation), Phase 11 (cloud/Azure
-decision), Phase 12 (Kubernetes), Phase 13 (production-readiness gap assessment). Scoring-weight
-comparison, Use Case C, and domain-model genericization all remain deferred per explicit user
-instruction until the phase plan is finished.
+Remaining phases to finish the full end-to-end architecture: Phase 11 (cloud/Azure decision — now
+resolved above), Phase 12 (Kubernetes, local-only per that decision), Phase 13 (production-
+readiness gap assessment). Scoring-weight comparison, Use Case C, and domain-model genericization
+all remain deferred per explicit user instruction until the phase plan is finished.

@@ -39,6 +39,8 @@ update it whenever a doc is added, renamed, or removed.
 ## Operations
 - [hardware-inventory.md](hardware-inventory.md) — measured dev machine specs and sizing
   implications
+- [offline-deployment.md](offline-deployment.md) — air-gapped deployment bundle, verified
+  end-to-end with zero network access (Phase 10)
 - [progress.md](progress.md) — running log of what's been done, phase by phase
 
 ## Not yet created — written just-in-time, not upfront
@@ -51,8 +53,7 @@ below): each is written when its phase produces something real to document, not 
 - `infrastructure-sizing.md` — CPU/RAM/storage/network sizing methodology and scenarios (Phase 9).
   Absorbs `hardware-inventory.md` as its measured baseline input, and a cost section absorbs what
   would otherwise be a separate `cost-model.md` (cost is derived directly from sizing)
-- `deployment-runbook.md` (Phase 7), `offline-deployment.md` (Phase 10),
-  `monitoring-and-alerting.md` (Phase 9), `backup-and-recovery.md` (Phase 9/13) — merged into
+- `deployment-runbook.md` (Phase 7), `backup-and-recovery.md` (Phase 9/13) — merged into
   `production-readiness.md` instead of kept standalone if any of them end up thin
 - `production-readiness.md` (Phase 13)
 - `interview-preparation.md` (end of project)

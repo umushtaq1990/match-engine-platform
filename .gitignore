@@ -27,3 +27,4 @@ data/raw/*
 data/seed/*
 !data/raw/.gitkeep
 !data/seed/.gitkeep
+dist/
