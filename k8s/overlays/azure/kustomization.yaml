@@ -1,0 +1,48 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Documented Azure-shaped design - NOT deployed or verified against a real
+# AKS cluster (see assumption A1 in docs/assumptions-register.md and
+# docs/kubernetes.md). `kubectl kustomize` against this overlay is tested
+# (it builds into valid YAML); applying it to a real AKS cluster is not.
+resources:
+  - ../../base
+  - ingress.yaml
+
+patches:
+  - path: delete-self-hosted-postgres.yaml
+  - target:
+      kind: PersistentVolumeClaim
+      name: mlflow-artifacts
+    patch: |
+      - op: add
+        path: /spec/storageClassName
+        value: managed-csi
+  - target:
+      kind: PersistentVolumeClaim
+      name: prometheus-data
+    patch: |
+      - op: add
+        path: /spec/storageClassName
+        value: managed-csi
+  - target:
+      kind: PersistentVolumeClaim
+      name: grafana-data
+    patch: |
+      - op: add
+        path: /spec/storageClassName
+        value: managed-csi
+
+# Real deployment target: Azure Container Registry, not Docker Hub/local
+# daemon. Placeholder registry name - replace before any real use.
+images:
+  - name: jme-api
+    newName: myregistry.azurecr.io/jme-api
+  - name: jme-migrate
+    newName: myregistry.azurecr.io/jme-migrate
+  - name: jme-seed
+    newName: myregistry.azurecr.io/jme-seed
+  - name: jme-dataquality
+    newName: myregistry.azurecr.io/jme-dataquality
+  - name: jme-mlflow
+    newName: myregistry.azurecr.io/jme-mlflow

@@ -521,3 +521,61 @@ Remaining phases to finish the full end-to-end architecture: Phase 11 (cloud/Azu
 resolved above), Phase 12 (Kubernetes, local-only per that decision), Phase 13 (production-
 readiness gap assessment). Scoring-weight comparison, Use Case C, and domain-model genericization
 all remain deferred per explicit user instruction until the phase plan is finished.
+
+## Phase 11 — Cloud/Azure decision (2026-10-29)
+
+### Decision
+No real Azure subscription will be used anywhere in this project. Phase 12 (Kubernetes) is tested
+entirely against a local cluster (Docker Desktop Kubernetes); manifests are written Azure-shaped
+(documented mapping to AKS/ACR/Azure Database for PostgreSQL/Application Gateway Ingress
+Controller) so the architecture decisions are real and defensible, without provisioning anything
+that costs money or requires cloud credentials. This is the full content of this phase — it was a
+decision gate (assumption A1), not a build phase, and it's now resolved and recorded in
+`docs/assumptions-register.md`.
+
+### Phase 11 — status: COMPLETE
+
+## Phase 12 — Kubernetes, local cluster, Azure-shaped overlay (2026-10-29)
+
+### Done
+- `k8s/base/`: Kustomize resources for every service — `jme-db` (Deployment+PVC+Service,
+  self-hosted, local-only), `jme-migrate`/`jme-seed` (Jobs, each with a `wait-for-db`
+  initContainer), `jme-dataquality` (CronJob, daily placeholder schedule — exactly what Compose's
+  own dataquality service comment anticipated: "a recurring schedule in production, a Kubernetes
+  CronJob in Phase 12"), `jme-api` (Deployment, **2 replicas** — the horizontal-scalability payoff
+  ADR 0001 named back in Phase 2, now actually running, not just asserted — + Service + HPA),
+  `jme-mlflow`/`jme-prometheus`/`jme-grafana` (Deployment+PVC+Service each).
+- `k8s/overlays/local/` (= base, unpatched) and `k8s/overlays/azure/` (documented-only — ACR image
+  rewrite, `managed-csi` storage class, AGIC Ingress, self-hosted Postgres deleted in favor of
+  Azure Database for PostgreSQL). Both verified to `kubectl kustomize` into valid YAML; only
+  `local` was ever actually applied to a cluster.
+- Installed `kind` (no existing local K8s tooling on this machine), created a `jme-local` cluster,
+  loaded all 8 non-ACR images (`kind load docker-image`), applied the local overlay.
+- **Verified end-to-end, with real failures found and fixed along the way, not assumed to work**:
+  - Grafana crash-looped on first apply (`not a directory` mount error) — two ConfigMaps both
+    targeting the same provisioning directory conflicted at the runtime level. Fixed by merging
+    them into one `grafana-dashboards` ConfigMap (two keys, no `subPath` needed).
+  - `jme-migrate`/`jme-seed` Jobs failed their first attempts, racing ahead of Postgres (Compose's
+    `depends_on: condition: service_healthy` has no Job-level Kubernetes equivalent). Fixed with a
+    `wait-for-db` `pg_isready`-polling initContainer.
+  - After that fix, `seed`'s first retry still failed once (ran before `migrate` finished — no
+    ordering dependency between the two Jobs, mirroring the same manual-sequencing assumption
+    Compose always had). Not treated as a new gap; `backoffLimit: 4` absorbs it, same as Compose
+    always relied on manual ordering.
+  - Final state, confirmed: all 4 PVCs `Bound`, migrate `Complete` (3/3 migrations), seed
+    `Complete` (2000/1000 rows, confirmed via `psql`), dataquality CronJob manually triggered
+    (10/10 checks passed), api Deployment 2/2 running with a real authenticated call through the
+    Service returning identical output to the Compose version, Prometheus scrape target `up`,
+    Grafana dashboard provisioned correctly (same verification method as Phase 9).
+- `docs/kubernetes.md` written: full layout, secrets generation, the Azure-shaped overlay diff
+  table, why there's no separate cAdvisor workload in K8s (kubelet already exposes it — documented
+  as a known gap that the RBAC-based scrape wiring wasn't built, not silently omitted), known gaps
+  (HPA is a no-op without `metrics-server`, confirmed via `kubectl get hpa` showing `<unknown>`).
+
+### Explicitly not done in this phase
+- Azure overlay never applied to a real AKS cluster (per the resolved A1 decision) — `kubectl
+  kustomize` output verified valid, deployment itself not verified.
+- `metrics-server` not installed — HPA is demonstrated, not functionally verified.
+- kubelet-cadvisor RBAC scraping not wired (documented reasoning in `docs/kubernetes.md`).
+
+### Phase 12 — status: COMPLETE

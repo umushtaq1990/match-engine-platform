@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Local = base as-is. kind's default StorageClass ("standard",
+# rancher.io/local-path) satisfies every PVC in base/ with no patches
+# needed - this overlay exists so "local" and "azure" are symmetric, and so
+# a third real environment (on-prem, another cloud) has an obvious place to
+# go without touching base/.
+resources:
+  - ../../base

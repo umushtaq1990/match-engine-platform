@@ -1,0 +1,34 @@
+# Compose's dataquality service comment anticipated this exact move: "a
+# recurring schedule in production (a Kubernetes CronJob in Phase 12) -
+# never as a long-running container." Schedule is a placeholder (daily at
+# 02:00) - this project has no real upstream data cadence to match it to.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: jme-dataquality
+  namespace: jme
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          initContainers:
+            - name: wait-for-db
+              image: postgres:16
+              imagePullPolicy: IfNotPresent
+              envFrom:
+                - secretRef: { name: jme-secrets }
+              command:
+                - sh
+                - -c
+                - until pg_isready -h jme-db -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do sleep 2; done
+          containers:
+            - name: dataquality
+              image: jme-dataquality:latest
+              imagePullPolicy: IfNotPresent
+              envFrom:
+                - secretRef: { name: jme-secrets }

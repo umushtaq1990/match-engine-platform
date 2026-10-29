@@ -36,6 +36,10 @@ update it whenever a doc is added, renamed, or removed.
 - [observability.md](observability.md) — Prometheus+Grafana+cAdvisor stack, what's verified vs.
   a known Docker Desktop limitation, batch-time tracking (Phase 9)
 
+## Kubernetes
+- [kubernetes.md](kubernetes.md) — local-cluster deployment (verified end-to-end), Azure-shaped
+  overlay (documented, not provisioned), real bugs found and fixed (Phase 12)
+
 ## Operations
 - [hardware-inventory.md](hardware-inventory.md) — measured dev machine specs and sizing
   implications

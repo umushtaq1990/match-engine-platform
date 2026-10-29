@@ -28,3 +28,4 @@ data/seed/*
 !data/raw/.gitkeep
 !data/seed/.gitkeep
 dist/
+k8s/base/secret.yaml

@@ -1,0 +1,24 @@
+# Azure's path to exposing the api outside the cluster: Application Gateway
+# Ingress Controller (AGIC), not a bare Service/NodePort. Not deployed or
+# tested (no Application Gateway exists) - shows the real annotation shape
+# an AKS deployment would need, per docs/kubernetes.md's documented mapping.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jme-api
+  namespace: jme
+  annotations:
+    kubernetes.io/ingress.class: azure/application-gateway
+    appgw.ingress.kubernetes.io/backend-protocol: http
+spec:
+  rules:
+    - host: jme-api.example.com # placeholder - replace with the real AGIC-assigned hostname
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jme-api
+                port:
+                  number: 8000

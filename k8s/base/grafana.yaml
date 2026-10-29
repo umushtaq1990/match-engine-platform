@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  namespace: jme
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jme-grafana
+  namespace: jme
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: jme-grafana }
+  template:
+    metadata:
+      labels: { app: jme-grafana }
+    spec:
+      securityContext:
+        fsGroup: 472 # grafana image's own uid/gid - needed so it can write to the PVC
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.3.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: jme-secrets, key: GRAFANA_ADMIN_PASSWORD }
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: Viewer
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: grafana-data }
+        - name: datasources
+          configMap: { name: grafana-datasources }
+        - name: dashboards
+          configMap: { name: grafana-dashboards }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jme-grafana
+  namespace: jme
+spec:
+  selector: { app: jme-grafana }
+  ports:
+    - port: 3000
+      targetPort: 3000

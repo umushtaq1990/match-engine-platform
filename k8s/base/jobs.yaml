@@ -1,0 +1,65 @@
+# Migrate and seed as Jobs (one-off, run-to-completion) - the same lifecycle
+# distinction Compose's `profiles: ["tools"]` encodes, now expressed in the
+# resource type itself. ADR 0001 anticipated this: "migrate becomes an init
+# container or Job... seed either doesn't exist in a real deployment or
+# becomes a scheduled CronJob fed by a real upstream system." Re-running
+# either: `kubectl delete job -n jme jme-migrate jme-seed` then re-apply.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jme-migrate
+  namespace: jme
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: Never
+      # Compose has `depends_on: condition: service_healthy`; plain
+      # Kubernetes Jobs have no equivalent "wait for another resource to be
+      # ready" primitive, so this polls directly - found by watching the
+      # real first apply fail (3/3 attempts exhausted) because the Job
+      # raced ahead of postgres's own readiness while its image was still
+      # being pulled, not assumed to be necessary up front.
+      initContainers:
+        - name: wait-for-db
+          image: postgres:16
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef: { name: jme-secrets }
+          command:
+            - sh
+            - -c
+            - until pg_isready -h jme-db -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do sleep 2; done
+      containers:
+        - name: migrate
+          image: jme-migrate:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef: { name: jme-secrets }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jme-seed
+  namespace: jme
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-db
+          image: postgres:16
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef: { name: jme-secrets }
+          command:
+            - sh
+            - -c
+            - until pg_isready -h jme-db -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do sleep 2; done
+      containers:
+        - name: seed
+          image: jme-seed:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef: { name: jme-secrets }

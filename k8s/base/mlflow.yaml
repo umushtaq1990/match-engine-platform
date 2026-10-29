@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-artifacts
+  namespace: jme
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jme-mlflow
+  namespace: jme
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: jme-mlflow }
+  template:
+    metadata:
+      labels: { app: jme-mlflow }
+    spec:
+      containers:
+        - name: mlflow
+          image: jme-mlflow:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - secretRef: { name: jme-secrets }
+          volumeMounts:
+            - name: artifacts
+              mountPath: /mlflow-artifacts
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim: { claimName: mlflow-artifacts }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jme-mlflow
+  namespace: jme
+spec:
+  selector: { app: jme-mlflow }
+  ports:
+    - port: 5000
+      targetPort: 5000

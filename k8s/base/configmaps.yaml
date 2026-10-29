@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: jme
+data:
+  01-create-mlflow-db.sql: |
+    -- Runs automatically on first init of a fresh PGDATA volume only.
+    -- Creates a separate database for MLflow's backend store, kept distinct
+    -- from the "jme" application database. Mirrors
+    -- docker/postgres-init/01-create-mlflow-db.sql (Compose's equivalent).
+    CREATE DATABASE mlflow;
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: jme
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 10s
+    scrape_configs:
+      - job_name: api
+        static_configs:
+          - targets: ["jme-api:8000"]
+      # No separate cadvisor Deployment in Kubernetes (unlike Compose) - a
+      # real cluster's kubelet already exposes equivalent per-container
+      # metrics at /metrics/cadvisor on every node. Scraping that requires
+      # a ServiceAccount + ClusterRole (nodes/metrics, nodes/proxy) and
+      # bearer-token auth - a real production addition, deliberately not
+      # wired here to keep this exercise's scope bounded. See
+      # docs/kubernetes.md known gaps.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: jme
+data:
+  prometheus.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://jme-prometheus:9090
+        isDefault: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: jme
+  # One ConfigMap, not two: both files need to land in the same directory
+  # (/etc/grafana/provisioning/dashboards). Mounting two separate ConfigMap
+  # volumes into the same target directory conflicts at the container
+  # runtime level ("not a directory" on the subPath mount) - a real bug
+  # found and fixed while verifying this on the local kind cluster, not
+  # assumed to work from the Compose version's two-ConfigMap-looking layout.
+data:
+  dashboards.yml: |
+    apiVersion: 1
+    providers:
+      - name: JME
+        folder: ""
+        type: file
+        options:
+          path: /etc/grafana/provisioning/dashboards
+  jme-overview.json: |
+    {
+      "title": "JME Overview",
+      "uid": "jme-overview",
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-30m", "to": "now" },
+      "panels": [
+        {
+          "title": "API request rate (by route)",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [
+            { "expr": "sum(rate(http_requests_total[1m])) by (handler)", "legendFormat": "{{handler}}" }
+          ]
+        },
+        {
+          "title": "API error rate (5xx)",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "targets": [
+            { "expr": "sum(rate(http_requests_total{status=~\"5..\"}[1m]))", "legendFormat": "5xx/s" }
+          ]
+        },
+        {
+          "title": "API latency p50/p95/p99 (by route)",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "p50 {{handler}}" },
+            { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "p95 {{handler}}" },
+            { "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "p99 {{handler}}" }
+          ]
+        }
+      ]
+    }
