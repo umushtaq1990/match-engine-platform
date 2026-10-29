@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.db import Base, DATABASE_URL  # noqa: E402
 from app.ingestion import source_models  # noqa: E402,F401
+from app.ingestion import quality_models  # noqa: E402,F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

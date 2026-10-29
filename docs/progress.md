@@ -91,9 +91,26 @@ are in place.
 
 ### Phase 2 — status: COMPLETE (including this follow-up)
 
+## Phase 2 follow-up — Data quality checks (2026-10-29)
+
+### Done
+- `app/ingestion/quality_models.py`: `data_quality_runs` / `data_quality_check_results` tables
+  (historized results, not just printed output — needed for a future dashboard).
+- `app/ingestion/data_quality.py`: 10 checks across completeness, uniqueness, referential
+  integrity, range validity, and taxonomy coverage. Thresholds documented as initial judgment
+  calls, not ground truth.
+- Alembic migration generated and applied; `docker-compose.yml` `dataquality` one-off service
+  added (reuses the ingestion image, overrides command), under `profiles: ["tools"]`.
+- **Verified**: ran twice (once locally via venv, once via the containerized service) against the
+  seeded dataset — all 10 checks passed both times, recorded as run #1 and run #2, measured rates
+  match known generator targets.
+- **Bug caught and fixed during build**: `CheckStatus.pass_` was being stored as the literal
+  string `"pass_"` (Python enum member name) instead of `"pass"` (its value) — would have shown
+  wrong on a future dashboard. Fixed via `values_callable`; caught by querying actual stored rows,
+  not just trusting the printed output. Full writeup: `docs/data-quality.md`.
+- 6 new unit tests for the pass/warn/fail threshold logic (8 total tests now passing).
+
 ### Next
-- Phase 2 optional extra (can be deferred into Phase 3 if preferred): data-quality checks module
-  (duplicate detection, identifier validation, missing-value report) and a data dictionary.
 - Phase 3: matching engine MVP — deterministic skill extraction/normalization, candidate-job
   scoring, eligibility constraints, ranking, skill-gap calculation, course recommendations. This
   is where `app/matching/` gets created, living alongside `app/api/` in the production image.

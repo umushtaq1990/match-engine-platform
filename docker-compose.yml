@@ -43,6 +43,24 @@ services:
         condition: service_healthy
     profiles: ["tools"]
 
+  # One-off job: runs data-quality checks over the current source data and
+  # records results in data_quality_runs/data_quality_check_results. Reuses
+  # the ingestion image (same deps), overriding its default command. Intended
+  # to run after any data load, and on a recurring schedule in production
+  # (a Kubernetes CronJob in Phase 12) — never as a long-running container.
+  # Run explicitly: docker compose run --rm dataquality
+  dataquality:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.seed
+    command: ["python", "-m", "app.ingestion.data_quality"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://jme:jme_dev_password@db:5432/jme
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
   db:
     image: postgres:16
     environment:
