@@ -183,8 +183,36 @@ embedding-based extraction, built and evaluated properly rather than assumed to 
 documented exception to the general "start simple, add ML only if proven necessary" pattern —
 see assumption A5b in `docs/assumptions-register.md`.
 
+## Phase 4 — Evaluation (2026-10-29)
+
+### Done
+- `app/evaluation/metrics.py`: Precision@K, Recall@K, NDCG@K, MRR — pure functions, 14 unit tests.
+- `app/evaluation/ground_truth.py`: occupation-alignment ground truth, deliberately independent
+  of the scoring formula being evaluated (avoids circular evaluation — see
+  `docs/evaluation-strategy.md` for the reasoning). 1,899/2,000 candidates have usable ground
+  truth (101 excluded, matching the known ~5% missing-occupation rate almost exactly).
+- `app/evaluation/eval_models.py` + migration: `evaluation_runs`/`evaluation_candidate_results`,
+  same two-level historization pattern as data quality.
+- `app/evaluation/run_evaluation.py`: orchestrator, `config_label` captures exact scoring weights
+  used so future weight changes are comparable against this baseline.
+- **Measured (not guessed) the sample size decision**: timed actual ranking latency (~1.95s/
+  candidate, consistent with the known N+1 query limitation) before picking a sample of 50 rather
+  than the full 1,899-candidate population (would take over an hour).
+- **Baseline established, run #1**: Precision@10=0.47, Recall@10=0.7458, NDCG@10=0.7283,
+  MRR=0.8029, against current weights (skill=0.55, location=0.15, salary=0.15, occupation=0.15).
+  Verified persisted correctly in both tables.
+- `docs/evaluation-strategy.md` written: full methodology, honest reading of the baseline
+  numbers, known limitations.
+
+### Explicitly not done in this phase
+- No comparison of alternative scoring weights yet — run #1 is a baseline only.
+- Full-population evaluation (deferred to Phase 9, pending the N+1 query fix).
+- No DB-fixture-based tests for `ground_truth.py`/`run_evaluation.py` — verified manually against
+  real data instead, consistent with how `rank.py`/`data_quality.py` were verified.
+
 ### Next
-- Phase 4: evaluation — build a labeled evaluation set, measure Precision@K/NDCG@K, compare
-  alternative scoring weights instead of treating the current ones as final. This also lays the
-  groundwork needed before attempting the embedding-based Use Case C later: no ML approach should
-  be adopted without a way to measure whether it's actually better.
+- Try at least one alternative scoring-weight configuration and compare its run against
+  baseline run #1 — this is the natural next step now that the harness exists, and the first real
+  use of why it was built.
+- Resume Use Case C (free-text extraction) when ready, now that an evaluation harness exists to
+  measure the embedding-based approach against (per the A5b decision).
