@@ -384,7 +384,32 @@ a full refactor.
 - No CD (continuous *deployment*) — there is no deployment target yet (Phase 11/12 decide that).
   This phase is CI only: lint, test, build, scan, smoke-test.
 
-### Phase 8 — status: COMPLETE (pending confirmation the pushed workflow run is green)
+### Getting the pushed pipeline actually green (2026-10-29)
+
+The first pushed run was not green — verified via the GitHub Actions API (polled run/job status
+directly, not assumed), and each failure was root-caused from the API's annotations/step data
+rather than guessed at:
+
+1. `aquasecurity/trivy-action@0.28.0` — wrong tag format (real tags are `v`-prefixed); every
+   `build-and-scan` matrix job failed at action-resolution time before any step ran.
+2. `aquasecurity/trivy-action@v0.28.0` (tag fixed) still failed the same way — that specific
+   release's pinned nested action, `aquasecurity/setup-trivy@v0.2.1`, no longer exists upstream
+   (earliest available tag is `v0.2.6`). Bumped to `trivy-action@v0.36.0`, which pins its
+   `setup-trivy` dependency by commit SHA instead of a floating tag.
+3. With all `build-and-scan` jobs passing, `fresh-volume-smoke-test` failed at "wait for db
+   healthy" — `docker inspect jme-db-1` found no such container. Root cause: Compose derives its
+   project name (and therefore container names) from the current directory when none is pinned;
+   locally that's `JME` (-> `jme-db-1`), but a GitHub Actions checkout uses the repo name
+   `match-engine-platform` (-> `match-engine-platform-db-1`). Fixed by adding a top-level `name:
+   jme` to `docker-compose.yml`, making container names identical in both environments.
+
+Four pushes total to get from "pipeline authored" to "pipeline verified green end-to-end" — each
+fix confirmed by actually polling the GitHub Actions API for the next run's result, not assumed
+from reading the diff. Final run (`40942700618`): all jobs green, including the full fresh-volume
+sequence (migrate → seed → dataquality → api/mlflow → authenticated API call) on a genuinely clean
+runner.
+
+### Phase 8 — status: COMPLETE (verified green: https://github.com/umushtaq1990/match-engine-platform/actions/runs/40942700618)
 
 ### Next
 Remaining phases to finish the full end-to-end architecture, per the original brief and
