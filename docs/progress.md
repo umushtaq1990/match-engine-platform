@@ -125,8 +125,34 @@ scripted tests under `tests/integration/` — not built yet, since no such tests
 the distinction matters for Phase 8 CI design (fast unit tests run always; slower integration
 tests run less often).
 
+## Phase 3 — Matching engine MVP (2026-10-29)
+
+### Done
+- `app/matching/` created: `profiles.py` (DB->dataclass translation layer), `scoring.py` (pure
+  weighted scoring: skill/location/salary/occupation, documented provisional weights),
+  `eligibility.py` (hard constraints, kept separate from soft scoring per the brief's
+  requirement), `skill_gap.py` (confirmed-absent vs not-recorded distinction, Use Case D),
+  `rank.py` (orchestrator providing both `rank_jobs_for_candidate` and
+  `rank_candidates_for_job` — Use Cases A and B from the same core logic).
+- 27 unit tests (`tests/matching/`), all pure/DB-free — run in under a second. One real bug
+  caught by a test during build: a test's own expected value was wrong (assumed a missing-skill
+  case should score 0.0, missed that "no preferred skills" is trivially satisfied) — fixed the
+  test, not the code, after tracing through the actual formula.
+- **Verified against the real seeded database**, not just unit tests: ran
+  `rank_jobs_for_candidate` and `rank_candidates_for_job` against live Postgres, inspected actual
+  scores/explanations/skill-gap output for real candidates and jobs.
+- `docs/matching-engine.md` written: formula, eligibility rule, skill-gap logic, verified
+  example output, known limitations (N+1 queries, no qualification compatibility yet, no
+  semantic matching yet, eligibility rule is a placeholder).
+
+### Explicitly deferred (not part of this slice)
+- Use Case C (free-text skill extraction), Use Case E (course recommendations), Use Case F
+  (similarity/semantic search) — separate follow-up work.
+- `app/matching/` is not yet wired into `docker/Dockerfile.api` or exposed via FastAPI endpoints
+  — that's Phase 6. Keeping the image unchanged until there's an actual endpoint using this code.
+
 ### Next
-- Phase 3: matching engine MVP — deterministic skill extraction/normalization, candidate-job
-  scoring, eligibility constraints, ranking, skill-gap calculation, course recommendations. This
-  is where `app/matching/` and `tests/matching/` get created, living alongside `app/api/` in the
-  production image.
+- Phase 3 follow-up: Use Case E (course recommendations, builds directly on skill_gap.py's
+  output) and Use Case C (free-text skill extraction via the existing skill_synonyms table).
+- Phase 4: evaluation — build a labeled evaluation set, measure Precision@K/NDCG@K, compare
+  alternative scoring weights instead of treating the current ones as final.

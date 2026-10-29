@@ -20,6 +20,10 @@ update it whenever a doc is added, renamed, or removed.
 ## Data governance
 - [data-quality.md](data-quality.md) — data-quality check design, thresholds, verified results
 
+## Matching engine
+- [matching-engine.md](matching-engine.md) — scoring formula, eligibility rules, skill-gap logic,
+  verified results, known limitations (Phase 3 MVP)
+
 ## Operations
 - [hardware-inventory.md](hardware-inventory.md) — measured dev machine specs and sizing
   implications
