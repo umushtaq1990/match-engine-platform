@@ -175,7 +175,16 @@ tests run less often).
 - Multi-course "set cover" optimization (minimal combination of courses closing the whole gap).
 - Use Case C (free-text skill extraction).
 
+### Decision — Use Case C deferred, will skip the rule-based step (2026-10-29)
+User's call: rule-based/dictionary skill extraction from free text won't adequately handle real
+phrasing variety for this use case, unlike the rest of the matching engine where a deterministic
+baseline came first. Use Case C is deferred entirely; when resumed, goes straight to NLP/
+embedding-based extraction, built and evaluated properly rather than assumed to work. This is a
+documented exception to the general "start simple, add ML only if proven necessary" pattern —
+see assumption A5b in `docs/assumptions-register.md`.
+
 ### Next
-- Use Case C (free-text skill extraction via the existing skill_synonyms table), or
 - Phase 4: evaluation — build a labeled evaluation set, measure Precision@K/NDCG@K, compare
-  alternative scoring weights instead of treating the current ones as final.
+  alternative scoring weights instead of treating the current ones as final. This also lays the
+  groundwork needed before attempting the embedding-based Use Case C later: no ML approach should
+  be adopted without a way to measure whether it's actually better.
