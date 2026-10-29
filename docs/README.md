@@ -32,6 +32,10 @@ update it whenever a doc is added, renamed, or removed.
 - [security-and-threat-model.md](security-and-threat-model.md) — API authN/authZ approach, what
   it does/doesn't protect against, secrets handling, known gaps (Phase 6)
 
+## Observability
+- [observability.md](observability.md) — Prometheus+Grafana+cAdvisor stack, what's verified vs.
+  a known Docker Desktop limitation, batch-time tracking (Phase 9)
+
 ## Operations
 - [hardware-inventory.md](hardware-inventory.md) — measured dev machine specs and sizing
   implications

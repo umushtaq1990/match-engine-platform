@@ -441,20 +441,53 @@ Phase 7's fresh-volume teardown (`docker compose down -v`) wiped the `mlflow` Po
 wipe means), so this phase's run is legitimately "run #1" again in both systems, not a data-loss
 bug. Noted here only so the run numbering in this log doesn't look inconsistent at a glance.
 
-### Explicitly not done in this phase
-- Observability (Prometheus/Grafana, per `docs/prd.md`'s Phase 9 reference) — not built yet. The
-  N+1 fix and full-population evaluation were the concrete, measurable performance item; metrics/
-  dashboards are a separate follow-up before this phase is fully closed out.
-- Load testing / p50/p95/p99 latency measurement (assumption A6) — single-call timing was
-  measured, not concurrent load. Still a placeholder per A6.
+## Phase 9 continued — Prometheus + Grafana + cAdvisor observability (2026-10-29)
 
-### Phase 9 — status: PARTIAL (performance fix + full-population eval done; observability/load
-testing not yet started)
+### Done
+- `app/api/main.py` instrumented with `prometheus-fastapi-instrumentator`: `/metrics` exposes
+  request count + latency histograms labeled by route/method/status — the latency/error-rate half
+  of the brief's "CPU/RAM/latency/error-rate measurable" requirement.
+- Three new always-on `docker-compose.yml` services (same rationale as `mlflow` — continuously
+  scraping, not a one-off job): `prometheus` (scrapes `api` + `cadvisor` every 10s,
+  `docker/prometheus/prometheus.yml`), `cadvisor` (per-container CPU/RAM), `grafana` (one
+  provisioned dashboard, "JME Overview": request rate, 5xx error rate, p50/p95/p99 latency,
+  container CPU, container memory — `docker/grafana/provisioning/`). New `GRAFANA_ADMIN_PASSWORD`
+  in `.env`/`.env.example`, consistent with Phase 7's secrets pattern.
+- **Verified end-to-end, several layers deep**: `/metrics` updates after real calls; Prometheus
+  reports both scrape targets `up`; the exact PromQL the dashboard panels use (request rate,
+  `histogram_quantile` latency) returns real data when queried directly; Grafana's dashboard and
+  datasource are both provisioned correctly, and a query proxied *through Grafana's own API* (not
+  just directly against Prometheus) returns real data.
+- `.github/workflows/ci.yml`'s `fresh-volume-smoke-test` extended to also start
+  prometheus/cadvisor/grafana and verify Prometheus actually scrapes the api target — so a broken
+  `prometheus.yml` or Grafana provisioning file would fail CI, not just go unnoticed.
+- `docs/observability.md` written.
+
+### Known limitation found and documented, not hidden
+cAdvisor's own health and Prometheus's scrape of it both report fine, but per-container metric
+breakdowns (`container_memory_usage_bytes{name="..."}`, etc.) **don't populate on this Docker
+Desktop (Windows) dev machine** — only cgroup-aggregate entries, no individual containers.
+Investigated (not just noticed): `docker exec`'d into the cadvisor container and found
+`/var/lib/docker` uses a `containerd`-backed layout, consistent with Docker Desktop's containerd
+image store — a known class of cAdvisor-on-Docker-Desktop limitation, not a misconfiguration here.
+Expected to work as designed on a native Linux host (this project's actual later deployment
+target, per Phase 10/12). The API latency/error-rate/request-rate panels are unaffected and fully
+verified working.
+
+### Explicitly not done in this phase
+- Load testing / p50/p95/p99 latency under real concurrent load — Prometheus can now measure this,
+  but no load has been generated to measure it under yet (assumption A6 still open).
+- Alerting (Alertmanager) — dashboards only, no threshold-based paging/notification.
+- Batch-time metrics (data quality/evaluation run duration) are not pushed to Prometheus — still
+  just `run_at` timestamps in Postgres, sufficient for infrequent manually-triggered jobs; a
+  Pushgateway addition is deferred until these jobs run on an actual schedule (Phase 12).
+
+### Phase 9 — status: COMPLETE (performance fix, full-population eval, and observability all
+done; load testing and alerting explicitly out of scope for this phase, noted as open items)
 
 ### Next
 Remaining phases to finish the full end-to-end architecture, per the original brief and
-`docs/prd.md`'s phase references: finish Phase 9 (Prometheus/Grafana observability, load testing),
-Phase 10 (offline deployment validation), Phase 11 (cloud/Azure decision), Phase 12 (Kubernetes),
-Phase 13 (production-readiness gap assessment). Scoring-weight comparison, Use Case C, and
-domain-model genericization all remain deferred per explicit user instruction until the phase plan
-is finished.
+`docs/prd.md`'s phase references: Phase 10 (offline deployment validation), Phase 11 (cloud/Azure
+decision), Phase 12 (Kubernetes), Phase 13 (production-readiness gap assessment). Scoring-weight
+comparison, Use Case C, and domain-model genericization all remain deferred per explicit user
+instruction until the phase plan is finished.

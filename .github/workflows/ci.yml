@@ -102,6 +102,17 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)" = "200"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/candidates/1/job-matches)" = "401"
           test "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $api_key" http://localhost:8000/candidates/1/job-matches)" = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/metrics)" = "200"
+      - name: Start observability stack (prometheus, cadvisor, grafana)
+        run: docker compose up -d prometheus cadvisor grafana
+      - name: Verify prometheus is scraping the api
+        run: |
+          for i in $(seq 1 15); do
+            health=$(curl -s "http://localhost:9090/api/v1/query?query=up%7Bjob%3D%22api%22%7D" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['data']['result'][0]['value'][1] if d['data']['result'] else '')" 2>/dev/null || true)
+            [ "$health" = "1" ] && exit 0
+            sleep 2
+          done
+          echo "prometheus never reported api target as up" && exit 1
       - name: Tear down
         if: always()
         run: docker compose --profile tools down -v
