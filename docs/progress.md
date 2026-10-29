@@ -234,9 +234,62 @@ see assumption A5b in `docs/assumptions-register.md`.
 - Full test suite (47 tests) still passes; 3 legitimate runs preserved in Postgres, 1 clean run
   in MLflow.
 
-### Next
+### Deferred (will return to later — user's call, 2026-10-29)
 - Try at least one alternative scoring-weight configuration and compare its MLflow run against
-  the baseline — this is the natural next step now that the harness exists, and the first real
-  use of why it was built.
+  the baseline. Explicitly postponed in favor of finishing the remaining phases end-to-end first.
 - Resume Use Case C (free-text extraction) when ready, now that an evaluation harness exists to
   measure the embedding-based approach against (per the A5b decision).
+
+## Phase 6 — API wiring + authN/authZ (2026-10-29)
+
+### Done
+- `app/matching/` wired into the FastAPI service for the first time (previously computed-but-not-
+  exposed, per the Phase 3 note). Three endpoints added, each a thin translation layer only — no
+  business logic in the route layer:
+  - `GET /candidates/{id}/job-matches` (Use Case A)
+  - `GET /jobs/{id}/candidate-matches` (Use Case B)
+  - `GET /candidates/{id}/course-recommendations` (Use Case E)
+- `app/api/schemas.py`: Pydantic wire-format models, deliberately separate from the internal
+  matching dataclasses (which use sets for algebra, not JSON-safe sorted lists).
+- `app/api/deps.py`: DB session dependency (`get_db`, yield/close pattern) + `require_api_key` —
+  static API key via `X-API-Key` header, env `JME_API_KEY`, timing-safe comparison
+  (`secrets.compare_digest`), documented local-dev default. Applied to all matching routes via
+  router-level `dependencies=[...]`; `/health`/`/readiness` stay open.
+- `ValueError`s already raised by `rank.py`/`course_recommendations.py` for unknown ids translated
+  to HTTP 404 at the route boundary, not re-implemented.
+- `docker/Dockerfile.api` updated to also copy `app/matching/` and
+  `app/ingestion/{__init__.py,source_models.py}` — no new pip dependencies needed (matching logic
+  only needs SQLAlchemy, already in `requirements-base.txt` per ADR 0001). Image size barely moved
+  (289MB → 290MB).
+- `docs/security-and-threat-model.md` written: what the API-key auth protects against, what it
+  doesn't (no rate limiting, no TLS, no per-caller identity), secrets-handling note, explicit
+  deferral of dependency/image scanning to Phase 8.
+- New assumption A9 recorded in `docs/assumptions-register.md`: a single static API key is the
+  honest MVP for this single-tenant project; upgrade trigger is the same as A7 (any shared/
+  deployed environment).
+- 6 new auth-boundary tests (`tests/api/test_auth.py`) — 53 tests total, all passing. DB-touching
+  route behavior verified manually against the live database instead (consistent with the
+  project's established pattern), not via DB test fixtures.
+- **Verified against the real running stack** (not just unit tests): rebuilt and restarted the
+  `api` container against the already-seeded `db` container; confirmed over real `curl` calls —
+  401 with no key, 401 with a wrong key, real ranked job matches (with correct skill-gap/
+  explanation output) for a real candidate, real candidate matches for a real job, real course
+  recommendations, and a 404 for a nonexistent candidate id.
+- `docs/matching-engine.md` updated with the new "Exposed via API" section and endpoint table.
+
+### Explicitly deferred
+- OAuth2/JWT, per-caller identity, rate limiting, TLS — not needed for a local single-tenant
+  project yet; see `docs/security-and-threat-model.md` known gaps.
+- Request-body endpoints (e.g. ad-hoc free-text search) — not part of this phase's scope.
+- Dependency/image vulnerability scanning — Phase 8, per `docs/requirements.md`.
+
+### Phase 6 — status: COMPLETE
+
+### Next
+Remaining phases to finish the full end-to-end architecture, per the original brief and
+`docs/prd.md`'s phase references: Phase 7 (portability — clean-checkout/disconnected deployment
+validation), Phase 8 (CI/CD + dependency/image scanning), Phase 9 (performance/observability —
+including the N+1 query fix and full-population evaluation this unblocks), Phase 10 (offline
+deployment validation), Phase 11 (cloud/Azure decision), Phase 12 (Kubernetes), Phase 13
+(production-readiness gap assessment). Scoring-weight comparison and Use Case C remain deferred
+per the user's explicit instruction above until the phase plan is finished.

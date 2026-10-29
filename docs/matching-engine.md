@@ -94,6 +94,31 @@ of the generator's intentionally-injected *tangential* course skills, not its su
 scoring correctly discounting a weak/secondary match relative to a course centered on the actual
 gap skill — not a bug, a demonstration of the formula working on realistically noisy data.
 
+## Exposed via API (Phase 6)
+
+All three ranking/recommendation entry points (`rank_jobs_for_candidate`,
+`rank_candidates_for_job`, `recommend_courses_for_candidate`) are now reachable over HTTP, with no
+business logic duplicated in the route layer — `app/api/routes.py` only translates between the
+internal dataclasses and the wire-format Pydantic schemas (`app/api/schemas.py`):
+
+| Endpoint | Use Case |
+|---|---|
+| `GET /candidates/{id}/job-matches?top_k=&include_ineligible=` | A |
+| `GET /jobs/{id}/candidate-matches?top_k=&include_ineligible=` | B |
+| `GET /candidates/{id}/course-recommendations?top_k=` | E |
+
+All require the `X-API-Key` header (see `docs/security-and-threat-model.md`). A nonexistent
+candidate/job id returns 404 (the existing `ValueError`s from `rank.py`/`course_recommendations.py`
+translated at the route boundary, not duplicated validation).
+
+**Verified against the live seeded database** (not just unit tests): built the updated
+`docker/Dockerfile.api` (now also copying `app/matching/` and
+`app/ingestion/{__init__.py,source_models.py}` — no new pip dependencies, image size barely moved,
+289MB → 290MB), started it against the running `db` container, and confirmed over real `curl`
+calls: 401 with no/wrong key, real ranked job matches with real explanations for candidate 1
+(including a correctly-detected missing-required-skills case), real candidate matches for a job,
+real course recommendations, and a 404 for a nonexistent candidate id.
+
 ## Known limitations (v0.1)
 
 - **N+1 queries**: `load_all_job_profiles`/`load_all_candidate_profiles` issue one query per row.

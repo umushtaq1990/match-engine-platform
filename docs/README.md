@@ -22,11 +22,15 @@ update it whenever a doc is added, renamed, or removed.
 
 ## Matching engine
 - [matching-engine.md](matching-engine.md) — scoring formula, eligibility rules, skill-gap logic,
-  verified results, known limitations (Phase 3 MVP)
+  verified results, known limitations (Phase 3 MVP), API exposure (Phase 6)
 
 ## Evaluation
 - [evaluation-strategy.md](evaluation-strategy.md) — ground-truth design, metrics, measured
   baseline results, known limitations (Phase 4)
+
+## Security
+- [security-and-threat-model.md](security-and-threat-model.md) — API authN/authZ approach, what
+  it does/doesn't protect against, secrets handling, known gaps (Phase 6)
 
 ## Operations
 - [hardware-inventory.md](hardware-inventory.md) — measured dev machine specs and sizing
@@ -43,7 +47,6 @@ below): each is written when its phase produces something real to document, not 
 - `infrastructure-sizing.md` — CPU/RAM/storage/network sizing methodology and scenarios (Phase 9).
   Absorbs `hardware-inventory.md` as its measured baseline input, and a cost section absorbs what
   would otherwise be a separate `cost-model.md` (cost is derived directly from sizing)
-- `security-and-threat-model.md` (Phase 6/8)
 - `deployment-runbook.md` (Phase 7), `offline-deployment.md` (Phase 10),
   `monitoring-and-alerting.md` (Phase 9), `backup-and-recovery.md` (Phase 9/13) — merged into
   `production-readiness.md` instead of kept standalone if any of them end up thin
