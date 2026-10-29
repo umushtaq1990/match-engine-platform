@@ -6,11 +6,12 @@ weights and evaluate ranking quality").
 
 Run with: python -m app.evaluation.run_evaluation
 
-Sample size is capped (default 50), not the full candidate population —
-documented, measured reason: rank_jobs_for_candidate costs ~2s/candidate due
-to the known N+1 query limitation in app/matching/profiles.py (see
-docs/matching-engine.md). Full-population evaluation is a Phase 9 follow-up
-once that's optimized, not attempted here.
+Sample size defaults to the full candidate population (2000) now that the
+N+1 query limitation in app/matching/profiles.py is fixed (Phase 9):
+rank_jobs_for_candidate dropped from ~1.95s/candidate to ~0.06s/candidate
+(measured), making a ~50-candidate sample unnecessary caution rather than a
+real constraint. candidate_ids is still sliced by sample_size, so passing a
+smaller value (e.g. for a fast local smoke-check) still works.
 
 Tracking split (deliberate, not duplicated): MLflow tracks run-level
 params/aggregate metrics (a browsable, comparable experiment history across
@@ -39,7 +40,7 @@ from app.matching.scoring import WEIGHTS
 logger = logging.getLogger(__name__)
 
 DEFAULT_K = 10
-DEFAULT_SAMPLE_SIZE = 50
+DEFAULT_SAMPLE_SIZE = 2000  # full candidate population; see module docstring
 MLFLOW_EXPERIMENT_NAME = "jme-matching"
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
 

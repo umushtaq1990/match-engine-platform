@@ -411,10 +411,50 @@ runner.
 
 ### Phase 8 — status: COMPLETE (verified green: https://github.com/umushtaq1990/match-engine-platform/actions/runs/40942700618)
 
+## Phase 9 — N+1 query fix + full-population evaluation (2026-10-29)
+
+### Done
+- `app/matching/profiles.py`: `load_all_job_profiles`/`load_all_candidate_profiles` rewritten from
+  one-query-per-row (N+1: 1001/2001 queries) to batch-loading — all entities in one query, all
+  their child skill rows in one more query, grouped in memory. 2-3 queries total regardless of row
+  count. `load_job_profile`/`load_candidate_profile` (single-entity lookups, used elsewhere)
+  unchanged.
+- **Correctness verified, not assumed**: compared the batch loaders' output against the original
+  (unchanged) single-entity loaders for a 25-row sample of each — 0 mismatches.
+- **Measured, not estimated**: `rank_jobs_for_candidate` dropped from ~1.95s/candidate (Phase 4's
+  measurement) to ~0.06s/candidate — a ~33x speedup. Rebuilt `docker/Dockerfile.api` (profiles.py
+  ships in it) and confirmed real API response times dropped from ~2s to ~0.3s per call.
+- **Full-population evaluation run** (the thing this fix unblocked): all 1,899 eligible candidates
+  (not the Phase 4 sample of 50), completing in ~2m25s. Results: Precision@10=0.4878,
+  Recall@10=0.7625, NDCG@10=0.7461, MRR=0.8032 — close to the Phase 4 sample's numbers (largest
+  gap: Precision@10, 0.47 vs. 0.4878), a useful confirmation the small sample wasn't misleading.
+  Verified persisted correctly in both Postgres (`evaluation_runs` run #1 — fresh table, see
+  below) and MLflow (`eval-run-1`, status `FINISHED`).
+- `app/evaluation/run_evaluation.py`'s `DEFAULT_SAMPLE_SIZE` changed from 50 to 2000 (full
+  population) — the Phase 4 cap is no longer a necessary compromise.
+- `docs/matching-engine.md`, `docs/evaluation-strategy.md`, `app/matching/rank.py` all updated to
+  reflect the fix and the new measured numbers, replacing the old N+1/sample-of-50 caveats.
+
+### Note on MLflow/Postgres run numbering
+Phase 7's fresh-volume teardown (`docker compose down -v`) wiped the `mlflow` Postgres database and
+`evaluation_runs` table along with everything else — expected and correct (that's what a volume
+wipe means), so this phase's run is legitimately "run #1" again in both systems, not a data-loss
+bug. Noted here only so the run numbering in this log doesn't look inconsistent at a glance.
+
+### Explicitly not done in this phase
+- Observability (Prometheus/Grafana, per `docs/prd.md`'s Phase 9 reference) — not built yet. The
+  N+1 fix and full-population evaluation were the concrete, measurable performance item; metrics/
+  dashboards are a separate follow-up before this phase is fully closed out.
+- Load testing / p50/p95/p99 latency measurement (assumption A6) — single-call timing was
+  measured, not concurrent load. Still a placeholder per A6.
+
+### Phase 9 — status: PARTIAL (performance fix + full-population eval done; observability/load
+testing not yet started)
+
 ### Next
 Remaining phases to finish the full end-to-end architecture, per the original brief and
-`docs/prd.md`'s phase references: Phase 9 (performance/observability — including the N+1 query fix
-and full-population evaluation this unblocks), Phase 10 (offline deployment validation), Phase 11
-(cloud/Azure decision), Phase 12 (Kubernetes), Phase 13 (production-readiness gap assessment).
-Scoring-weight comparison, Use Case C, and domain-model genericization all remain deferred per
-explicit user instruction until the phase plan is finished.
+`docs/prd.md`'s phase references: finish Phase 9 (Prometheus/Grafana observability, load testing),
+Phase 10 (offline deployment validation), Phase 11 (cloud/Azure decision), Phase 12 (Kubernetes),
+Phase 13 (production-readiness gap assessment). Scoring-weight comparison, Use Case C, and
+domain-model genericization all remain deferred per explicit user instruction until the phase plan
+is finished.

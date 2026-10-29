@@ -1,7 +1,7 @@
-# Evaluation Strategy (Phase 4)
+# Evaluation Strategy (Phase 4, full-population update Phase 9)
 
-Status: v0.1, implemented and run once — baseline established, not yet used to compare
-alternatives (that's the next step, not done here).
+Status: v0.2, full-population baseline established (1,899 candidates) — not yet used to compare
+alternatives (deferred by explicit user instruction, see `docs/progress.md`).
 
 ## Why this exists before any ML/embedding work
 
@@ -32,12 +32,14 @@ tests): Precision@K, Recall@K, NDCG@K, Mean Reciprocal Rank (MRR, averaged acros
 
 ## Sample size — measured, not guessed
 
-Before picking a sample size, actual per-candidate ranking latency was measured: **~1.95s per
-candidate** (5-candidate timing test), consistent with the already-documented N+1 query
-limitation in `app/matching/profiles.py`. Evaluating the full 1,899 eligible candidates would take
-over an hour — not reasonable for this phase. Evaluation runs against a **deterministic sample of
-50** (lowest 50 candidate IDs with usable ground truth), not the full population. Full-population
-evaluation is a Phase 9 follow-up, once the N+1 query cost is addressed — not attempted now.
+Phase 4's first measurement: **~1.95s per candidate** (5-candidate timing test), consistent with
+the then-undiagnosed N+1 query limitation in `app/matching/profiles.py`. Evaluating the full 1,899
+eligible candidates would have taken over an hour, so Phase 4 ran against a sample of 50 instead.
+
+**Phase 9 update**: the N+1 limitation is fixed (batch-loading instead of one query per row — see
+`docs/matching-engine.md`), dropping per-candidate latency to ~0.06s. Full-population evaluation
+(all 1,899 eligible candidates) now completes in ~2m25s and is the default (`DEFAULT_SAMPLE_SIZE`
+in `run_evaluation.py`); the 50-candidate cap from Phase 4 is no longer necessary.
 
 ## Results storage
 
@@ -65,35 +67,39 @@ concluding this). Fixed using MLflow's own supported suppression flag
 (`MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT`), not a workaround; the stuck run was deleted via the
 MLflow API once the fix was confirmed on a clean re-run.
 
-## Baseline result (run #1, measured, 2026-10-29)
+## Baseline results
 
-| Metric | Value |
-|---|---|
-| k | 10 |
-| Sample size | 50 (of 1,899 eligible; 101 candidates excluded — no `primary_occupation_id`) |
-| Config | `skill=0.55, location=0.15, salary=0.15, occupation=0.15` |
-| Precision@10 | 0.47 |
-| Recall@10 | 0.7458 |
-| NDCG@10 | 0.7283 |
-| MRR | 0.8029 |
+| Metric | Phase 4 (sample of 50) | Phase 9 (full population, 1,899) |
+|---|---|---|
+| k | 10 | 10 |
+| Config | `skill=0.55, location=0.15, salary=0.15, occupation=0.15` | same |
+| Precision@10 | 0.47 | 0.4878 |
+| Recall@10 | 0.7458 | 0.7625 |
+| NDCG@10 | 0.7283 | 0.7461 |
+| MRR | 0.8029 | 0.8032 |
 
-**Reading these honestly**: Recall@10 of 0.75 and MRR of 0.80 indicate the ranking generally
+The full-population numbers are close to the 50-candidate sample (largest gap: Precision@10, 0.47
+vs. 0.4878) — a useful confirmation that the Phase 4 sample, while small, wasn't misleading. The
+full run is still the one future weight-comparison work should use, now that it's cheap enough to
+be the default rather than a documented compromise.
+
+**Reading these honestly**: Recall@10 of ~0.76 and MRR of ~0.80 indicate the ranking generally
 surfaces occupation-aligned jobs near the top — expected, since occupation is one of the four
-scored components. Precision@10 of 0.47 means on average fewer than half of the top-10
-recommended jobs are occupation-aligned; the rest are jobs the system ranked highly on
-skill/location/salary despite a different occupation. Whether that's desirable (surfacing
-adjacent/transferable opportunities) or a weakness (diluting relevance) is exactly the kind of
-question this harness is built to let us investigate by comparing alternative weight
-configurations — not resolved here, since no comparison has been run yet.
+scored components. Precision@10 of ~0.49 means on average about half of the top-10 recommended
+jobs are occupation-aligned; the rest are jobs the system ranked highly on skill/location/salary
+despite a different occupation. Whether that's desirable (surfacing adjacent/transferable
+opportunities) or a weakness (diluting relevance) is exactly the kind of question this harness is
+built to let us investigate by comparing alternative weight configurations — still not resolved
+here, since no comparison has been run yet (explicitly deferred, see `docs/progress.md`).
 
 ## Known limitations
 
-- Sample of 50, not the full population (see above).
 - Ground truth is occupation-only — ignores skill gaps and salary/location fit entirely. A
   candidate could be marked "relevant" for a job they're a poor fit for on every other dimension.
 - No test coverage yet for `ground_truth.py`/`run_evaluation.py` themselves beyond manual
   verification against the real database (consistent with how `data_quality.py` and `rank.py`
   were verified — pure logic gets unit tests, DB-touching orchestration gets verified by
   inspecting real output, not a DB test fixture).
-- This is run #1 — a baseline, not yet used to compare alternative scoring weights. That
-  comparison is the natural next step, not done in this phase.
+- No scoring-weight comparison has been run yet — explicitly deferred (user's call) until the
+  remaining architecture phases are finished first. The harness (and now full-population
+  evaluation) is ready for it whenever that happens.

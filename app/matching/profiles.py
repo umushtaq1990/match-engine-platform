@@ -116,13 +116,77 @@ def load_job_profile(session: Session, job_id: int) -> JobProfile | None:
 
 
 def load_all_job_profiles(session: Session) -> list[JobProfile]:
-    job_ids = session.execute(select(Job.id)).scalars().all()
-    return [load_job_profile(session, jid) for jid in job_ids]
+    """Batch-loaded version of load_job_profile for every job (Phase 9 fix).
+
+    Previously issued one query per job (N+1) via load_job_profile in a loop
+    — fine at this dataset's size but a documented bottleneck at scale (see
+    docs/matching-engine.md). Now 2 queries total regardless of job count:
+    all jobs, then all job_skills, grouped in memory.
+    """
+    jobs = session.execute(select(Job)).scalars().all()
+
+    skill_rows = session.execute(
+        select(JobSkill.job_id, JobSkill.skill_id, JobSkill.requirement_level)
+    ).all()
+    required_by_job: dict[int, set[int]] = {}
+    preferred_by_job: dict[int, set[int]] = {}
+    for job_id, skill_id, level in skill_rows:
+        target = required_by_job if level == RequirementLevel.required else preferred_by_job
+        target.setdefault(job_id, set()).add(skill_id)
+
+    return [
+        JobProfile(
+            id=job.id,
+            title=job.title,
+            company_name=job.company_name,
+            required_skill_ids=required_by_job.get(job.id, set()),
+            preferred_skill_ids=preferred_by_job.get(job.id, set()),
+            location_city=job.location_city,
+            location_region=job.location_region,
+            salary_min=job.salary_min,
+            salary_max=job.salary_max,
+            occupation_id=job.occupation_id,
+        )
+        for job in jobs
+    ]
 
 
 def load_all_candidate_profiles(session: Session) -> list[CandidateProfile]:
-    candidate_ids = session.execute(select(Candidate.id)).scalars().all()
-    return [load_candidate_profile(session, cid) for cid in candidate_ids]
+    """Batch-loaded version of load_candidate_profile for every candidate
+    (Phase 9 fix) — same rationale as load_all_job_profiles above: 3 queries
+    total instead of 1+2N.
+    """
+    candidates = session.execute(select(Candidate)).scalars().all()
+
+    skill_rows = session.execute(select(CandidateSkill.candidate_id, CandidateSkill.skill_id)).all()
+    skills_by_candidate: dict[int, set[int]] = {}
+    for candidate_id, skill_id in skill_rows:
+        skills_by_candidate.setdefault(candidate_id, set()).add(skill_id)
+
+    absent_rows = session.execute(
+        select(CandidateSkillAssessment.candidate_id, CandidateSkillAssessment.skill_id).where(
+            CandidateSkillAssessment.result == AssessmentResult.absent
+        )
+    ).all()
+    absent_by_candidate: dict[int, set[int]] = {}
+    for candidate_id, skill_id in absent_rows:
+        absent_by_candidate.setdefault(candidate_id, set()).add(skill_id)
+
+    return [
+        CandidateProfile(
+            id=c.id,
+            full_name=c.full_name,
+            skill_ids=skills_by_candidate.get(c.id, set()),
+            confirmed_absent_skill_ids=absent_by_candidate.get(c.id, set()),
+            location_city=c.location_city,
+            location_region=c.location_region,
+            desired_salary_min=c.desired_salary_min,
+            desired_salary_max=c.desired_salary_max,
+            primary_occupation_id=c.primary_occupation_id,
+            years_experience=c.years_experience,
+        )
+        for c in candidates
+    ]
 
 
 def load_occupation_skill_profile(session: Session, occupation_id: int) -> dict[int, float]:

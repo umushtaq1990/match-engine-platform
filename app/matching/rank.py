@@ -5,11 +5,12 @@ Both directions reuse the same eligibility + scoring + skill-gap logic
 varies" loop differs. This is the one module that talks to the database
 directly (via profiles.py loaders), tying the pure logic above to real data.
 
-Known performance limitation (documented, not hidden): load_all_job_profiles
-/ load_all_candidate_profiles issue one query per row (N+1), fine for the
-Phase 2 dataset size (1000 jobs / 2000 candidates) but a real bottleneck at
-larger scale — a batch-query rewrite is a Phase 9 performance task, not done
-here to avoid premature optimization before it's measured as a problem.
+load_all_job_profiles/load_all_candidate_profiles used to issue one query
+per row (N+1 — fine at this dataset's size, but a real bottleneck at
+larger scale). Fixed in Phase 9: both now batch-load in a small, fixed
+number of queries regardless of row count — measured ~1.95s/candidate
+down to ~0.06s/candidate for a full rank_jobs_for_candidate call. See
+docs/matching-engine.md for the measured before/after.
 """
 from dataclasses import dataclass, field
 

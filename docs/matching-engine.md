@@ -119,12 +119,20 @@ calls: 401 with no/wrong key, real ranked job matches with real explanations for
 (including a correctly-detected missing-required-skills case), real candidate matches for a job,
 real course recommendations, and a 404 for a nonexistent candidate id.
 
+## Performance fix — N+1 queries (Phase 9)
+
+`load_all_job_profiles`/`load_all_candidate_profiles` used to issue one query per row (1000+1 /
+2000+1 queries). Fixed by batch-loading each entity table plus its child skill tables in 2-3
+queries total, then grouping in memory — same output, verified against the original single-entity
+loaders (`load_job_profile`/`load_candidate_profile`, left unchanged) with zero mismatches across a
+25-row sample of each.
+
+**Measured, not estimated**: `rank_jobs_for_candidate` dropped from ~1.95s/candidate (Phase 4's
+measurement, which forced a 50-candidate evaluation sample) to ~0.06s/candidate — a ~33x speedup.
+This is what unblocked full-population evaluation (see `docs/evaluation-strategy.md`).
+
 ## Known limitations (v0.1)
 
-- **N+1 queries**: `load_all_job_profiles`/`load_all_candidate_profiles` issue one query per row.
-  Fine for this dataset size (1000 jobs / 2000 candidates load in under a second), but a real
-  bottleneck at larger scale. Documented as a Phase 9 performance task — not optimized now,
-  before it's measured as an actual problem.
 - **No qualification compatibility** (see above).
 - **No semantic/embedding-based matching** — occupation similarity is exact-match-only (1.0/0.0),
   not "related occupations." Per the brief's instruction to introduce embeddings only once a
