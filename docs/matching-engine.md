@@ -1,8 +1,9 @@
-# Matching Engine (Phase 3 MVP)
+# Matching Engine (Phase 3 MVP + follow-ups, exposed via API in Phase 6)
 
-Status: v0.1, implemented and verified against real seeded data. Covers Use Cases A, B, D from
-`docs/prd.md`. Use Cases C (free-text extraction), E (course recommendations), and F (similarity
-search) are deliberately not part of this slice — separate follow-up work, not crammed in here.
+Status: v0.3, implemented and verified against real seeded data. Covers Use Cases A, B, D (Phase 3
+MVP) and E (Phase 3 follow-up — course recommendations, added below). Use Cases C (free-text
+extraction) and F (similarity search) remain deliberately deferred — see
+`docs/assumptions-register.md` A5b and `docs/progress.md`.
 
 ## Design principle: pure logic, thin DB adapter
 

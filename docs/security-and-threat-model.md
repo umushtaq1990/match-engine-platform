@@ -1,7 +1,8 @@
-# Security & Threat Model (Phase 6)
+# Security & Threat Model (Phase 6, updated Phase 8)
 
-Status: v0.1 — covers what Phase 6 (API wiring) introduces. Dependency/image scanning is a
-separate, not-yet-built Phase 8 deliverable (see `docs/requirements.md`).
+Status: v0.2 — covers API authN/authZ (Phase 6) and dependency/image scanning (Phase 8, added
+below). Security-relevant gaps found in later phases are cross-referenced, not duplicated — see
+`docs/production-readiness.md` for the consolidated view.
 
 ## Scope of this document
 

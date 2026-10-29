@@ -75,8 +75,11 @@ stored rows rather than only checking the Python-side print output — a concret
 ## Known limitations / not yet built
 
 - Thresholds are not yet calibrated against any ground truth — they're reasonable starting points.
-- No alerting/notification on fail status yet (would wire into Phase 9 monitoring).
-- No dashboard yet — results are queryable in Postgres now; a Grafana panel or simple internal
-  view over `data_quality_runs`/`data_quality_check_results` is a Phase 9 deliverable.
+- No alerting/notification on fail status — Phase 9 added Prometheus/Grafana, but only for API
+  latency/error-rate/CPU/RAM (`docs/observability.md`), not data-quality results, and Alertmanager
+  was never wired up for any signal. Still an open gap, not just a future-phase placeholder.
+- No dashboard for data-quality results specifically — results are queryable in Postgres
+  (`data_quality_runs`/`data_quality_check_results`); Phase 9's Grafana dashboard covers API
+  metrics only, a data-quality panel was never added to it.
 - Duplicate-job detection intentionally not implemented as a hard check: multiple postings for
   the same role/company are normal, not a quality defect, so it wasn't included as a check.

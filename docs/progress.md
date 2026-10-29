@@ -516,12 +516,6 @@ honest deliverable. Recorded as the resolution to assumption A1 in `docs/assumpt
 
 ### Phase 10 — status: COMPLETE
 
-### Next
-Remaining phases to finish the full end-to-end architecture: Phase 11 (cloud/Azure decision — now
-resolved above), Phase 12 (Kubernetes, local-only per that decision), Phase 13 (production-
-readiness gap assessment). Scoring-weight comparison, Use Case C, and domain-model genericization
-all remain deferred per explicit user instruction until the phase plan is finished.
-
 ## Phase 11 — Cloud/Azure decision (2026-10-29)
 
 ### Decision

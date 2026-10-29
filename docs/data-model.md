@@ -1,7 +1,8 @@
 # Data Model — JME Portfolio Platform
 
-Status: v0.1, implemented and verified. Schema lives in `app/models.py`, managed via Alembic
-(`alembic/versions/`). Generator: `app/generate_synthetic_data.py`.
+Status: v0.2, implemented and verified. Schema lives in `app/ingestion/source_models.py`, managed
+via Alembic (`alembic/versions/`). Generator: `app/ingestion/generate_synthetic_data.py` (paths
+updated after the Phase 2 follow-up restructuring into `app/ingestion/`/`app/api/` — see ADR 0001).
 
 ## Entity-relationship summary
 
@@ -88,12 +89,18 @@ matching system becomes trivial."
 
 ## Known limitations / not yet modeled
 
-- No duplicate-candidate or duplicate-job detection logic yet (Phase 2 follow-up: data-quality
-  checks module).
-- No explicit candidate qualifications/certifications table yet — qualification compatibility
-  (Use Case A/B) will need this added before Phase 3 scoring is complete.
-- No interaction/application history table yet (optional, only if collaborative-filtering course
-  recommendations are pursued in Phase 5+).
+- ~~No duplicate-candidate or duplicate-job detection logic yet~~ **RESOLVED (Phase 2 follow-up)**:
+  `data_quality.py`'s `duplicate_candidate_emails`/`duplicate_candidate_identity` checks cover
+  this — see `docs/data-quality.md`.
+- No explicit candidate qualifications/certifications table — **not a pending gap, a permanent
+  design choice**: `app/matching/scoring.py` deliberately omits qualification compatibility from
+  the scoring formula entirely (weights renormalized over the four components that do exist)
+  rather than faking it with a placeholder, documented explicitly in that module and in
+  `docs/matching-engine.md`. Would only change if a real qualifications data source existed to
+  model.
+- No interaction/application history table (optional, only relevant if collaborative-filtering
+  course recommendations are ever pursued — not scheduled in any phase).
 - `job_skills` requirement coverage is derived from the job's occupation profile, not from parsing
-  `description_raw` — free-text skill extraction (Use Case C) is a separate, not-yet-built
-  pipeline that will eventually re-derive or augment these rows from the description text.
+  `description_raw` — free-text skill extraction (Use Case C) remains a separate, deferred
+  pipeline (assumption A5b) that would eventually re-derive or augment these rows from the
+  description text.

@@ -1,8 +1,10 @@
 # Product Requirements Document — Job Matching Engine (JME) Portfolio Platform
 
-Status: Draft v0.1
+Status: v1.0 — all 13 phases of the implementation plan complete (see `docs/progress.md`); this
+PRD's own Definition of Done (Section 9) and Open Questions (Section 10) updated to reflect what
+was actually built vs. deferred, not left as the original draft's unchecked boxes
 Owner: Usman (independent portfolio project)
-Last updated: 2026-10-28
+Last updated: 2026-10-29
 
 ## 1. Problem Statement
 
@@ -96,7 +98,7 @@ of known limitations.
 - Generation is deterministic (fixed seed), with intentional data-quality issues so the matching
   system has real signal to work with (not a trivial dataset).
 - Full schema and generation methodology documented separately in `docs/data-model.md` (Phase 2
-  deliverable, not yet written).
+  deliverable).
 
 ## 9. Success Criteria / Definition of Done (v1)
 
@@ -126,19 +128,22 @@ Security:
 - [ ] Remaining security gaps explicitly documented, not silently skipped
 
 Architecture:
-- [ ] Architecture diagrams and ADRs exist for major decisions
-- [ ] Infrastructure sizing is backed by measurements, with estimates clearly labeled as such
+- [~] Architecture diagrams and ADRs exist for major decisions (ADR 0001 exists for the
+  ingestion/migrate/api decoupling decision; no dedicated `architecture.md` with system-context/
+  deployment diagrams was ever written — still listed as "not yet created" in `docs/README.md`.
+  Real gap: every architecture doc that exists is the per-phase narrative in `docs/progress.md`
+  plus module-specific docs, not one consolidated arc42-style view)
+- [~] Infrastructure sizing is backed by measurements, with estimates clearly labeled as such
+  (measurements exist and are real — `docs/hardware-inventory.md`, image sizes throughout
+  `docs/progress.md`, load test numbers in `docs/production-readiness.md` — but scattered across
+  docs, not consolidated into one `infrastructure-sizing.md` as originally planned)
 
 ## 10. Open Questions / Assumptions Needing Validation
 
-(tracked in detail in `docs/assumptions-register.md`, not yet written)
-
-- Azure access: undecided — design local-first, revisit at Phase 11.
-- Synthetic dataset scale (candidate/job counts) for v1: not yet fixed — to decide at Phase 2.
-- Whether a local LLM is used at all in v1, or deferred entirely in favor of rule-based skill
-  extraction: lean toward deferring LLM use until rule-based approach is proven insufficient, per
-  project ground rule "introduce embedding/LLM-based extraction only when it offers measurable
-  value."
+Tracked in full, and resolved as the project progressed, in `docs/assumptions-register.md` — see
+that file for the authoritative current state of every assumption (A1–A9), including which have
+been resolved (Azure: A1, dataset scale: A4, dev secrets: A7, load testing: A6 partial) and which
+remain genuinely open (LLM/embedding use for Use Case C: still deferred per A5b, not yet built).
 
 ## 11. Non-Goals
 
