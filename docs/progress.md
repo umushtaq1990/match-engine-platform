@@ -802,3 +802,89 @@ justify it), a real 100,000-job stress test (architecture designed for it, only 
 Qdrant migration (not triggered — no measured pgvector limitation exists).
 
 ### Phase 17 — status: v1 COMPLETE (measured comparison done; embeddings-based path is additive, not default)
+
+## Phase 18 — Closing the practically closeable production-readiness gaps (2026-10-30)
+
+In response to "anything missing, do we need Redis?" — audited `docs/production-readiness.md`'s
+gap list, separated genuine engineering gaps from deliberate scope boundaries (real secrets
+manager, TLS, OAuth2/JWT, real Azure deployment — none of which this project needs to fake or pay
+for), and closed every practically closeable one: automated DB-touching tests, backup/restore,
+Use Case C/F tuning, a soak test, and basic rate limiting. Redis specifically: not needed as a new
+standalone decision — but this phase's own rate-limiting work produced the first *measured* case
+where it would actually help (see below), turning an abstract "maybe someday" into a concrete,
+documented trigger.
+
+**1. Automated tests for `rank.py` orchestration and route-level API behavior** (previously zero,
+verified only manually):
+- `tests/conftest.py`'s `matching_db_session` fixture wraps a whole test in one real Postgres
+  transaction via `join_transaction_mode="create_savepoint"` — verified *before* trusting it
+  against the real seeded dataset, not assumed: a disposable-table test proved a commit-then-
+  rollback cycle left a fresh connection seeing only the pre-existing row, never the test's.
+- 11 new tests (`tests/matching/test_rank_db.py`, `tests/api/test_routes_db.py`) with hand-computed
+  expected scores (e.g. `0.55*0.7 + 0.15*1 + 0.15*1 + 0.15*1 = 0.835`), not just "it returns
+  something" — covering eligible/ineligible filtering, ranking order, skill-gap content, and 404s
+  at both the orchestration and HTTP layers.
+- CI's `lint-and-test` job now runs a live `pgvector/pgvector:0.8.7-pg16` service container and
+  real Alembic migrations, so these aren't locally-only — verified end-to-end first against a
+  disposable throwaway database before trusting the CI config.
+- Confirmed the real seeded dataset (2000 candidates, 1000 jobs, etc.) survived every test run
+  unchanged.
+
+**2. Backup/restore for Postgres** (previously nonexistent):
+- `scripts/backup_db.sh` / `scripts/restore_db.sh` (`pg_dump -Fc` / `pg_restore`, both databases:
+  `jme` and `mlflow`). `docs/backup-and-recovery.md` written with a real verified cycle: backed up
+  the real dev database, restored into a disposable target (never risking the real one), and
+  confirmed exact row-count matches across core, derived, and cross-schema tables, plus the
+  pgvector extension and its HNSW index surviving the restore intact.
+- Found and fixed a real one-time local issue along the way: `template1`'s collation version was
+  still mismatched from the Phase 17 image swap, blocking `CREATE DATABASE` until refreshed —
+  irrelevant to CI/fresh checkouts, which always create a new volume.
+
+**3. Use Case C/F tuning** (the actual "get better scores" step both v1 baselines deferred):
+- **Extraction (C)**: threshold sweep (0.45/0.50/0.55/0.60/0.65) confirmed the original 0.55 was
+  already best (F1 0.504) — the baseline held up under scrutiny rather than being revised on a
+  hunch. LLM comparison: `qwen2.5:1.5b` vs. `llama3.2:1b` at that threshold scored F1 0.60–0.66 vs.
+  0.504 (recall improving most, 0.60–0.68 vs. 0.447), while also being smaller on disk (986MB vs.
+  1.3GB). Promoted as the new default (`app/extraction/pipeline.py`), re-verified against the live
+  `/extract` endpoint.
+- **Embeddings (F)**: compared `all-minilm` (v1 production default) against `nomic-embed-text` on
+  the 12-pair near-miss set — **the smaller model won**: `all-minilm` cleanly separated every pair
+  (100% accuracy, clean similarity gap), while `nomic-embed-text`'s similar/dissimilar ranges
+  actually *overlapped* (best achievable 92%, no single threshold separates all 12). `all-minilm`
+  stays the production default by measurement, confirming rather than overturning the original
+  choice — itself a real result worth documenting, not a null one. A full ranking-level multi-model
+  comparison was scoped out (would need the ad-hoc brute-force path `docs/embedding-matching.md`
+  already anticipated, since different-width vectors can't share the production column) — not
+  built this pass, the near-miss result was decisive enough on its own.
+
+**4. Soak test** (previously only a short point-in-time load test): `scripts/load_test.py
+--soak-minutes` runs continuously and reports one summary per time window instead of one aggregate
+number — the only way to see a trend, not a snapshot. A real 3-minute run (concurrency=10, 30s
+windows) against the `--workers 4` fix from Phase 13 showed stable p50 (~0.17–0.18s) and throughput
+(~36–39 req/s) across windows 2–6, with window 1's elevated p99 (4.35s) a one-time cold-start
+effect, not a degradation trend. All 6,497 requests returned 200. Honestly scoped: 3 minutes rules
+out an immediate leak, not a slow one — a real soak test would run hours, not minutes.
+
+**5. Basic rate limiting** (previously none): `slowapi`/`limits`, in-memory, keyed by API key
+(falling back to source IP), added to all three live services (`api`, `analytics`, `extraction`),
+with `/health`/`/readiness` explicitly exempt. **A real limitation found by testing, not assumed
+away**: `api` runs 4 uvicorn worker processes (Phase 13), each with its own independent in-memory
+counter — a real test (150 rapid sequential requests, one key) let 122 through before 429s, not a
+clean 100, because the "global" limit is actually 4 uncoordinated per-process limits. **This is the
+first concrete, measured case in this project where Redis (a shared counter store) would provide
+real value**, turning the earlier "do we need Redis?" question from hypothetical into a documented,
+specific trigger — not fixed in v1, since `api`'s limit still meaningfully bounds abuse even if
+imprecise. Also found and fixed a related interaction bug before it shipped: `analytics`'s
+ingestion routes would have been rate-limited into silently dropping events under real load (a
+soak-test-measured ~2,280 instrumentation calls/minute blows past any reasonable numeric limit,
+and that endpoint doesn't raise on failure by its own best-effort design) — exempted instead,
+verified under a real 30-request burst that exactly 300 events (30×10) landed, zero dropped.
+
+**Explicitly not done in this phase**: real secrets manager, TLS, OAuth2/JWT/roles, real Azure
+deployment — all deliberate scope boundaries (would mean real cloud spend or inventing
+infrastructure for a user-model problem this project doesn't have), not oversights. An hours-long
+soak test, a message queue for the Ollama-calling paths, and a full cross-model ranking comparison
+for embeddings all remain explicitly deferred, each with a clear future trigger rather than a
+vague "someday."
+
+### Phase 18 — status: COMPLETE (all 5 practically closeable gaps closed; scope boundaries left as boundaries, not faked)

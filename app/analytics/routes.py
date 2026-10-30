@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.analytics.deps import DbSession, RequireApiKey
 from app.analytics.models import BehavioralEvent
+from app.analytics.rate_limit import limiter
 from app.analytics.schemas import EventBatchIn, EventIn, EventOut
 
 router = APIRouter(dependencies=[RequireApiKey])
@@ -35,6 +36,7 @@ def _to_out(row: BehavioralEvent) -> EventOut:
 
 
 @router.post("/events", response_model=EventOut, status_code=201)
+@limiter.exempt
 def ingest_event(event: EventIn, db: Session = DbSession):
     row = _to_row(event)
     db.add(row)
@@ -44,10 +46,19 @@ def ingest_event(event: EventIn, db: Session = DbSession):
 
 
 @router.post("/events/batch", response_model=list[EventOut], status_code=201)
+@limiter.exempt
 def ingest_events_batch(batch: EventBatchIn, db: Session = DbSession):
     """Used by the matching API's instrumentation hook, so N returned
     recommendation items cost one HTTP call, not N — see
     app/api/routes.py's `_log_recommendations_shown`.
+
+    Exempt from rate limiting (Phase 18): this is internal, best-effort
+    instrumentation traffic driven 1:1 by matching-API request volume, not
+    external caller behavior — a real soak test measured ~2,280 instrumentation
+    calls/minute under moderate matching-API load, which would blow past any
+    reasonable numeric limit and silently drop events (this endpoint doesn't
+    raise on failure by the caller's design — see app/api/analytics_client.py).
+    Rate limiting matters for caller-facing endpoints, not this one.
     """
     rows = [_to_row(e) for e in batch.events]
     db.add_all(rows)

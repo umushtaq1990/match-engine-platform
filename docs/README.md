@@ -49,6 +49,9 @@ update it whenever a doc is added, renamed, or removed.
   implications
 - [offline-deployment.md](offline-deployment.md) — air-gapped deployment bundle, verified
   end-to-end with zero network access (Phase 10)
+- [backup-and-recovery.md](backup-and-recovery.md) — `pg_dump`/`pg_restore` scripts, a real
+  verified backup -> restore cycle (row counts and the pgvector extension/index both confirmed
+  intact), known limitations (manual, no off-host storage)
 - [progress.md](progress.md) — running log of what's been done, phase by phase
 
 ## Behavioral analytics
@@ -64,16 +67,16 @@ update it whenever a doc is added, renamed, or removed.
 
 ## Skill extraction
 - [skill-extraction.md](skill-extraction.md) — Use Case C: hybrid LLM-extraction +
-  embedding-canonicalization pipeline, golden dataset (generator-injected + hand-authored),
-  extraction-accuracy metrics, MLflow/Postgres result storage, a real baseline measured and a
-  real bug found/fixed along the way (Phase 16, v1). Model/prompt tuning (v2) not yet done.
+  embedding-canonicalization pipeline, golden dataset, extraction-accuracy metrics, a real baseline
+  measured and tuned (F1 0.504 -> 0.60-0.66 after a real threshold sweep + LLM comparison,
+  `qwen2.5:1.5b` promoted as the new default) (Phase 16, tuned Phase 18, v2).
 
 ## Embedding matching
 - [embedding-matching.md](embedding-matching.md) — Use Case F groundwork: pgvector schema,
   multi-dimensional (skills/experience/overall) embeddings, the two-stage retrieve-then-score
-  architecture for scoring one candidate against 100,000+ jobs, invalidation, and the real measured
-  rule-based-vs-embeddings comparison (Phase 17, v1) — resolving assumption A5's deferred promise
-  since Phase 4.
+  architecture for scoring one candidate against 100,000+ jobs, invalidation, the real measured
+  rule-based-vs-embeddings comparison (resolving assumption A5's deferred promise since Phase 4),
+  and a real embedding-model comparison where the simpler model won (Phase 17, tuned Phase 18, v2).
 
 ## Not yet created — written just-in-time, not upfront
 
@@ -85,8 +88,8 @@ below): each is written when its phase produces something real to document, not 
 - `infrastructure-sizing.md` — CPU/RAM/storage/network sizing methodology and scenarios (Phase 9).
   Absorbs `hardware-inventory.md` as its measured baseline input, and a cost section absorbs what
   would otherwise be a separate `cost-model.md` (cost is derived directly from sizing)
-- `deployment-runbook.md` (Phase 7), `backup-and-recovery.md` — never built as standalone docs;
-  backup/restore is recorded as an open gap in `production-readiness.md` instead
+- `deployment-runbook.md` — never built as a standalone doc; `backup-and-recovery.md` was built
+  once there was something real to document (see Operations above)
 - `interview-preparation.md` (end of project)
 - A prioritized task backlog, a known-issues list, a benchmark-results directory (raw measured
   output — CSV/JSON, not prose), and a record of implemented/unimplemented security controls —

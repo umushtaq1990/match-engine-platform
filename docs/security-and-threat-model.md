@@ -39,10 +39,35 @@ analytics API directly, or the two services getting different exposure).
 **What this does NOT protect against**:
 - A single leaked key grants full access to every endpoint — no scoping, no per-caller
   differentiation, no revocation short of rotating the one key.
-- No rate limiting — a holder of the valid key can call endpoints as fast as the process allows.
 - No TLS termination at the API itself — assumes a reverse proxy / ingress would add TLS before
   any non-localhost exposure (not built, since there is no such exposure yet).
 - No audit log of who called what, when.
+
+## Rate limiting (Phase 18)
+
+Basic in-app rate limiting added to all three live services (`api`, `analytics`, `extraction`) via
+`slowapi`/`limits` — in-memory counters, keyed by the caller's `X-API-Key` (falling back to source
+IP), default 100 requests/minute. `/health` and `/readiness` are explicitly exempt — infrastructure
+health checks shouldn't compete with the limit real callers are rate-limited by.
+
+**A real limitation found by testing, not assumed away**: `api` runs 4 `uvicorn` worker processes
+(Phase 13's fix for CPU-bound scoring). Each worker keeps its own independent in-memory counter —
+the same class of bug Phase 13 found with Prometheus metrics under multiple workers. A real test
+(150 rapid sequential requests with one key) let **122** through before 429s started, not a clean
+100 — the effective limit is inflated and unevenly enforced across workers, not a true global
+limit. A correct fix needs a shared counter store (e.g. Redis) — this is the first concrete,
+*measured* case in this project where that tool would provide real value, not a hypothetical one
+(see `docs/production-readiness.md`). Not fixed in v1: `analytics` and `extraction` run a single
+worker each, so this specific issue doesn't affect them, and `api`'s limit — while imprecise — still
+meaningfully bounds abuse, just not to the exact configured number.
+
+**`analytics`'s ingestion routes (`/events`, `/events/batch`) are explicitly exempt**, not
+rate-limited at all: they're internal, best-effort instrumentation traffic driven 1:1 by
+matching-API request volume, not external caller behavior. A real soak test (`docs/
+production-readiness.md`) measured ~2,280 instrumentation calls/minute under moderate matching-API
+load — any numeric limit here would have silently dropped most events (this endpoint doesn't raise
+on failure by the caller's own design, see `app/api/analytics_client.py`), discovered by reasoning
+through the actual measured soak-test throughput before shipping, not after.
 
 ## Secrets handling
 
@@ -85,7 +110,8 @@ analytics API directly, or the two services getting different exposure).
 
 - No OAuth2/JWT, no per-caller identity — acceptable now (A9), revisit before any shared
   deployment.
-- No rate limiting.
+- Rate limiting added (Phase 18) but imprecise under `api`'s multiple worker processes — see
+  "Rate limiting" above for the measured gap and why a shared store (Redis) would fix it.
 - No TLS (local-only, no reverse proxy yet — Phase 7/10 portability work).
 - No dependency/image vulnerability scanning yet (Phase 8).
 - No secrets manager — env-var placeholders only (Phase 7+ per A7).

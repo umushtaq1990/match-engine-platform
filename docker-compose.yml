@@ -125,14 +125,22 @@ services:
       timeout: 5s
       retries: 5
 
-  # One-off job: pulls the two starting models (docs/model-serving.md) into
-  # the ollama_data volume. Idempotent — `ollama pull` is a no-op if the
-  # model is already present. Run explicitly: docker compose run --rm ollama-pull
+  # One-off job: pulls every model the live services actually use into the
+  # ollama_data volume. Idempotent — `ollama pull` is a no-op if the model is
+  # already present. Run explicitly: docker compose run --rm ollama-pull
+  #
+  # qwen2.5:1.5b — extraction LLM (promoted in Phase 18 over the original
+  #   llama3.2:1b after a measured comparison: F1 0.60-0.66 vs 0.504, smaller
+  #   on disk too — see docs/skill-extraction.md). llama3.2:1b itself is no
+  #   longer pulled by default; still reproducible via
+  #   `docker exec <ollama container> ollama pull llama3.2:1b` if needed.
+  # nomic-embed-text — extraction's skill-canonicalization embeddings (Phase 16)
+  # all-minilm — Phase 17's production entity-embedding model
   ollama-pull:
     image: ollama/ollama:0.40.13
     entrypoint: ["sh", "-c"]
     command:
-      - "ollama pull llama3.2:1b && ollama pull nomic-embed-text"
+      - "ollama pull qwen2.5:1.5b && ollama pull nomic-embed-text && ollama pull all-minilm"
     environment:
       OLLAMA_HOST: ollama:11434
     depends_on:

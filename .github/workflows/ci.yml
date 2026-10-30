@@ -7,8 +7,29 @@ on:
     branches: [main]
 
 jobs:
+  # A live Postgres service container, not just pure-logic tests: closes the
+  # "rank.py orchestration and route-level API behavior have zero automated
+  # tests" gap (docs/production-readiness.md) by actually running
+  # tests/matching/test_rank_db.py and tests/api/test_routes_db.py against a
+  # real database in CI, not just locally. pgvector-enabled because
+  # alembic/env.py imports app.embeddings.models, which needs the `vector`
+  # extension to exist before migrations can run.
   lint-and-test:
     runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_USER: jme
+          POSTGRES_PASSWORD: jme_dev_password
+          POSTGRES_DB: jme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jme -d jme"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -16,6 +37,8 @@ jobs:
           python-version: "3.12"
       - run: pip install -r app/requirements-dev.txt
       - run: python -m ruff check .
+      - name: Run migrations against the CI Postgres service
+        run: python -m alembic upgrade head
       - run: python -m pytest tests/ -q
 
   # Builds every service image and scans it for known vulnerabilities.
@@ -137,18 +160,19 @@ jobs:
             sleep 2
           done
           echo "ollama never became healthy" && docker compose logs ollama && exit 1
-      - name: Pull the two starting models
+      - name: Pull the models the live services use
         run: docker compose run --rm ollama-pull
-      - name: Confirm both models are present
+      - name: Confirm all three models are present
         run: |
           models=$(docker exec jme-ollama-1 ollama list)
           echo "$models"
-          echo "$models" | grep -q "llama3.2:1b"
+          echo "$models" | grep -q "qwen2.5:1.5b"
           echo "$models" | grep -q "nomic-embed-text"
+          echo "$models" | grep -q "all-minilm"
       - name: Smoke-test real inference (generate + embeddings)
         run: |
           set -e
-          response=$(curl -s http://localhost:11434/api/generate -d '{"model":"llama3.2:1b","prompt":"Say OK.","stream":false}')
+          response=$(curl -s http://localhost:11434/api/generate -d '{"model":"qwen2.5:1.5b","prompt":"Say OK.","stream":false}')
           echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('response'); print('generate ok:', d['response'][:80])"
           embedding=$(curl -s http://localhost:11434/api/embeddings -d '{"model":"nomic-embed-text","prompt":"test"}')
           echo "$embedding" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d['embedding']) == 768; print('embeddings ok: 768-dim vector')"
@@ -170,10 +194,8 @@ jobs:
           response=$(curl -s -X POST http://localhost:8002/extract -H "X-API-Key: $api_key" -H 'Content-Type: application/json' -d '{"text":"The ideal candidate must have strong experience with Python."}')
           echo "$response"
           echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); m=d['matches']; assert len(m) >= 1 and any(x['requirement_level']=='required' for x in m), 'expected a required match'; print('extraction ok:', m)"
-      - name: Pull the small embedding model and compute a sample of embeddings (Phase 17)
-        run: |
-          docker exec jme-ollama-1 ollama pull all-minilm
-          docker compose run --rm embeddings-compute python -m app.embeddings.compute_embeddings --candidate-limit 10 --job-limit 30
+      - name: Compute a sample of embeddings (Phase 17 — all-minilm already pulled above)
+        run: docker compose run --rm embeddings-compute python -m app.embeddings.compute_embeddings --candidate-limit 10 --job-limit 30
       - name: Confirm embeddings were stored
         run: |
           count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from entity_embeddings;" | xargs)

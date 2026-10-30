@@ -153,6 +153,33 @@ it (`migrate`, `api`, `extraction`) — not `requirements-base.txt` — keeping 
 size unaffected by a dependency it doesn't use, the same per-image-narrow-dependency discipline
 `docs/data-quality.md` already documents for the `dataquality` image.
 
+## Embedding-model comparison (Phase 18) — the simple model won
+
+Directly comparing `all-minilm` (384-dim, the v1 production default) against `nomic-embed-text`
+(768-dim, "more capable" by parameter count) on the 12-pair near-miss set — the one comparison that
+doesn't require touching the production table, since it only embeds two words at a time:
+
+| Model | Similar-pair range | Dissimilar-pair range | Best achievable accuracy |
+|---|---|---|---|
+| `all-minilm` | 0.315 – 0.649 | 0.145 – 0.252 | **12/12 (100%)** — clean gap, threshold 0.28 |
+| `nomic-embed-text` | 0.422 – 0.678 | 0.397 – 0.439 | **11/12 (92%)** — *overlapping* ranges, no
+  threshold separates all 12 pairs; e.g. `Docker`/`Kubernetes` (similar, 0.422) scores *below*
+  `Carpentry`/`SQL` (dissimilar, 0.439) |
+
+**Reading this honestly**: the larger, more general-purpose embedding model did not win here — it
+separates these specific skill-pair semantics *worse* than the smaller model purpose-sized for
+short-text similarity. `all-minilm` stays the production default by measurement, not by inertia.
+This is exactly the outcome this tuning step existed to either confirm or overturn — and in this
+case, confirms the original choice rather than finding a better one, which is itself a real result,
+not a null one.
+
+**What this comparison does not cover**: a full ranking-quality comparison across embedding models
+(not just the near-miss task) would require computing `nomic-embed-text` embeddings for the actual
+candidate/job population ad-hoc (768-dim vectors can't be written into the 384-dim production
+`entity_embeddings` column — see "A real technical constraint" above) — not built in this pass;
+the near-miss result was a strong enough signal not to invest further time switching models for
+v2.
+
 ## Phased roadmap
 
 - **v1 (this phase)**: pgvector swap, `entity_embeddings` schema + indexes, Skills/Experience/

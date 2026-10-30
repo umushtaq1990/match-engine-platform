@@ -1,7 +1,9 @@
-# Free-Text Skill Extraction — Use Case C (Phase 16)
+# Free-Text Skill Extraction — Use Case C (Phase 16, tuned in Phase 18)
 
-Status: v1 — **implemented and verified end-to-end**, with a real measured baseline (not yet
-tuned — that's v2). This document was written and reviewed before any code existed, the same
+Status: v2 — **implemented, verified end-to-end, and tuned**: a real measured baseline (v1) was
+followed by a real threshold sweep and LLM comparison (v2, Phase 18), improving F1 from 0.504 to
+0.60–0.66 and promoting a smaller, better-performing model as the new default — see "Model/
+threshold tuning" below. This document was written and reviewed before any code existed, the same
 discipline as Phases 12/14/15. The design below matched the build with one real bug found and
 fixed along the way (see "Verified against real execution").
 
@@ -114,6 +116,27 @@ Different in kind from Phase 4's (which measured *ranking* quality, not *extract
   `evaluation_runs`/`data_quality_runs`): per-example predicted vs. expected detail, for drill-down
   into exactly which examples a given config got wrong.
 
+## Model/threshold tuning (v2, Phase 18)
+
+The actual "get better scores" step the v1 baseline existed to enable:
+
+- **Threshold sweep** (`llm_model=llama3.2:1b`, same prompt, 46 examples each): 0.45 → F1 0.479,
+  0.50 → F1 0.456, **0.55 (the original default) → F1 0.504 — still the best of the five values
+  tested**, 0.60 → F1 0.344, 0.65 → F1 0.412. The original choice held up under a real sweep rather
+  than being revised on a hunch.
+- **LLM comparison at that threshold**: `qwen2.5:1.5b` vs. the Phase 16 baseline `llama3.2:1b` —
+  **F1 0.60–0.66 vs. 0.504** across two separate runs (run-to-run variance from sampling, both
+  comfortably above the baseline), recall improving most (0.60–0.68 vs. 0.447), requirement-level
+  accuracy also slightly better (0.978–0.986 vs. 0.961). `qwen2.5:1.5b` is also smaller on disk
+  (986MB vs. 1.3GB) despite having more parameters — a more efficient quantization, not a
+  size/quality tradeoff in the usual direction.
+- **Promoted**: `DEFAULT_LLM_MODEL` in `app/extraction/pipeline.py` is now `qwen2.5:1.5b` —
+  a measured decision, not a default left unexamined. `llama3.2:1b` is no longer pulled by default
+  (`docker-compose.yml`'s `ollama-pull` job) but remains reproducible on demand.
+- Re-verified against the live `/extract` endpoint after promoting: correctly extracted all four
+  skills (Python, Docker, Communication as required; Kubernetes as preferred) from a real request,
+  with confidence scores all above 0.77 and zero unmatched phrases.
+
 ## Phased roadmap
 
 - **v1 (this phase)**: pipeline + both golden-dataset parts + evaluation harness +  one baseline
@@ -176,9 +199,8 @@ Nothing beyond v1 is scheduled yet.
   independent of whether the source is a job description or a CV, so this doesn't block v1, but
   CV ingestion specifically has no real column to write into yet if v3 is ever reached for
   candidates.
-- Measured baseline recall is 0.447 — a 1B-parameter LLM misses real skill mentions on roughly
-  half of examples (often all-or-nothing per example, not partial), most likely needing a bigger
-  model and/or few-shot examples in the prompt to close the gap. This is the actual number v2's
-  model/prompt comparison exists to improve, not a gap to apologize for in v1.
-- Canonicalization threshold (0.55) is a first-guess starting point, not yet tuned against the
-  golden dataset — that tuning is v2's job, not v1's.
+- Recall improved from 0.447 (v1, `llama3.2:1b`) to 0.60–0.68 (v2, `qwen2.5:1.5b`) but is still
+  not close to 1.0 — some real skill mentions are still missed, most likely needing few-shot
+  examples in the prompt to close the remaining gap further. Not yet attempted.
+- Canonicalization threshold (0.55) was confirmed by a real sweep (v2), not left as an unexamined
+  first guess — but only five values were tried; a finer sweep could still find something better.

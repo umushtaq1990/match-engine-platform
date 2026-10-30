@@ -12,8 +12,17 @@ from sqlalchemy.orm import Session
 from app.extraction.ollama_client import embed, generate
 from app.extraction.skill_cache import get_reference_embeddings
 
-DEFAULT_LLM_MODEL = "llama3.2:1b"
+# Promoted from llama3.2:1b (Phase 16's original baseline) in Phase 18 after
+# a real measured comparison at the same threshold/prompt: qwen2.5:1.5b
+# scored F1 0.664 vs llama3.2:1b's 0.504 (+recall 0.683 vs 0.447), and is
+# smaller on disk (986MB vs 1.3GB) despite having more parameters — a more
+# efficient quantization. See docs/skill-extraction.md "Model/threshold
+# tuning (v2)" for the full comparison. Not an assumption that bigger always
+# wins — Phase 18's embedding-model comparison found the opposite result.
+DEFAULT_LLM_MODEL = "qwen2.5:1.5b"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
+# Confirmed via a real sweep (0.45/0.50/0.55/0.60/0.65), not just inherited:
+# 0.55 remained the best-scoring threshold among those tested.
 DEFAULT_SIMILARITY_THRESHOLD = 0.55
 PROMPT_VERSION = "v2"  # v1 used the loose "format": "json" string — see schema fix below
 

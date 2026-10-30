@@ -2,11 +2,18 @@ import os
 
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import Response
 
+from app.api.rate_limit import limiter
 from app.api.routes import router as matching_router
 
 app = FastAPI(title="JME API", version="0.1.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 app.include_router(matching_router)
 
 # Exposes /metrics (request count, latency histograms, in-progress requests,
@@ -37,10 +44,12 @@ else:
 
 
 @app.get("/health")
+@limiter.exempt
 def health():
     return {"status": "ok"}
 
 
 @app.get("/readiness")
+@limiter.exempt
 def readiness():
     return {"status": "ready"}
