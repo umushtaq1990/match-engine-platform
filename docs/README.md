@@ -78,6 +78,13 @@ update it whenever a doc is added, renamed, or removed.
   rule-based-vs-embeddings comparison (resolving assumption A5's deferred promise since Phase 4),
   and a real embedding-model comparison where the simpler model won (Phase 17, tuned Phase 18, v2).
 
+## Knowledge graph
+- [knowledge-graph.md](knowledge-graph.md) — Neo4j-backed graph linking candidates/skills/
+  occupations/jobs/courses (mirroring existing relational entities, plus an engagement edge from
+  Phase 14's behavioral data), idempotent batch sync, skill co-occurrence clustering validated
+  against existing skill categories, Neo4j Browser visualization (Phase 19, design only — not yet
+  built)
+
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale
