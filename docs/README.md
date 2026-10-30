@@ -51,6 +51,11 @@ update it whenever a doc is added, renamed, or removed.
   end-to-end with zero network access (Phase 10)
 - [progress.md](progress.md) — running log of what's been done, phase by phase
 
+## Behavioral analytics
+- [behavioral-analytics.md](behavioral-analytics.md) — user engagement/event-tracking design:
+  service boundary, event schema, instrumentation points, phased roadmap from raw events to
+  rule-based segmentation to ML clustering (Phase 14, design only — not yet built)
+
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale
