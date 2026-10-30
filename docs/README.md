@@ -58,9 +58,9 @@ update it whenever a doc is added, renamed, or removed.
   design-only, not yet built.
 
 ## Model serving
-- [model-serving.md](model-serving.md) — shared LLM/embedding serving layer design: service
-  boundary, tool choice (Ollama), starting models, consumer pattern, what it unblocks (Use Cases
-  C/F) (Phase 15, design only — not yet built)
+- [model-serving.md](model-serving.md) — shared LLM/embedding serving layer: service boundary,
+  tool choice (Ollama), starting models, consumer pattern, what it unblocks (Use Cases C/F), all
+  verified with real inference calls (Phase 15, v1). No consumers wired up yet.
 
 ## Not yet created — written just-in-time, not upfront
 

@@ -1,7 +1,10 @@
-# Shared Model Serving — LLM & Embeddings (Phase 15, design)
+# Shared Model Serving — LLM & Embeddings (Phase 15)
 
-Status: v0.1 — **design only, not yet built**. Same discipline as Phase 12 (Kubernetes) and
-Phase 14 (behavioral analytics): written and reviewed before any code exists.
+Status: v1 — **implemented and verified end-to-end** (service running, both models pulled, real
+inference confirmed). No consumers wired up yet — that's Use Case C/F work, still future. This
+document was written and reviewed before any code existed, the same discipline as Phase 12
+(Kubernetes) and Phase 14 (behavioral analytics). The design below matched the build with no
+changes required.
 
 ## Why this is a shared service, not something each consumer loads itself
 
@@ -97,6 +100,31 @@ layer both will eventually call.
 - **v4, only if throughput becomes the actual bottleneck**: GPU passthrough into the Ollama
   container, larger model variants, or splitting LLM/embedding serving into separate containers
   for independent scaling.
+
+## Verified against real execution (not fabricated)
+
+- **Image**: pinned `ollama/ollama:0.40.13` (confirmed against Docker Hub's API directly, not
+  guessed — `latest` is not a reliable pin, consistent with every other image in this project
+  being version-pinned).
+- **Both models pulled** via `docker compose run --rm ollama-pull`: `llama3.2:1b` (1.3GB),
+  `nomic-embed-text:latest` (274MB) — confirmed with `ollama list` inside the running container,
+  not just a successful exit code.
+- **Real LLM generation**, not a mocked response: `POST /api/generate` with a real prompt
+  ("what does a job matching engine do?") returned a correct, coherent, on-topic answer. Cold
+  start (model load into RAM) took ~45s for 26 tokens; a second, warm call completed in ~2.6s for
+  39 tokens — the cold-start cost is paid once per model per container lifetime, not per request.
+- **Real embeddings**, not a stub: `POST /api/embeddings` against `nomic-embed-text` returned an
+  actual 768-dimension float vector (confirmed length and real non-zero values, not a placeholder
+  array). Cold call ~11s, warm call ~1.2s.
+- **Memory footprint measured, not estimated**: `docker stats` showed the `ollama` container using
+  ~2.56GiB with both models loaded (one of them mid-inference) — comfortably inside the ~7.41GiB
+  Docker VM allocation this project has already been running 7 other services inside
+  (`docs/hardware-inventory.md`), confirming the design doc's footprint estimate held in practice,
+  not just on paper.
+- **CI**: `fresh-volume-smoke-test` now starts `ollama` from nothing, runs the real pull job,
+  confirms both models are present, and makes one real generate call and one real embeddings call
+  against them — the same "prove it from zero, every time" discipline as every other service in
+  this platform.
 
 ## Known limitations (v1, by design)
 

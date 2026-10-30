@@ -127,6 +127,31 @@ jobs:
           after=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from analytics.behavioral_events where source='api';" | xargs)
           echo "before=$before after=$after"
           [ "$after" -gt "$before" ]
+      - name: Start ollama (Phase 15 shared model-serving layer)
+        run: docker compose up -d ollama
+      - name: Wait for ollama healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' jme-ollama-1 2>/dev/null || echo "starting")
+            [ "$status" = "healthy" ] && exit 0
+            sleep 2
+          done
+          echo "ollama never became healthy" && docker compose logs ollama && exit 1
+      - name: Pull the two starting models
+        run: docker compose run --rm ollama-pull
+      - name: Confirm both models are present
+        run: |
+          models=$(docker exec jme-ollama-1 ollama list)
+          echo "$models"
+          echo "$models" | grep -q "llama3.2:1b"
+          echo "$models" | grep -q "nomic-embed-text"
+      - name: Smoke-test real inference (generate + embeddings)
+        run: |
+          set -e
+          response=$(curl -s http://localhost:11434/api/generate -d '{"model":"llama3.2:1b","prompt":"Say OK.","stream":false}')
+          echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('response'); print('generate ok:', d['response'][:80])"
+          embedding=$(curl -s http://localhost:11434/api/embeddings -d '{"model":"nomic-embed-text","prompt":"test"}')
+          echo "$embedding" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d['embedding']) == 768; print('embeddings ok: 768-dim vector')"
       - name: Start observability stack (prometheus, cadvisor, grafana)
         run: docker compose up -d prometheus cadvisor grafana
       - name: Verify prometheus is scraping the api and analytics services

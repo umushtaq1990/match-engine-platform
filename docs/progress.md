@@ -669,3 +669,37 @@ rule-based segmentation (v2), no ML clustering (v3), no streaming ingestion, no 
 consent/retention mechanism (acceptable only because all data is synthetic — assumption A10).
 
 ### Phase 14 — status: v1 COMPLETE (segmentation/clustering remain future work)
+
+## Phase 15 — Shared LLM/embedding serving layer (2026-10-30)
+
+Another deliberate post-v1 addition: a shared Ollama service so future work (the long-deferred Use
+Case C free-text extraction, Use Case F similarity search) has a model-serving layer to call,
+without every consumer loading its own copy of a model into memory. Design written and reviewed
+first (`docs/model-serving.md`), built to match it exactly.
+
+**Built and verified, not assumed**:
+- `ollama` service added to `docker-compose.yml` — official `ollama/ollama:0.40.13` image (pinned
+  against Docker Hub's API directly, not guessed), no custom Dockerfile, named volume for model
+  persistence. One-off `ollama-pull` job (same shape as `migrate`/`seed`/`analytics-seed`) pulls
+  the two starting models.
+- Two models pulled and confirmed via `ollama list` inside the running container:
+  `llama3.2:1b` (1.3GB, chat/instruct) and `nomic-embed-text` (274MB, embeddings).
+- **Real inference, not a health-check-only verification**: a real `POST /api/generate` call
+  returned a correct, on-topic answer to "what does a job matching engine do?" (cold start ~45s,
+  warm call ~2.6s for 39 tokens). A real `POST /api/embeddings` call returned an actual 768-dim
+  vector (cold ~11s, warm ~1.2s).
+- **Memory footprint measured against real hardware**, not estimated: `docker stats` showed
+  ~2.56GiB for the `ollama` container with both models loaded — comfortably inside the ~7.41GiB
+  Docker VM allocation already running 7 other services (`docs/hardware-inventory.md`).
+  CPU-only, as designed — no GPU passthrough attempted or needed at this scale.
+- Wired into CI (`fresh-volume-smoke-test`): starts `ollama` from nothing, runs the real pull job,
+  confirms both models present, makes one real generate call and one real embeddings call — same
+  "prove it from zero" discipline as every other service.
+
+**Explicitly not done in this phase**: no consumers wired up yet (Use Case C and Use Case F both
+remain future work — this phase only stands up the serving layer they'll call), no GPU
+passthrough, no auth/rate-limiting on the Ollama service itself (acceptable — internal-only,
+unreachable outside the compose network), no observability/Prometheus target yet (deferred until
+there's real consumer traffic worth measuring).
+
+### Phase 15 — status: v1 COMPLETE (no consumers wired up yet — by design)

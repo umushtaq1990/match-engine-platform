@@ -108,6 +108,38 @@ services:
         condition: service_healthy
     profiles: ["tools"]
 
+  # Phase 15: shared LLM/embedding serving layer. Official, unmodified image —
+  # no custom Dockerfile, same pattern as db/prometheus/cadvisor/grafana.
+  # Always-on (like api/analytics) — it's a live inference endpoint, not a
+  # one-off job. No consumers wired up yet in this phase; see
+  # docs/model-serving.md.
+  ollama:
+    image: ollama/ollama:0.40.13
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-off job: pulls the two starting models (docs/model-serving.md) into
+  # the ollama_data volume. Idempotent — `ollama pull` is a no-op if the
+  # model is already present. Run explicitly: docker compose run --rm ollama-pull
+  ollama-pull:
+    image: ollama/ollama:0.40.13
+    entrypoint: ["sh", "-c"]
+    command:
+      - "ollama pull llama3.2:1b && ollama pull nomic-embed-text"
+    environment:
+      OLLAMA_HOST: ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    profiles: ["tools"]
+
   db:
     image: postgres:16
     environment:
@@ -194,3 +226,4 @@ volumes:
   mlflow_artifacts:
   prometheus_data:
   grafana_data:
+  ollama_data:
