@@ -8,6 +8,7 @@ require the X-API-Key header (see deps.require_api_key).
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.analytics_client import log_recommendations_shown
 from app.api.deps import DbSession, RequireApiKey
 from app.api.schemas import (
     CourseRecommendationOut,
@@ -58,6 +59,10 @@ def get_job_matches_for_candidate(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    log_recommendations_shown(
+        actor_type="candidate", actor_id=candidate_id,
+        entity_type="job", entity_ids=[r.entity_id for r in results],
+    )
     return [_to_match_out(r) for r in results]
 
 
@@ -66,11 +71,21 @@ def get_candidate_matches_for_job(
     job_id: int, top_k: int = 10, include_ineligible: bool = False,
     db: Session = DbSession,
 ):
-    """Use Case B: rank candidates for a job."""
+    """Use Case B: rank candidates for a job.
+
+    No Employer entity exists yet in this domain model (jobs only have a
+    `company_name` string) — job_id stands in for the acting employer's
+    identity in the logged event, a documented v1 limitation, not an
+    oversight. See docs/behavioral-analytics.md.
+    """
     try:
         results = rank_candidates_for_job(db, job_id, top_k=top_k, include_ineligible=include_ineligible)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    log_recommendations_shown(
+        actor_type="employer", actor_id=job_id,
+        entity_type="candidate", entity_ids=[r.entity_id for r in results],
+    )
     return [_to_match_out(r) for r in results]
 
 
@@ -87,6 +102,10 @@ def get_course_recommendations_for_candidate(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    log_recommendations_shown(
+        actor_type="candidate", actor_id=candidate_id,
+        entity_type="course", entity_ids=[r.course_id for r in recommendations],
+    )
     return CourseRecommendationsResponse(
         skill_gap=OccupationSkillGapOut(
             occupation_id=gap.occupation_id,

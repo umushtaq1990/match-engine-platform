@@ -52,9 +52,10 @@ update it whenever a doc is added, renamed, or removed.
 - [progress.md](progress.md) — running log of what's been done, phase by phase
 
 ## Behavioral analytics
-- [behavioral-analytics.md](behavioral-analytics.md) — user engagement/event-tracking design:
-  service boundary, event schema, instrumentation points, phased roadmap from raw events to
-  rule-based segmentation to ML clustering (Phase 14, design only — not yet built)
+- [behavioral-analytics.md](behavioral-analytics.md) — user engagement/event-tracking: service
+  boundary, event schema, instrumentation hook in the matching API, synthetic event generator, all
+  verified end-to-end (Phase 14, v1). Rule-based segmentation and ML clustering (v2/v3) remain
+  design-only, not yet built.
 
 ## Not yet created — written just-in-time, not upfront
 

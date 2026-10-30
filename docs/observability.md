@@ -9,8 +9,9 @@ Per `docs/prd.md`'s requirement ("CPU/RAM/latency/error-rate/batch-time measurab
 Prometheus+Grafana"), three always-on services were added to `docker-compose.yml` alongside
 `mlflow` (same rationale: continuously scraping, not a one-off job):
 
-- **`prometheus`** (`prom/prometheus:v2.55.1`, port 9090) — scrapes `api:8000/metrics` and
-  `cadvisor:8080/metrics` every 10s (`docker/prometheus/prometheus.yml`).
+- **`prometheus`** (`prom/prometheus:v2.55.1`, port 9090) — scrapes `api:8000/metrics`,
+  `analytics:8001/metrics` (Phase 14), and `cadvisor:8080/metrics` every 10s
+  (`docker/prometheus/prometheus.yml`).
 - **`cadvisor`** (`gcr.io/cadvisor/cadvisor:v0.49.1`, port 8081) — per-container resource metrics.
 - **`grafana`** (`grafana/grafana:11.3.1`, port 3000) — one provisioned dashboard ("JME Overview"),
   provisioned datasource pointing at `prometheus:9090` (`docker/grafana/provisioning/`). Anonymous

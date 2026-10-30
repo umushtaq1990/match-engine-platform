@@ -1,0 +1,17 @@
+# Phase 14's analytics service — deliberately independent of docker/Dockerfile.api:
+# no app/matching or app/ingestion code is copied in here, only what this
+# service actually needs. See docs/behavioral-analytics.md "Service boundary".
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY app/requirements-base.txt app/requirements-analytics.txt ./
+RUN pip install --no-cache-dir -r requirements-analytics.txt
+
+COPY app/db.py ./app/db.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/analytics/ ./app/analytics/
+
+EXPOSE 8001
+
+CMD ["uvicorn", "app.analytics.main:app", "--host", "0.0.0.0", "--port", "8001"]

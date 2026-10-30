@@ -25,6 +25,14 @@ not per-user authentication: there is no user model, no roles, and nothing in th
 (candidates/jobs/skills) represents "who is calling the API" — building OAuth2/JWT now would add a
 token issuer and identity model for a user concept that doesn't exist yet.
 
+**Phase 14**: the behavioral-analytics service (`app/analytics/`) uses the identical pattern —
+same `X-API-Key` header, same `require_api_key` dependency (necessarily duplicated code, not a
+shared import, per its own service-boundary decision — see `docs/behavioral-analytics.md`) — and
+reuses the *same* `JME_API_KEY` value rather than minting a second one. Deliberate for v1: both
+services are internal-only today, the same trust boundary. A distinct per-service key becomes
+worth the operational overhead once that stops being true (e.g., a real frontend calling the
+analytics API directly, or the two services getting different exposure).
+
 **What this protects against**: casual/accidental access to matching endpoints (e.g., a stray
 `curl` from someone on the same network without the key).
 

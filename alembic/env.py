@@ -8,6 +8,7 @@ from alembic import context
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from app.analytics import models as analytics_models  # noqa: E402,F401
 from app.db import DATABASE_URL, Base  # noqa: E402
 from app.evaluation import eval_models  # noqa: E402,F401
 from app.ingestion import (
@@ -51,6 +52,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_schemas=True,
     )
 
     with context.begin_transaction():
@@ -72,7 +74,7 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata, include_schemas=True
         )
 
         with context.begin_transaction():

@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [api, migrate, seed, dataquality, mlflow]
+        image: [api, migrate, seed, dataquality, mlflow, analytics]
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.image }} image
@@ -83,11 +83,18 @@ jobs:
           [ "$candidates" = "2000" ] && [ "$jobs" = "1000" ]
       - name: Run data quality checks
         run: docker compose run --rm dataquality
-      - name: Start api and mlflow
-        run: docker compose up -d api mlflow
-      - name: Wait for api and mlflow healthy
+      - name: Generate synthetic behavioral events (Phase 14)
+        run: docker compose run --rm analytics-seed
+      - name: Confirm behavioral events were generated
         run: |
-          for svc in jme-api-1 jme-mlflow-1; do
+          count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from analytics.behavioral_events;" | xargs)
+          echo "behavioral_events=$count"
+          [ "$count" -gt "0" ]
+      - name: Start api, analytics, and mlflow
+        run: docker compose up -d api analytics mlflow
+      - name: Wait for api, analytics, and mlflow healthy
+        run: |
+          for svc in jme-api-1 jme-analytics-1 jme-mlflow-1; do
             for i in $(seq 1 30); do
               status=$(docker inspect -f '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo "starting")
               [ "$status" = "healthy" ] && break
@@ -103,16 +110,36 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/candidates/1/job-matches)" = "401"
           test "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $api_key" http://localhost:8000/candidates/1/job-matches)" = "200"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/metrics)" = "200"
+      - name: Smoke-test the analytics API (health, auth, ingest)
+        run: |
+          set -e
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8001/health)" = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8001/events -H 'Content-Type: application/json' -d '{"actor_type":"candidate","actor_id":1,"event_type":"login"}')" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8001/events -H "X-API-Key: $api_key" -H 'Content-Type: application/json' -d '{"actor_type":"candidate","actor_id":1,"event_type":"login"}')" = "201"
+      - name: Confirm the matching API's instrumentation hook reaches analytics
+        run: |
+          set -e
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          before=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from analytics.behavioral_events where source='api';" | xargs)
+          curl -s -o /dev/null -H "X-API-Key: $api_key" http://localhost:8000/candidates/2/job-matches
+          sleep 1
+          after=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from analytics.behavioral_events where source='api';" | xargs)
+          echo "before=$before after=$after"
+          [ "$after" -gt "$before" ]
       - name: Start observability stack (prometheus, cadvisor, grafana)
         run: docker compose up -d prometheus cadvisor grafana
-      - name: Verify prometheus is scraping the api
+      - name: Verify prometheus is scraping the api and analytics services
         run: |
-          for i in $(seq 1 15); do
-            health=$(curl -s "http://localhost:9090/api/v1/query?query=up%7Bjob%3D%22api%22%7D" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['data']['result'][0]['value'][1] if d['data']['result'] else '')" 2>/dev/null || true)
-            [ "$health" = "1" ] && exit 0
-            sleep 2
+          for job in api analytics; do
+            ok=""
+            for i in $(seq 1 15); do
+              health=$(curl -s "http://localhost:9090/api/v1/query?query=up%7Bjob%3D%22$job%22%7D" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['data']['result'][0]['value'][1] if d['data']['result'] else '')" 2>/dev/null || true)
+              [ "$health" = "1" ] && ok=1 && break
+              sleep 2
+            done
+            [ "$ok" = "1" ] || { echo "prometheus never reported $job target as up"; exit 1; }
           done
-          echo "prometheus never reported api target as up" && exit 1
       - name: Tear down
         if: always()
         run: docker compose --profile tools down -v

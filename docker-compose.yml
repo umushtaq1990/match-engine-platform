@@ -15,6 +15,10 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       JME_API_KEY: ${JME_API_KEY}
+      # Phase 14 instrumentation hook (app/api/analytics_client.py) — best-effort,
+      # never blocks on the analytics service, so no depends_on/healthcheck
+      # coupling to it here. See docs/behavioral-analytics.md.
+      ANALYTICS_URL: http://analytics:8001
     depends_on:
       db:
         condition: service_healthy
@@ -63,6 +67,42 @@ services:
       dockerfile: docker/Dockerfile.dataquality
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # Phase 14: behavioral-event tracking service. Always-on (like api) — it's
+  # a live ingestion endpoint, not a one-off job. Independent image/schema
+  # from the matching engine by design — see docs/behavioral-analytics.md.
+  analytics:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.analytics
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JME_API_KEY: ${JME_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # One-off job: generates synthetic behavioral events (Phase 14) against the
+  # already-seeded candidate/job/course ids. Run after `seed`, not instead of
+  # it. Run explicitly: docker compose run --rm analytics-seed
+  analytics-seed:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.analytics
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.analytics.generate_synthetic_events"]
     depends_on:
       db:
         condition: service_healthy
@@ -122,6 +162,7 @@ services:
       - prometheus_data:/prometheus
     depends_on:
       - api
+      - analytics
       - cadvisor
 
   cadvisor:

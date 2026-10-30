@@ -1,8 +1,10 @@
-# Behavioral Analytics & User Engagement Tracking (Phase 14, design)
+# Behavioral Analytics & User Engagement Tracking (Phase 14)
 
-Status: v0.1 — **design only, not yet built**. This document is deliberately written and reviewed
-before any code exists, the same discipline Phase 12 (Kubernetes) and Phase 10 (offline bundle)
-were planned under — get the shape right on paper first, then build against it.
+Status: v1 — **implemented and verified end-to-end** (ingestion API, storage, instrumentation
+hook, synthetic event generator). Segmentation/clustering (v2/v3 below) remain design-only. This
+document was written and reviewed before any code existed, the same discipline Phase 12
+(Kubernetes) and Phase 10 (offline bundle) were planned under — get the shape right on paper
+first, then build against it. The design below matched the build with no changes required.
 
 ## Why this is a separate service, not a feature of the matching engine
 
@@ -153,6 +155,34 @@ assumption **A10** in `docs/assumptions-register.md`: a real deployment of this 
 need an explicit lawful basis/consent mechanism, pseudonymization or anonymization options, and a
 data-retention/deletion policy before tracking real user behavior — none of that is built here, and
 it should be treated as a precondition for any real use, not an afterthought bolted on later.
+
+## Verified against real data (not fabricated)
+
+- **Migration**: `alembic revision --autogenerate` correctly detected the new schema-qualified
+  table from the ORM model (`CREATE SCHEMA` itself still had to be added by hand — Alembic never
+  generates that). Applied with `alembic upgrade head` against the real dev Postgres; `alembic
+  check` confirmed zero drift between the ORM model (including both indexes) and the live schema.
+- **Synthetic generator**: `python -m app.analytics.generate_synthetic_events` produced 28,218
+  events against the real seeded candidate/job/course ids. Verified in Postgres, not just by the
+  script's own print statement: 20,642 `recommendation_shown`, 3,830 `recommendation_clicked`
+  (~18.6% of impressions — expected, since only job-type impressions roll a click, and roughly
+  30% of impressions are course-type), 1,084 `job_applied` (~28% of clicks — matches the
+  `APPLY_RATE_GIVEN_CLICK = 0.30` target), confirming the drop-off funnel behaves as designed
+  rather than 1:1:1.
+- **Ingestion API**: exercised with real `curl` calls against the running `analytics` container —
+  401 with no/wrong key, 201 on a valid single event and on a batch of two, 422 on an unknown
+  `event_type`, and a real paginated actor-timeline query returning the inserted rows in
+  descending `received_at` order.
+- **Instrumentation hook, the real integration point**: called the live matching API's
+  `GET /candidates/{id}/job-matches` and confirmed, by querying Postgres before and after, that
+  exactly 5 new `recommendation_shown` rows appeared with `source='api'`, correct `rank` values
+  (1–5), and `entity_id`s matching the exact job ids the API response returned — not just "an
+  event fired," but the right events with the right content.
+- **Best-effort degradation, the whole point of the design, proven not assumed**: stopped the
+  `analytics` container and re-called the same matching endpoint — it still returned `200` in
+  ~0.6s (a refused TCP connection fails fast; it does not hang for the 2-second timeout). The
+  matching engine's own behavior is provably unaffected by an analytics outage, not just
+  documented as "should be."
 
 ## Known limitations (v1, by design)
 

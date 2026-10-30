@@ -621,3 +621,51 @@ Use Case C (free-text extraction, to be built NLP/embedding-first per assumption
 (never scheduled), and domain-model genericization (the repo was renamed to
 `match-engine-platform` with that future in mind, per the discussion before Phase 8, but the
 Candidate/Job-specific code itself was deliberately left unchanged).
+
+## Phase 14 — Behavioral analytics & user engagement tracking (2026-10-30)
+
+A deliberate post-v1 addition, not part of the original 13-phase plan: tracks candidate/employer
+engagement (impressions, clicks, applies) so a future phase can cluster active vs. passive job
+seekers/employers — the same rule-based-before-ML discipline already governing the matching
+engine itself (`docs/assumptions-register.md` A5). Full design written and reviewed *before* any
+code (`docs/behavioral-analytics.md`), then built to match it exactly — no design changes were
+needed once real execution started.
+
+**Built and verified, not assumed**:
+- New `analytics` service (`app/analytics/`, `docker/Dockerfile.analytics`) — its own FastAPI app,
+  own Postgres schema (`analytics`, not `public`), no FK into the matching engine's tables by
+  design. Never imports from `app.api`/`app.matching` — a real architectural boundary, not just a
+  different folder.
+- `behavioral_events` table + two indexes, migrated via `alembic revision --autogenerate`
+  (correctly detected the new schema-qualified table; `CREATE SCHEMA` itself had to be added by
+  hand) and applied with `alembic upgrade head`. `alembic check` confirmed zero drift against the
+  real dev database afterward.
+- Ingestion API (`POST /events`, `POST /events/batch`, `GET /actors/{type}/{id}/events`), same
+  `X-API-Key` auth pattern as the matching API (reusing the same key for v1 — both services are
+  internal-only today, see `docs/security-and-threat-model.md`).
+- Instrumentation hook (`app/api/analytics_client.py`): the matching API now auto-logs a
+  `recommendation_shown` event per returned item on all three existing endpoints (job-matches,
+  candidate-matches, course-recommendations) — verified by querying Postgres before/after a real
+  `curl` call and confirming the exact rank/entity_id values matched the API's own response.
+- **Proved the best-effort design, not just documented it**: stopped the `analytics` container and
+  re-called the matching API — it still returned 200 in ~0.6s. An analytics outage provably cannot
+  break a real matching response.
+- Synthetic event generator (`app/analytics/generate_synthetic_events.py`) — deterministic,
+  produced 28,218 events against the real seeded data with a realistic drop-off funnel (not
+  1:1:1): ~18.6% of impressions clicked, ~28% of clicks applied, matching the generator's own
+  target rates almost exactly when queried back from Postgres.
+- No real Employer entity exists in the domain model (jobs only have a `company_name` string) —
+  `job_id` stands in for the acting employer's identity in employer-side events, documented as a
+  known v1 limitation rather than quietly assumed away.
+- Wired into CI (`build-and-scan` matrix, `fresh-volume-smoke-test`: builds the image, runs the
+  synthetic-event job from zero, smoke-tests the analytics API, and confirms the instrumentation
+  hook fires) and into the Phase 9 observability stack (new Prometheus scrape target).
+- 14 new tests (auth boundary, event-taxonomy validation, instrumentation best-effort swallowing),
+  67 total passing. No bugs found during this build — the design doc's review-before-build
+  discipline paid off directly here.
+
+**Explicitly not done in this phase** (see `docs/behavioral-analytics.md`'s phased roadmap): no
+rule-based segmentation (v2), no ML clustering (v3), no streaming ingestion, no real privacy/
+consent/retention mechanism (acceptable only because all data is synthetic — assumption A10).
+
+### Phase 14 — status: v1 COMPLETE (segmentation/clustering remain future work)
