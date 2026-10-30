@@ -57,6 +57,11 @@ update it whenever a doc is added, renamed, or removed.
   verified end-to-end (Phase 14, v1). Rule-based segmentation and ML clustering (v2/v3) remain
   design-only, not yet built.
 
+## Model serving
+- [model-serving.md](model-serving.md) — shared LLM/embedding serving layer design: service
+  boundary, tool choice (Ollama), starting models, consumer pattern, what it unblocks (Use Cases
+  C/F) (Phase 15, design only — not yet built)
+
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale
