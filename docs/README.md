@@ -71,8 +71,9 @@ update it whenever a doc is added, renamed, or removed.
 ## Embedding matching
 - [embedding-matching.md](embedding-matching.md) — Use Case F groundwork: pgvector schema,
   multi-dimensional (skills/experience/overall) embeddings, the two-stage retrieve-then-score
-  architecture for scoring one candidate against 100,000+ jobs, invalidation, and the
-  rule-based-vs-embeddings evaluation harness (Phase 17, design only — not yet built)
+  architecture for scoring one candidate against 100,000+ jobs, invalidation, and the real measured
+  rule-based-vs-embeddings comparison (Phase 17, v1) — resolving assumption A5's deferred promise
+  since Phase 4.
 
 ## Not yet created — written just-in-time, not upfront
 

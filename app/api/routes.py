@@ -16,8 +16,10 @@ from app.api.schemas import (
     MatchOut,
     OccupationSkillGapOut,
     ScoreOut,
+    SemanticMatchOut,
     SkillGapOut,
 )
+from app.embeddings.retrieval import rank_jobs_for_candidate_semantic
 from app.matching.course_recommendations import recommend_courses_for_candidate
 from app.matching.rank import MatchResult, rank_candidates_for_job, rank_jobs_for_candidate
 
@@ -64,6 +66,31 @@ def get_job_matches_for_candidate(
         entity_type="job", entity_ids=[r.entity_id for r in results],
     )
     return [_to_match_out(r) for r in results]
+
+
+@router.get("/candidates/{candidate_id}/job-matches/semantic", response_model=list[SemanticMatchOut])
+def get_job_matches_for_candidate_semantic(
+    candidate_id: int, top_k: int = 10, db: Session = DbSession,
+):
+    """Phase 17: embeddings-blended job matches — a complementary signal to
+    Use Case A's rule-based ranking above, not a replacement for it (see
+    docs/embedding-matching.md). Requires embeddings to already be computed
+    for this candidate (`python -m app.embeddings.compute_embeddings`) —
+    this route never calls the embedding model live.
+    """
+    try:
+        results = rank_jobs_for_candidate_semantic(db, candidate_id, top_k=top_k)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [
+        SemanticMatchOut(
+            job_id=r.job_id, total_score=r.total_score,
+            skills_similarity=r.skills_similarity, experience_similarity=r.experience_similarity,
+            overall_similarity=r.overall_similarity, location_score=r.location_score,
+            salary_score=r.salary_score, occupation_score=r.occupation_score,
+        )
+        for r in results
+    ]
 
 
 @router.get("/jobs/{job_id}/candidate-matches", response_model=list[MatchOut])

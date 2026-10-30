@@ -72,7 +72,7 @@ jobs:
         run: |
           count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from information_schema.tables where table_schema='public';")
           echo "table count: $count"
-          [ "$(echo $count | xargs)" = "18" ]
+          [ "$(echo $count | xargs)" = "20" ]
       - name: Seed synthetic data
         run: docker compose run --rm seed
       - name: Confirm seeded row counts
@@ -170,6 +170,22 @@ jobs:
           response=$(curl -s -X POST http://localhost:8002/extract -H "X-API-Key: $api_key" -H 'Content-Type: application/json' -d '{"text":"The ideal candidate must have strong experience with Python."}')
           echo "$response"
           echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); m=d['matches']; assert len(m) >= 1 and any(x['requirement_level']=='required' for x in m), 'expected a required match'; print('extraction ok:', m)"
+      - name: Pull the small embedding model and compute a sample of embeddings (Phase 17)
+        run: |
+          docker exec jme-ollama-1 ollama pull all-minilm
+          docker compose run --rm embeddings-compute python -m app.embeddings.compute_embeddings --candidate-limit 10 --job-limit 30
+      - name: Confirm embeddings were stored
+        run: |
+          count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from entity_embeddings;" | xargs)
+          echo "entity_embeddings=$count"
+          [ "$count" -gt "0" ]
+      - name: Smoke-test the semantic job-matches endpoint (real pgvector ANN retrieval)
+        run: |
+          set -e
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8000/candidates/1/job-matches/semantic?top_k=3")
+          echo "$response"
+          echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d) >= 1, 'expected at least one semantic match'; assert 'skills_similarity' in d[0]; print('semantic matching ok:', d)"
       - name: Start observability stack (prometheus, cadvisor, grafana)
         run: docker compose up -d prometheus cadvisor grafana
       - name: Verify prometheus is scraping the api and analytics services

@@ -1,0 +1,32 @@
+# Hand-authored near-miss golden pairs (Phase 17, docs/embedding-matching.md
+# "Golden dataset"). Tests what Phase 4's occupation-only ground truth
+# structurally cannot: whether the embedding model places semantically
+# related skills close together even with zero shared skill_id, and keeps
+# clearly unrelated skills apart. Each pair is two canonical skill names
+# from app/ingestion/generate_synthetic_data.py's SKILL_TAXONOMY and an
+# expected relationship label.
+
+- pair: ["Docker", "Kubernetes"]
+  expected: similar
+- pair: ["Python", "Java"]
+  expected: similar
+- pair: ["Nursing", "Patient Care"]
+  expected: similar
+- pair: ["Sales", "Marketing"]
+  expected: similar
+- pair: ["Leadership", "Communication"]
+  expected: similar
+- pair: ["Bookkeeping", "Accounting"]
+  expected: similar
+- pair: ["AWS", "Azure"]
+  expected: similar
+- pair: ["Python", "Welding"]
+  expected: dissimilar
+- pair: ["Accounting", "Welding"]
+  expected: dissimilar
+- pair: ["Carpentry", "SQL"]
+  expected: dissimilar
+- pair: ["Nursing", "CAD"]
+  expected: dissimilar
+- pair: ["Graphic Design", "Payroll"]
+  expected: dissimilar

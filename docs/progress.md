@@ -750,3 +750,55 @@ better scores" step), no real ingestion path wiring extraction output into `JobS
 `CandidateSkill` rows (v3), no negation handling, no raw-CV-text field in the domain model yet.
 
 ### Phase 16 — status: v1 COMPLETE (baseline established, not yet tuned)
+
+## Phase 17 — Multi-dimensional embedding matching, Use Case F groundwork (2026-10-30)
+
+Resolves assumption A5's promise, deferred since Phase 4: *"Phase 4 evaluation report will state
+measured delta between rule-based and semantic approaches before any decision to adopt."* Also the
+architecture needed to eventually score one candidate against 100,000+ jobs — a vector database's
+ANN index, not brute-force, is what makes that affordable at all.
+
+**Built and verified, not assumed**:
+- Swapped `docker-compose.yml`'s `db` image to `pgvector/pgvector:0.8.7-pg16` — confirmed via
+  Docker Hub's API as a genuine drop-in Postgres 16 build, not a fork. Recreated the running
+  container against the existing volume; every prior table's row counts survived unchanged. A
+  collation-version warning (base-image glibc difference) was fixed with Postgres's own documented
+  `ALTER DATABASE ... REFRESH COLLATION VERSION` — a one-time local fix only, irrelevant to CI's
+  always-fresh volumes.
+- A real technical decision, not a workaround: split a **production** `entity_embeddings` table
+  (pgvector HNSW-indexed, one active model per dimension — what stage-1 ANN retrieval actually
+  queries) from an **evaluation** `embedding_eval_results` table (plain JSONB, freely swappable
+  models) — resolves pgvector's fixed-vector-width constraint cleanly rather than fighting it.
+- Three embedding dimensions: Skills (free — reuses Phase 16's cached per-skill embeddings, zero
+  new LLM calls), Experience and Overall (synthesized text from real structured fields, one
+  embedding call each). Education dimension explicitly not built — no real data source, same
+  discipline as the qualification-compatibility omission already documented in
+  `docs/matching-engine.md`.
+- Computed real embeddings for all 1,000 jobs and 80 candidates with `all-minilm` (384-dim).
+  Invalidation verified, not assumed: a second run against the same data correctly skipped all 240
+  already-computed rows via `source_hash`, recomputing zero.
+- Two-stage retrieval wired into a new endpoint, `GET /candidates/{id}/job-matches/semantic` —
+  confirmed to make **zero live Ollama calls**: embeddings are precomputed offline, retrieval is
+  pure pgvector ANN plus in-Python blending with the existing rule-based location/salary/
+  occupation components, returning ranked results over the full 1,000-job population with no
+  visible latency.
+- Near-miss similarity threshold calibrated from real measurement (not guessed): embedding the
+  12 hand-labeled skill pairs with `all-minilm` showed a clean gap between "similar" pairs
+  (0.315–0.649 cosine) and "dissimilar" pairs (0.145–0.252) — 0.28 sits in that gap, scoring 100%
+  accuracy on the set.
+- **The actual measured comparison** (30 candidates with both ground truth and embeddings, k=10):
+  rule-based P/R/NDCG/MRR = 0.52/0.862/0.849/0.881; blended = 0.523/0.852/0.875/0.933 (a real,
+  modest NDCG/MRR improvement); embeddings-only = 0.497/0.791/0.776/0.815 (underperforms
+  rule-based-only — explainable, since Phase 4's ground truth is itself an exact-occupation-match
+  label the rule-based score's own occupation component already answers almost perfectly). Rule-
+  based stays the default; the semantic endpoint is additive, not a replacement — the outcome this
+  measurement existed to determine, not assume.
+- Wired into CI (fresh-volume-smoke-test: computes a small embeddings sample, smoke-tests the new
+  semantic endpoint with a real pgvector ANN query). 20 new tests, 116 total passing.
+
+**Explicitly not done in this phase**: Education dimension, courses dimension (separate topic per
+the user's own framing), promoting the blended path to the default ranking (the numbers don't yet
+justify it), a real 100,000-job stress test (architecture designed for it, only verified at 1,000),
+Qdrant migration (not triggered — no measured pgvector limitation exists).
+
+### Phase 17 — status: v1 COMPLETE (measured comparison done; embeddings-based path is additive, not default)

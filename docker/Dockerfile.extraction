@@ -14,6 +14,7 @@ COPY app/__init__.py ./app/__init__.py
 COPY app/ingestion/__init__.py ./app/ingestion/__init__.py
 COPY app/ingestion/source_models.py ./app/ingestion/source_models.py
 COPY app/extraction/ ./app/extraction/
+COPY app/embeddings/ ./app/embeddings/
 COPY data/golden/ ./data/golden/
 
 EXPOSE 8002

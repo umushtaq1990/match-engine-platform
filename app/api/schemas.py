@@ -51,3 +51,18 @@ class CourseRecommendationOut(BaseModel):
 class CourseRecommendationsResponse(BaseModel):
     skill_gap: OccupationSkillGapOut
     recommendations: list[CourseRecommendationOut]
+
+
+class SemanticMatchOut(BaseModel):
+    """Phase 17: embeddings-blended match — a complementary signal to
+    MatchOut's rule-based score, not a replacement. See
+    docs/embedding-matching.md.
+    """
+    job_id: int
+    total_score: float
+    skills_similarity: float | None
+    experience_similarity: float | None
+    overall_similarity: float | None
+    location_score: float
+    salary_score: float
+    occupation_score: float

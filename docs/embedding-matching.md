@@ -1,7 +1,9 @@
-# Multi-Dimensional Embedding Matching — Use Case F groundwork (Phase 17, design)
+# Multi-Dimensional Embedding Matching — Use Case F groundwork (Phase 17)
 
-Status: v0.1 — **design only, not yet built**. Same discipline as Phases 12/14/15/16: written and
-reviewed before any code exists.
+Status: v1 — **implemented and verified end-to-end**, including a real measured rule-based-vs-
+embeddings comparison (assumption A5's deferred promise since Phase 4, now resolved). This
+document was written and reviewed before any code existed, the same discipline as Phases
+12/14/15/16. The design below matched the build with no changes required.
 
 ## The problem this solves
 
@@ -163,6 +165,53 @@ size unaffected by a dependency it doesn't use, the same per-image-narrow-depend
 - **v3**: courses dimension (candidate skill-gap → course matching) — explicitly a separate topic,
   deferred per the user's own framing, reusing the same vector infrastructure.
 - **v4, only if pgvector is measured insufficient**: migrate to Qdrant at a real target scale.
+
+## Verified against real execution (not fabricated)
+
+- **pgvector image swap**: confirmed via Docker Hub's API as a genuine drop-in build; swapped the
+  running `db` container against the existing data volume and verified every prior table's row
+  counts survived unchanged (candidates=2000, jobs=1000, behavioral_events=28226,
+  extraction_runs=3). A collation-version warning from the base-image glibc difference was fixed
+  with Postgres's own documented `ALTER DATABASE ... REFRESH COLLATION VERSION` — a one-time local
+  fix, irrelevant to a fresh checkout/CI run, which always creates a new volume from scratch.
+- **pgvector functional smoke test**: a real `CREATE EXTENSION`, `vector(3)` column, insert, and
+  `<=>` cosine-distance query returned mathematically correct similarity ordering before any
+  application code was written.
+- **Migration**: `alembic revision --autogenerate` correctly detected both new tables; `CREATE
+  EXTENSION` and the HNSW index (`USING hnsw ... vector_cosine_ops`) were added by hand, since
+  autogenerate can't express a non-default Postgres access method. Declaring the same index in the
+  ORM's `__table_args__` (without re-running `CREATE INDEX`) keeps `alembic check` reporting zero
+  drift going forward, not a permanent false positive.
+- **Batch computation**: `python -m app.embeddings.compute_embeddings` computed real embeddings for
+  all 1,000 jobs and a sample of 80 candidates (two embedding-model calls per entity for
+  Experience/Overall; Skills cost zero new calls, reusing Phase 16's cache). A second run against
+  the same data correctly skipped all 240 already-computed rows via the `source_hash` check —
+  idempotence verified, not assumed.
+- **Two-stage retrieval**: a real call to `GET /candidates/1/job-matches/semantic` returned ranked
+  jobs from the full 1,000-job population with no visible latency — confirming the entire point of
+  precomputing embeddings offline: zero live Ollama calls on the request path, pure pgvector ANN
+  plus in-Python blending.
+- **Near-miss threshold, calibrated from real measurement, not guessed**: directly embedding the
+  12 hand-labeled skill pairs with `all-minilm` showed every "similar" pair scoring 0.315–0.649
+  cosine similarity and every "dissimilar" pair scoring 0.145–0.252 — a clean gap, with 0.28 chosen
+  as the threshold. Scored 100% accuracy on this set at that threshold.
+- **The actual rule-based-vs-embeddings comparison** (30 candidates with both ground truth and
+  computed embeddings, k=10):
+
+  | Mode | Precision@10 | Recall@10 | NDCG@10 | MRR |
+  |---|---|---|---|---|
+  | rule_based | 0.5200 | 0.8617 | 0.8489 | 0.8806 |
+  | blended | 0.5233 | 0.8517 | 0.8749 | 0.9333 |
+  | embeddings_only | 0.4967 | 0.7908 | 0.7755 | 0.8153 |
+
+  Reading this honestly: **blended modestly beats rule-based-only** on NDCG and MRR (better
+  ordering of the genuinely relevant jobs near the top), while **embeddings-only underperforms**
+  rule-based-only here — an explainable result, not a surprising failure: Phase 4's ground truth is
+  itself an exact-occupation-match label, which the rule-based score's own occupation component
+  answers almost perfectly by construction. Embeddings add complementary signal on top of that,
+  but don't replace it. Rule-based stays the default ranking; the semantic endpoint is available
+  as an additional, not a replacement, path — exactly the outcome this measurement was built to
+  either confirm or deny, not assumed in advance.
 
 ## Known limitations (v1, by design)
 

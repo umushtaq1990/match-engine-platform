@@ -28,6 +28,11 @@ def test_matching_route_rejects_missing_api_key():
     assert response.status_code == 401
 
 
+def test_semantic_matching_route_rejects_missing_api_key():
+    response = client.get("/candidates/1/job-matches/semantic")
+    assert response.status_code == 401
+
+
 def test_matching_route_rejects_wrong_api_key():
     response = client.get("/candidates/1/job-matches", headers={"X-API-Key": "wrong-key"})
     assert response.status_code == 401
