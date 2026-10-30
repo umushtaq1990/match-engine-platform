@@ -68,6 +68,12 @@ update it whenever a doc is added, renamed, or removed.
   extraction-accuracy metrics, MLflow/Postgres result storage, a real baseline measured and a
   real bug found/fixed along the way (Phase 16, v1). Model/prompt tuning (v2) not yet done.
 
+## Embedding matching
+- [embedding-matching.md](embedding-matching.md) — Use Case F groundwork: pgvector schema,
+  multi-dimensional (skills/experience/overall) embeddings, the two-stage retrieve-then-score
+  architecture for scoring one candidate against 100,000+ jobs, invalidation, and the
+  rule-based-vs-embeddings evaluation harness (Phase 17, design only — not yet built)
+
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale
