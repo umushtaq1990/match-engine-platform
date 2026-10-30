@@ -123,9 +123,13 @@ Operational:
   real single-worker-process bottleneck, see `docs/production-readiness.md`)
 
 Security:
-- [ ] No secrets in source control
-- [ ] AuthN/authZ implemented and tested on non-health endpoints
-- [ ] Remaining security gaps explicitly documented, not silently skipped
+- [x] No secrets in source control (Phase 7 — `.env`-based, see
+  `docs/security-and-threat-model.md`)
+- [x] AuthN/authZ implemented and tested on non-health endpoints (Phase 6 — static API key,
+  timing-safe comparison, verified via real 401/200 curl calls)
+- [x] Remaining security gaps explicitly documented, not silently skipped (no rate limiting, no
+  TLS, no per-caller identity, scanning report-only — see `docs/security-and-threat-model.md`
+  "Known gaps carried into later phases")
 
 Architecture:
 - [~] Architecture diagrams and ADRs exist for major decisions (ADR 0001 exists for the
