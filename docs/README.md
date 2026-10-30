@@ -84,6 +84,18 @@ update it whenever a doc is added, renamed, or removed.
   Louvain clustering, Neo4j Browser visualization, and a real root-caused finding about why the
   clustering signal is weak on the current synthetic data (Phase 19, v1)
 
+## Data at scale
+- [data-at-scale.md](data-at-scale.md) — category-coherent skill sampling (fixing Phase 19's
+  "no clustering signal" finding), bulk-insert generation, a 1M-candidate/50K-job stress-test
+  invocation, and the honest boundary between what scales locally (Postgres/Neo4j/matching) and
+  what doesn't (local LLM embeddings) (Phase 20, design only — not yet built)
+
+## Redis infrastructure
+- [redis-infrastructure.md](redis-infrastructure.md) — three scoped use cases: a Redis-backed
+  rate-limiting store (fixing Phase 18's measured multi-worker bug), 1-hour result caching, and
+  Redis Streams for async decoupling of the analytics instrumentation hook (Phase 21, design only
+  — not yet built)
+
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale
