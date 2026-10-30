@@ -10,6 +10,10 @@ scrape_configs:
     static_configs:
       - targets: ["analytics:8001"]
 
+  - job_name: extraction
+    static_configs:
+      - targets: ["extraction:8002"]
+
   - job_name: cadvisor
     static_configs:
       - targets: ["cadvisor:8080"]

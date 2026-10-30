@@ -1,7 +1,9 @@
-# Free-Text Skill Extraction — Use Case C (Phase 16, design)
+# Free-Text Skill Extraction — Use Case C (Phase 16)
 
-Status: v0.1 — **design only, not yet built**. Same discipline as Phases 12/14/15: written and
-reviewed before any code exists.
+Status: v1 — **implemented and verified end-to-end**, with a real measured baseline (not yet
+tuned — that's v2). This document was written and reviewed before any code existed, the same
+discipline as Phases 12/14/15. The design below matched the build with one real bug found and
+fixed along the way (see "Verified against real execution").
 
 ## Problem
 
@@ -126,6 +128,45 @@ Different in kind from Phase 4's (which measured *ranking* quality, not *extract
 
 Nothing beyond v1 is scheduled yet.
 
+## Verified against real execution (not fabricated)
+
+- **Generator enhancement**: `app/ingestion/generate_synthetic_data.py` now weaves each job's
+  actual required/preferred skills into its `description_raw` text, sometimes by canonical name
+  and sometimes by a known synonym (confirmed: 311/1,000 jobs use a synonym variant, not just the
+  canonical name). Verified against real rows, e.g. job #1's description mentions "Django,
+  Cybersecurity, and Quality Assurance" as required and "PowerPoint" as preferred — exactly
+  matching its real `JobSkill` rows, not a coincidence.
+- **A real bug found and fixed during the first eval run**: the first baseline run scored
+  **F1 = 0.0385** — essentially nothing extracted. Root-caused (not guessed) by calling Ollama
+  directly with the exact prompt: `"format": "json"` (the loose string) let `llama3.2:1b` emit a
+  single malformed object (`{"-phrase": "HR Coordinator 4", ...}`) instead of the requested array,
+  which our parser correctly rejected as invalid (returning zero extracted phrases, not a crash).
+  Fixed by passing an actual **JSON Schema** as `format` instead — Ollama then constrains the
+  output structurally, not just to "valid JSON of any shape." Re-verified directly via `curl`
+  before touching code: the schema form correctly extracted `Kubernetes`, `Nursing`, `Social
+  Media` from the same text the loose string had failed on.
+- **Baseline run, post-fix** (`llama3.2:1b` + `nomic-embed-text`, threshold 0.55, prompt v2,
+  46 examples = 30 generator-injected + 16 hand-authored): **Precision 0.636, Recall 0.447,
+  F1 0.504, requirement-level accuracy 0.961, unmatched-phrase rate 0.0** — a real, unoptimized
+  baseline, not a cherry-picked number. Logged to MLflow (`jme-skill-extraction` experiment) and
+  Postgres (`extraction_runs`/`extraction_example_results`) for later comparison once v2 tries
+  alternate models/thresholds.
+- **Spot-checked per-example results, not just the aggregate**: the out-of-taxonomy hand-authored
+  case (`astrophotography and vintage typewriter repair`) correctly produced zero matches — no
+  false positive forced onto the taxonomy. A CV-style snippet mentioning a real skill (`Python`)
+  alongside a deliberately absurd one (`underwater basket weaving`) correctly matched the former
+  and flagged the latter as unmatched rather than forcing it onto the nearest taxonomy entry.
+  Several examples scored a perfect 1.0 F1 (all skills recovered, all requirement levels correct);
+  several scored 0 (the LLM returned an empty list for that text) — a believable result for an
+  unoptimized 1B-parameter model, not a bug.
+- **Error-surfacing design proven, not just asserted**: stopped the `ollama` container and called
+  `/extract` — got back a real `502 {"detail": "Model-serving service unavailable"}`, not a
+  silent empty response or a generic 500. Confirms the deliberate difference from Phase 14's
+  best-effort analytics hook actually holds in practice.
+- **CI**: `fresh-volume-smoke-test` builds and scans the `extraction` image, starts it after
+  `ollama` is healthy and models are pulled, and makes one real (not mocked) extraction call,
+  asserting a real skill was matched with the correct requirement level.
+
 ## Known limitations (v1, by design)
 
 - No negation handling ("no Java experience required" would likely still extract "Java") — not
@@ -135,7 +176,9 @@ Nothing beyond v1 is scheduled yet.
   independent of whether the source is a job description or a CV, so this doesn't block v1, but
   CV ingestion specifically has no real column to write into yet if v3 is ever reached for
   candidates.
-- A 1B-parameter LLM may need real prompt iteration to extract non-technical skills as reliably as
-  technical ones — not yet measured, exactly what v1's baseline run exists to establish.
-- Canonicalization threshold is a first-guess starting point, not yet tuned against the golden
-  dataset — that tuning is v2's job, not v1's.
+- Measured baseline recall is 0.447 — a 1B-parameter LLM misses real skill mentions on roughly
+  half of examples (often all-or-nothing per example, not partial), most likely needing a bigger
+  model and/or few-shot examples in the prompt to close the gap. This is the actual number v2's
+  model/prompt comparison exists to improve, not a gap to apologize for in v1.
+- Canonicalization threshold (0.55) is a first-guess starting point, not yet tuned against the
+  golden dataset — that tuning is v2's job, not v1's.

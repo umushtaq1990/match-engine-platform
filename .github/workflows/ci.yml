@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [api, migrate, seed, dataquality, mlflow, analytics]
+        image: [api, migrate, seed, dataquality, mlflow, analytics, extraction]
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.image }} image
@@ -72,7 +72,7 @@ jobs:
         run: |
           count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from information_schema.tables where table_schema='public';")
           echo "table count: $count"
-          [ "$(echo $count | xargs)" = "16" ]
+          [ "$(echo $count | xargs)" = "18" ]
       - name: Seed synthetic data
         run: docker compose run --rm seed
       - name: Confirm seeded row counts
@@ -152,11 +152,29 @@ jobs:
           echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('response'); print('generate ok:', d['response'][:80])"
           embedding=$(curl -s http://localhost:11434/api/embeddings -d '{"model":"nomic-embed-text","prompt":"test"}')
           echo "$embedding" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d['embedding']) == 768; print('embeddings ok: 768-dim vector')"
+      - name: Start extraction service (Use Case C, Phase 16)
+        run: docker compose up -d extraction
+      - name: Wait for extraction healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' jme-extraction-1 2>/dev/null || echo "starting")
+            [ "$status" = "healthy" ] && exit 0
+            sleep 2
+          done
+          echo "extraction never became healthy" && docker compose logs extraction && exit 1
+      - name: Smoke-test real skill extraction (auth + real pipeline call)
+        run: |
+          set -e
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8002/extract -H 'Content-Type: application/json' -d '{"text":"Python required."}')" = "401"
+          response=$(curl -s -X POST http://localhost:8002/extract -H "X-API-Key: $api_key" -H 'Content-Type: application/json' -d '{"text":"The ideal candidate must have strong experience with Python."}')
+          echo "$response"
+          echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); m=d['matches']; assert len(m) >= 1 and any(x['requirement_level']=='required' for x in m), 'expected a required match'; print('extraction ok:', m)"
       - name: Start observability stack (prometheus, cadvisor, grafana)
         run: docker compose up -d prometheus cadvisor grafana
       - name: Verify prometheus is scraping the api and analytics services
         run: |
-          for job in api analytics; do
+          for job in api analytics extraction; do
             ok=""
             for i in $(seq 1 15); do
               health=$(curl -s "http://localhost:9090/api/v1/query?query=up%7Bjob%3D%22$job%22%7D" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['data']['result'][0]['value'][1] if d['data']['result'] else '')" 2>/dev/null || true)

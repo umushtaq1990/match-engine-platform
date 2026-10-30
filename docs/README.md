@@ -63,10 +63,10 @@ update it whenever a doc is added, renamed, or removed.
   verified with real inference calls (Phase 15, v1). No consumers wired up yet.
 
 ## Skill extraction
-- [skill-extraction.md](skill-extraction.md) — Use Case C design: hybrid LLM-extraction +
+- [skill-extraction.md](skill-extraction.md) — Use Case C: hybrid LLM-extraction +
   embedding-canonicalization pipeline, golden dataset (generator-injected + hand-authored),
-  extraction-accuracy metrics, MLflow/Postgres result storage (Phase 16, design only — not yet
-  built)
+  extraction-accuracy metrics, MLflow/Postgres result storage, a real baseline measured and a
+  real bug found/fixed along the way (Phase 16, v1). Model/prompt tuning (v2) not yet done.
 
 ## Not yet created — written just-in-time, not upfront
 

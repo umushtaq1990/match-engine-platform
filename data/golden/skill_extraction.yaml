@@ -1,0 +1,114 @@
+# Hand-authored golden dataset, Part B (docs/skill-extraction.md). Harder
+# cases a template generator can't produce: synonym-only mentions, ambiguous
+# required/preferred language, non-technical skills in prose, and
+# out-of-taxonomy skills (correct behavior: no match at all).
+#
+# `skill_name` is resolved to a skill_id at load time (app/extraction/
+# golden_dataset.py) by looking it up against the live Skill table — a name
+# not found there (deliberately, for the out-of-taxonomy cases) is simply
+# dropped from `expected`, not an error.
+#
+# For CV-style snippets (cv_*), "required" is used by convention to mean
+# "the person states they have this skill" — requirement_level only has
+# real required-vs-preferred semantics for job postings; see
+# docs/skill-extraction.md known limitations.
+
+- id: synonym_only_1
+  text: "Looking for someone who knows py and has used psql in production."
+  expected:
+    - {skill_name: "Python", requirement_level: required}
+    - {skill_name: "PostgreSQL", requirement_level: required}
+
+- id: synonym_only_2
+  text: "The analyst should be comfortable with ml workflows and basic js for dashboards."
+  expected:
+    - {skill_name: "Machine Learning", requirement_level: required}
+    - {skill_name: "JavaScript", requirement_level: required}
+
+- id: synonym_only_3
+  text: "Strong proj. management background needed; familiarity with client service best practices preferred."
+  expected:
+    - {skill_name: "Project Management", requirement_level: required}
+    - {skill_name: "Customer Service", requirement_level: preferred}
+
+- id: ambiguous_1
+  text: "Exposure to cybersecurity concepts would be helpful, though not essential for this role."
+  expected:
+    - {skill_name: "Cybersecurity", requirement_level: preferred}
+
+- id: ambiguous_2
+  text: "Candidates need to know SQL. Having touched Tableau before is a bonus."
+  expected:
+    - {skill_name: "SQL", requirement_level: required}
+    - {skill_name: "Tableau", requirement_level: preferred}
+
+- id: ambiguous_3
+  text: "Agile methodology knowledge is required; Scrum certification would be an added advantage."
+  expected:
+    - {skill_name: "Agile", requirement_level: required}
+    - {skill_name: "Scrum", requirement_level: preferred}
+
+- id: nontechnical_1
+  text: "This role requires excellent communication and strong customer service skills, with negotiation ability a plus when discussing refunds."
+  expected:
+    - {skill_name: "Communication", requirement_level: required}
+    - {skill_name: "Customer Service", requirement_level: required}
+    - {skill_name: "Negotiation", requirement_level: preferred}
+
+- id: nontechnical_2
+  text: "Must have hands-on welding experience; forklift operation is a plus."
+  expected:
+    - {skill_name: "Welding", requirement_level: required}
+    - {skill_name: "Forklift Operation", requirement_level: preferred}
+
+- id: nontechnical_3
+  text: "Strong patient care skills are required. Experience teaching junior staff is preferred."
+  expected:
+    - {skill_name: "Patient Care", requirement_level: required}
+    - {skill_name: "Teaching", requirement_level: preferred}
+
+- id: nontechnical_4
+  text: "We're hiring a marketing specialist who must be fluent in SEO and social media strategy; experience with negotiation tactics is a plus."
+  expected:
+    - {skill_name: "SEO", requirement_level: required}
+    - {skill_name: "Social Media", requirement_level: required}
+    - {skill_name: "Negotiation", requirement_level: preferred}
+
+- id: creative_1
+  text: "You should be skilled in graphic design and comfortable with video editing; copywriting experience is a nice bonus."
+  expected:
+    - {skill_name: "Graphic Design", requirement_level: required}
+    - {skill_name: "Video Editing", requirement_level: required}
+    - {skill_name: "Copywriting", requirement_level: preferred}
+
+- id: mixed_tech_nontech_1
+  text: "The ideal hire combines Python development skills with strong project management and public speaking ability for client demos."
+  expected:
+    - {skill_name: "Python", requirement_level: required}
+    - {skill_name: "Project Management", requirement_level: required}
+    - {skill_name: "Public Speaking", requirement_level: required}
+
+- id: out_of_taxonomy_1
+  text: "Must be familiar with astrophotography and vintage typewriter repair."
+  expected: []
+
+- id: cv_snippet_1
+  text: "Experienced data analyst skilled in SQL, Power BI, and Excel, with additional coursework in machine learning."
+  expected:
+    - {skill_name: "SQL", requirement_level: required}
+    - {skill_name: "Power BI", requirement_level: required}
+    - {skill_name: "Excel", requirement_level: required}
+    - {skill_name: "Machine Learning", requirement_level: required}
+
+- id: cv_snippet_2
+  text: "Background includes bookkeeping, budgeting, and payroll processing for a mid-sized firm; also comfortable with data entry tasks."
+  expected:
+    - {skill_name: "Bookkeeping", requirement_level: required}
+    - {skill_name: "Budgeting", requirement_level: required}
+    - {skill_name: "Payroll", requirement_level: required}
+    - {skill_name: "Data Entry", requirement_level: required}
+
+- id: cv_snippet_3
+  text: "Candidate lists Python and underwater basket weaving as key skills."
+  expected:
+    - {skill_name: "Python", requirement_level: required}

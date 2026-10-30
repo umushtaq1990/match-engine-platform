@@ -140,6 +140,52 @@ services:
         condition: service_healthy
     profiles: ["tools"]
 
+  # Phase 16: Use Case C skill-extraction service. Always-on (like
+  # api/analytics) — a live extraction endpoint, not a one-off job. Calls the
+  # ollama service over HTTP; no model weights in this image. See
+  # docs/skill-extraction.md.
+  extraction:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.extraction
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JME_API_KEY: ${JME_API_KEY}
+      OLLAMA_URL: http://ollama:11434
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # One-off job: runs the skill-extraction evaluation harness
+  # (app/extraction/run_extraction_eval.py) against the golden dataset and
+  # logs results to MLflow + Postgres. Run explicitly, with optional
+  # overrides: docker compose run --rm extraction-eval
+  #   python -m app.extraction.run_extraction_eval --llm-model X --threshold T
+  extraction-eval:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.extraction
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OLLAMA_URL: http://ollama:11434
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    command: ["python", "-m", "app.extraction.run_extraction_eval"]
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    profiles: ["tools"]
+
   db:
     image: postgres:16
     environment:
@@ -195,6 +241,7 @@ services:
     depends_on:
       - api
       - analytics
+      - extraction
       - cadvisor
 
   cadvisor:

@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app.analytics import models as analytics_models  # noqa: E402,F401
 from app.db import DATABASE_URL, Base  # noqa: E402
 from app.evaluation import eval_models  # noqa: E402,F401
+from app.extraction import models as extraction_models  # noqa: E402,F401
 from app.ingestion import (
     quality_models,  # noqa: E402,F401
     source_models,  # noqa: E402,F401

@@ -703,3 +703,50 @@ unreachable outside the compose network), no observability/Prometheus target yet
 there's real consumer traffic worth measuring).
 
 ### Phase 15 — status: v1 COMPLETE (no consumers wired up yet — by design)
+
+## Phase 16 — Free-text skill extraction, Use Case C (2026-10-30)
+
+The first real consumer of Phase 15's model-serving layer, and the long-deferred Use Case C
+(assumption A5b: skip the rule-based baseline, go straight to NLP/embedding-based extraction).
+Design written and reviewed first (`docs/skill-extraction.md`), built to match it — with one real
+bug found and fixed along the way, not silently papered over.
+
+**Built and verified, not assumed**:
+- Enhanced `app/ingestion/generate_synthetic_data.py` so job descriptions actually mention their
+  real required/preferred skills (by canonical name or synonym) instead of unrelated filler text
+  — gives this phase genuine ground truth to extract against. Verified: 311/1,000 jobs use a
+  synonym variant, and spot-checked jobs' description text matches their real `JobSkill` rows
+  exactly.
+- New `extraction` service (`app/extraction/`, `docker/Dockerfile.extraction`) — hybrid pipeline:
+  `llama3.2:1b` extracts candidate skill phrases + a required/preferred guess, `nomic-embed-text`
+  canonicalizes each onto the existing 64-skill taxonomy via cosine similarity with a measurable
+  confidence score. Public schema (not isolated like analytics) since this is core domain data,
+  not an adjacent concern.
+- **A real bug found on the first eval run, not a clean first try**: baseline scored F1 = 0.0385 —
+  essentially nothing extracted. Root-caused by calling Ollama directly with the exact prompt:
+  the loose `"format": "json"` hint let the 1B model emit a single malformed object instead of the
+  requested array. Fixed by passing an actual JSON Schema as `format` instead (Ollama's
+  structured-output support), constraining the output structurally — re-verified via a direct
+  `curl` call before touching any code, then confirmed in the full pipeline.
+- **Baseline established** (not yet tuned — that's v2): Precision 0.636, Recall 0.447, F1 0.504,
+  requirement-level accuracy 0.961, unmatched-phrase rate 0.0, against 46 examples (30
+  generator-injected + the full 16-example hand-authored golden set). Logged to MLflow
+  (`jme-skill-extraction` experiment) and Postgres for later comparison.
+- Golden dataset: generator-injected (derived live from real `JobSkill` rows) plus a 16-example
+  hand-authored fixture (`data/golden/skill_extraction.yaml`) covering synonym-only mentions,
+  ambiguous requirement language, non-technical skills across 6+ categories, and deliberately
+  out-of-taxonomy skills — spot-checked: the out-of-taxonomy case correctly produced zero matches
+  (no false positive forced onto the taxonomy).
+- Error-surfacing design proven, not just documented: stopped `ollama`, called `/extract`, got a
+  real `502 {"detail": "Model-serving service unavailable"}` — the deliberate opposite of Phase
+  14's best-effort analytics hook, confirmed to actually behave that way.
+- Wired into CI (`build-and-scan` matrix, `fresh-volume-smoke-test`: builds the image, starts it
+  after Ollama's models are pulled, makes one real extraction call and asserts a real match).
+  30 new tests (metrics, prompt-parsing including a regression test for the exact JSON-Schema bug,
+  auth boundary), 96 total passing.
+
+**Explicitly not done in this phase**: no model/prompt/threshold tuning (v2 — the actual "get
+better scores" step), no real ingestion path wiring extraction output into `JobSkill`/
+`CandidateSkill` rows (v3), no negation handling, no raw-CV-text field in the domain model yet.
+
+### Phase 16 — status: v1 COMPLETE (baseline established, not yet tuned)

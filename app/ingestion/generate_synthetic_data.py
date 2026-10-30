@@ -96,6 +96,51 @@ OCCUPATION_TITLES = [
 
 COMPANY_NAMES_EXTRA = ["Acme", "Globex", "Initech", "Umbrella", "Stark", "Wayne"]
 
+# Phase 16: job descriptions weave in their own required/preferred skills (by
+# canonical name or synonym), rather than unrelated filler text, so Use Case C
+# (free-text skill extraction, docs/skill-extraction.md) has real ground
+# truth to extract against — the existing JobSkill rows for that job.
+REQUIRED_TEMPLATES = [
+    "The ideal candidate must have strong experience with {skills}.",
+    "You will need hands-on expertise in {skills}.",
+    "Required skills: {skills}.",
+]
+PREFERRED_TEMPLATES = [
+    "Experience with {skills} would be a plus.",
+    "Familiarity with {skills} is preferred but not required.",
+    "Bonus points for knowledge of {skills}.",
+]
+
+
+def _mention_phrase(rng, skill):
+    """Sometimes the canonical skill name, sometimes a known synonym — so
+    extraction can't just string-match the taxonomy table verbatim."""
+    variants = SYNONYM_MAP.get(skill.name)
+    if variants and rng.random() < 0.4:
+        return rng.choice(variants)
+    return skill.name
+
+
+def _join_skill_phrases(phrases):
+    if len(phrases) == 1:
+        return phrases[0]
+    if len(phrases) == 2:
+        return f"{phrases[0]} and {phrases[1]}"
+    return ", ".join(phrases[:-1]) + f", and {phrases[-1]}"
+
+
+def _build_job_description(rng, fake, title, company, required_phrases, preferred_phrases):
+    parts = [f"We are seeking a {title} to join {company}. {fake.paragraph(nb_sentences=2)}"]
+    if required_phrases:
+        parts.append(
+            rng.choice(REQUIRED_TEMPLATES).format(skills=_join_skill_phrases(required_phrases))
+        )
+    if preferred_phrases:
+        parts.append(
+            rng.choice(PREFERRED_TEMPLATES).format(skills=_join_skill_phrases(preferred_phrases))
+        )
+    return " ".join(parts)
+
 
 def truncate_all():
     """Clear existing rows without touching DDL. Schema creation/changes are
@@ -231,13 +276,26 @@ def generate():
         occ = rng.choice(occupations)
         company = f"{rng.choice(COMPANY_NAMES_EXTRA)} {fake.company_suffix()}"
         has_salary = rng.random() > 0.1
+
+        occ_skill_ids = {os_.skill_id for os_ in occ.skills}
+        req_pool = [s for s in skills if s.id in occ_skill_ids] or rng.sample(skills, k=5)
+        skill_levels = [
+            (sk, rng.choices(list(RequirementLevel), weights=[0.7, 0.3])[0])
+            for sk in req_pool
+        ]
+        required_phrases = [
+            _mention_phrase(rng, sk) for sk, lvl in skill_levels if lvl == RequirementLevel.required
+        ]
+        preferred_phrases = [
+            _mention_phrase(rng, sk) for sk, lvl in skill_levels if lvl == RequirementLevel.preferred
+        ]
+
         job = Job(
             title=occ.title,
             company_name=company,
             occupation_id=occ.id,
-            description_raw=(
-                f"We are seeking a {occ.title} to join {company}. "
-                f"{fake.paragraph(nb_sentences=3)}"
+            description_raw=_build_job_description(
+                rng, fake, occ.title, company, required_phrases, preferred_phrases
             ),
             location_city=fake.city(),
             location_region=fake.state(),
@@ -249,18 +307,8 @@ def generate():
         session.add(job)
         session.flush()
 
-        occ_skill_ids = {os_.skill_id for os_ in occ.skills}
-        req_pool = [s for s in skills if s.id in occ_skill_ids] or rng.sample(skills, k=5)
-        for sk in req_pool:
-            session.add(
-                JobSkill(
-                    job_id=job.id,
-                    skill_id=sk.id,
-                    requirement_level=rng.choices(
-                        list(RequirementLevel), weights=[0.7, 0.3]
-                    )[0],
-                )
-            )
+        for sk, level in skill_levels:
+            session.add(JobSkill(job_id=job.id, skill_id=sk.id, requirement_level=level))
 
     session.commit()
     session.close()

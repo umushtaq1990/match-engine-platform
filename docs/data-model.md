@@ -101,6 +101,9 @@ matching system becomes trivial."
 - No interaction/application history table (optional, only relevant if collaborative-filtering
   course recommendations are ever pursued — not scheduled in any phase).
 - `job_skills` requirement coverage is derived from the job's occupation profile, not from parsing
-  `description_raw` — free-text skill extraction (Use Case C) remains a separate, deferred
-  pipeline (assumption A5b) that would eventually re-derive or augment these rows from the
-  description text.
+  `description_raw`. As of Phase 16, `description_raw` is generated *from* those same `job_skills`
+  rows (weaving each job's real required/preferred skills into its description text, by canonical
+  name or synonym — see `app/ingestion/generate_synthetic_data.py`), specifically so free-text
+  skill extraction (Use Case C, `docs/skill-extraction.md`) has real ground truth to extract
+  against. Extraction output is not yet wired back into `job_skills` itself — that's Use Case C's
+  own v3, not built yet.
