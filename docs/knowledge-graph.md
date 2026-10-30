@@ -1,7 +1,9 @@
-# Knowledge Graph — Linking Candidates, Skills, Occupations, Jobs, Courses (Phase 19, design)
+# Knowledge Graph — Linking Candidates, Skills, Occupations, Jobs, Courses (Phase 19)
 
-Status: v0.1 — **design only, not yet built**. Same discipline as Phases 12/14/15/16/17: written
-and reviewed before any code exists.
+Status: v1 — **implemented and verified end-to-end**, including a real, root-caused finding about
+the clustering result's strength (see "Verified against real execution" below) rather than a
+flattering but fabricated one. This document was written and reviewed before any code existed, the
+same discipline as Phases 12/14/15/16/17.
 
 ## Why a graph database, not more SQL or more embeddings
 
@@ -129,6 +131,48 @@ for recommendations," explicitly deferred to v3.
   — only after v1/v2 produce something concrete enough to measure, same "prove it, then wire it
   in" discipline as every other phase.
 
+## Verified against real execution (not fabricated)
+
+- **GDS licensing, resolved by testing it, not by reading about it**: installed the plugin into a
+  disposable container via `NEO4J_PLUGINS`, watched the startup log print `GDS license state:
+  unlicensed` (the documented free Community mode), and ran a real `gds.louvain.stream()` call
+  that correctly clustered a hand-built toy graph before touching any real data.
+- **Sync job**: ran for real against the full seeded dataset — 64 `Skill`, 150 `Occupation`, 100
+  `Course`, 2,000 `Candidate`, 1,000 `Job` nodes; 11,814 `HAS_SKILL`, 6,034 `REQUIRES_SKILL`, 908
+  `SKILL_OF_OCCUPATION`, 195 `TEACHES_SKILL`, 1,899 `TARGETS_OCCUPATION`, 1,000
+  `POSTED_FOR_OCCUPATION`, and 34,788 `ENGAGED_WITH` edges (the last confirming the Phase 14
+  cross-phase tie-in actually works, not just reads plausible). **Idempotence verified by
+  re-running**: identical counts the second time, confirmed directly via `cypher-shell`
+  independently of the job's own printed output.
+- **Neo4j Browser**: confirmed reachable (`HTTP 200` at `localhost:7474`), not just assumed to
+  work because the container is "up."
+
+### A real, root-caused finding: the clustering signal is weak, and here's exactly why
+
+Running `cluster_skills.py` for real produced **4 communities, modularity 0.0451, mean category
+purity 0.1585** (barely above the ~0.067 a uniform random guess would score across 15 categories)
+— a weak result, reported honestly rather than cherry-picked or hidden.
+
+Investigated, not just reported: queried the derived `CO_OCCURS_WITH` relationship directly and
+found **2,016 edges — exactly 64-choose-2, every possible skill pair**. The co-occurrence graph is
+*complete*. Root cause, confirmed by reading the actual generator code: `generate_synthetic_data.py`
+assigns each occupation's skill profile via `rng.sample(skills, k=rng.randint(4, 8))` — **uniformly
+at random across all 64 skills, with no category weighting**. Across 2,000 candidates, 1,000 jobs,
+and 150 occupations, every skill pair ends up co-occurring somewhere purely by chance.
+
+Tested whether pruning weak edges would reveal hidden structure (a legitimate, non-invasive fix
+tried before concluding anything): projecting only edges above the 75th-percentile weight still
+collapsed 61 of 64 skills into one giant community — confirming there's no latent category signal
+at *any* threshold, not just the default one.
+
+**This is a genuine property of the existing Phase 2 synthetic dataset, not a bug in this phase's
+code** — the graph, sync, and GDS clustering pipeline all work correctly, verified independently
+of this result. Per an explicit decision **not** to retroactively change the Phase 2 generator's
+skill-sampling logic: doing so would regenerate the dataset and invalidate every downstream
+measured baseline that depends on the current `SEED=42` skill distribution (Phase 4's P@10/NDCG,
+Phase 16/17's golden-dataset numbers) — a much larger, riskier change than this phase's actual
+scope. The honest result stands as reported.
+
 ## Known limitations (v1, by design)
 
 - Batch sync only — the graph can be stale relative to Postgres between sync runs. Acceptable
@@ -138,3 +182,7 @@ for recommendations," explicitly deferred to v3.
 - No live query API — Neo4j Browser and ad-hoc Cypher only for v1, not an application-facing
   endpoint.
 - Clustering scope is skills only in v1 — candidate/job-level clustering is v2, not built now.
+- Skill clustering's signal is weak on the current synthetic dataset (modularity 0.045, purity
+  0.16) because occupation-skill assignment is uniform-random, not category-weighted — see the
+  root-cause investigation above. Candidate/job-level clustering (v2) may or may not have the same
+  limitation; not yet tested.

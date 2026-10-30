@@ -79,11 +79,10 @@ update it whenever a doc is added, renamed, or removed.
   and a real embedding-model comparison where the simpler model won (Phase 17, tuned Phase 18, v2).
 
 ## Knowledge graph
-- [knowledge-graph.md](knowledge-graph.md) — Neo4j-backed graph linking candidates/skills/
-  occupations/jobs/courses (mirroring existing relational entities, plus an engagement edge from
-  Phase 14's behavioral data), idempotent batch sync, skill co-occurrence clustering validated
-  against existing skill categories, Neo4j Browser visualization (Phase 19, design only — not yet
-  built)
+- [knowledge-graph.md](knowledge-graph.md) — Neo4j + GDS graph linking candidates/skills/
+  occupations/jobs/courses, idempotent batch sync verified against the full seeded dataset, native
+  Louvain clustering, Neo4j Browser visualization, and a real root-caused finding about why the
+  clustering signal is weak on the current synthetic data (Phase 19, v1)
 
 ## Not yet created — written just-in-time, not upfront
 

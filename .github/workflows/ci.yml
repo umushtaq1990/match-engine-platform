@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [api, migrate, seed, dataquality, mlflow, analytics, extraction]
+        image: [api, migrate, seed, dataquality, mlflow, analytics, extraction, graph]
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.image }} image
@@ -208,6 +208,27 @@ jobs:
           response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8000/candidates/1/job-matches/semantic?top_k=3")
           echo "$response"
           echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d) >= 1, 'expected at least one semantic match'; assert 'skills_similarity' in d[0]; print('semantic matching ok:', d)"
+      - name: Start neo4j (Phase 19 knowledge graph)
+        run: docker compose up -d neo4j
+      - name: Wait for neo4j healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' jme-neo4j-1 2>/dev/null || echo "starting")
+            [ "$status" = "healthy" ] && exit 0
+            sleep 3
+          done
+          echo "neo4j never became healthy" && docker compose logs neo4j && exit 1
+      - name: Sync the knowledge graph from Postgres
+        run: docker compose run --rm graph-sync
+      - name: Confirm graph nodes/edges were created
+        run: |
+          set -e
+          pass=$(grep '^NEO4J_PASSWORD=' .env | cut -d= -f2)
+          counts=$(docker exec jme-neo4j-1 cypher-shell -u neo4j -p "$pass" "MATCH (n) RETURN count(n) AS nodes;")
+          echo "$counts"
+          echo "$counts" | tail -1 | grep -qv "^0$"
+      - name: Run skill clustering via Neo4j GDS
+        run: docker compose run --rm graph-cluster
       - name: Start observability stack (prometheus, cadvisor, grafana)
         run: docker compose up -d prometheus cadvisor grafana
       - name: Verify prometheus is scraping the api and analytics services

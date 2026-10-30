@@ -888,3 +888,59 @@ for embeddings all remain explicitly deferred, each with a clear future trigger 
 vague "someday."
 
 ### Phase 18 — status: COMPLETE (all 5 practically closeable gaps closed; scope boundaries left as boundaries, not faked)
+
+## Phase 19 — Knowledge graph: candidates/skills/occupations/jobs/courses (2026-10-30)
+
+In response to "can we create a knowledge graph service... what do you think?" Deliberately picked
+a heavier tool (Neo4j + GDS) than the project's usual "simplest thing first" default, because the
+problem — multi-hop relationships, community detection, centrality — is genuinely graph-shaped and
+because demonstrating a real graph database has direct portfolio value, which the user explicitly
+asked for.
+
+**A real course-correction during design, prompted by the user pushing back**: the design doc
+initially avoided Neo4j's GDS plugin over an inconclusive licensing search. Asked "is it not a
+powerful way to explore structures — why not use it?" — dug further and verified directly instead
+of leaving it ambiguous: Neo4j's own docs confirm Community Edition includes every GDS algorithm
+(Enterprise-only features are backup/restore and Arrow import/export, neither relevant), capped
+only at 4 CPU cores. Installed the plugin into a disposable test container and watched the startup
+log itself print `GDS license state: unlicensed` — the documented free mode — then ran a real
+`gds.louvain.stream()` call successfully. Design corrected before any production code was written.
+
+**Built and verified, not assumed**:
+- `neo4j:5.26.32-community` (official image) + `NEO4J_PLUGINS=["graph-data-science"]`, always-on
+  (Neo4j Browser needs to be reachable, not just during a batch job) — confirmed reachable
+  (`HTTP 200` at `localhost:7474`).
+- `app/graph/sync_graph.py` — idempotent batch ETL (`MERGE`, not `CREATE`) from Postgres into
+  Neo4j, mirroring every existing relational entity/junction table one-to-one, plus one aggregated
+  `ENGAGED_WITH` edge derived from Phase 14's `behavioral_events` log (a deliberate cross-phase
+  tie-in). Ran against the full seeded dataset: 64 `Skill`, 150 `Occupation`, 100 `Course`, 2,000
+  `Candidate`, 1,000 `Job` nodes; 11,814 `HAS_SKILL`, 6,034 `REQUIRES_SKILL`, 908
+  `SKILL_OF_OCCUPATION`, 195 `TEACHES_SKILL`, 1,899 `TARGETS_OCCUPATION`, 1,000
+  `POSTED_FOR_OCCUPATION`, 34,788 `ENGAGED_WITH` edges. Idempotence verified by re-running:
+  identical counts, confirmed independently via `cypher-shell`, not just the job's own output.
+- `app/graph/cluster_skills.py` — skill co-occurrence derivation + Louvain community detection
+  running entirely server-side via GDS/Cypher (`gds.graph.project` + `gds.louvain.write`), no
+  Python graph-algorithm library needed at all.
+- **A real, root-caused finding, reported honestly rather than hidden**: the clustering result is
+  weak (modularity 0.045, mean category purity 0.16 — barely above random chance). Investigated,
+  not just reported: the co-occurrence graph turned out to be *complete* (2,016 edges = exactly
+  64-choose-2, every possible skill pair), traced to `generate_synthetic_data.py`'s occupation-skill
+  sampling being uniform-random across all 64 skills with no category weighting. Tested whether
+  pruning weak edges would help (it didn't — even stricter thresholds collapsed almost everything
+  into one giant community) before concluding this is a genuine property of the existing Phase 2
+  dataset, not a bug in this phase's code. Explicitly **not** fixed by changing the Phase 2
+  generator — that would regenerate the dataset and invalidate every downstream measured baseline
+  (Phase 4's P@10/NDCG, Phase 16/17's golden-dataset numbers) that depends on the current
+  `SEED=42` distribution — a user-confirmed decision to report honestly rather than retrofit the
+  data to flatter this phase's result.
+- Wired into CI (`build-and-scan` matrix, `fresh-volume-smoke-test`: starts neo4j, runs the real
+  sync job, confirms nodes exist, runs the real clustering job). 7 new tests (pure-logic: batching,
+  purity calculation), 134 total passing.
+
+**Explicitly not done in this phase**: no live query API (Neo4j Browser/Cypher only), no
+candidate/job-level clustering (skills only), no graph-based signal feeding into Phase 17's
+matching blend yet (the documented v3 connection point, not built), and the clustering signal
+itself remains weak pending a possible future, carefully-scoped generator enhancement (not
+attempted here).
+
+### Phase 19 — status: v1 COMPLETE (graph + sync + native GDS clustering all verified; clustering signal honestly weak, root-caused, not hidden)

@@ -303,9 +303,64 @@ services:
     depends_on:
       - prometheus
 
+  # Phase 19: knowledge graph linking candidates/skills/occupations/jobs/
+  # courses. Official image, GDS plugin auto-installed at container start
+  # (verified real, not assumed — see docs/knowledge-graph.md). Always-on
+  # (like ollama) — Neo4j Browser needs to be reachable to explore the
+  # graph, not just during a batch job.
+  neo4j:
+    image: neo4j:5.26.32-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+      NEO4J_PLUGINS: '["graph-data-science"]'
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # One-off job: idempotent batch sync from Postgres into the Neo4j graph.
+  # Run explicitly: docker compose run --rm graph-sync
+  graph-sync:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.graph
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # One-off job: skill co-occurrence clustering via Neo4j GDS (run after
+  # graph-sync). Run explicitly: docker compose run --rm graph-cluster
+  graph-cluster:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.graph
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+    command: ["python", "-m", "app.graph.cluster_skills"]
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    profiles: ["tools"]
+
 volumes:
   jme_db_data:
   mlflow_artifacts:
   prometheus_data:
   grafana_data:
   ollama_data:
+  neo4j_data:

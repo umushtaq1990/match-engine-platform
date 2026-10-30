@@ -1,0 +1,21 @@
+# Phase 19's graph-sync/clustering jobs. Own image: its dependency profile
+# (Postgres read access + the neo4j driver) is genuinely different from
+# every other service — no FastAPI, no Ollama. Clustering itself runs
+# server-side via Neo4j's GDS plugin, so no Python graph-algorithm library
+# is needed here at all.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY app/requirements-base.txt app/requirements-graph.txt ./
+RUN pip install --no-cache-dir -r requirements-graph.txt
+
+COPY app/db.py ./app/db.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/ingestion/__init__.py ./app/ingestion/__init__.py
+COPY app/ingestion/source_models.py ./app/ingestion/source_models.py
+COPY app/analytics/__init__.py ./app/analytics/__init__.py
+COPY app/analytics/models.py ./app/analytics/models.py
+COPY app/graph/ ./app/graph/
+
+CMD ["python", "-m", "app.graph.sync_graph"]
