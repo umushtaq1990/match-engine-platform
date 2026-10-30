@@ -29,12 +29,16 @@ one of the few places in this project where the simplest possible option isn't t
 the problem is genuinely graph-shaped, and a real graph database is the correct tool for it, not
 an over-engineered one.
 
-**Note on Neo4j's Graph Data Science (GDS) plugin**: deliberately **not used**. GDS's licensing
-between Community and Enterprise tiers for specific algorithms was unclear even after checking
-directly — rather than depend on something ambiguous, community detection runs in Python
-(`networkx` + `python-louvain`, both unambiguously open source) over data read from Neo4j via its
-official driver, with results written back as a node property. This sidesteps the licensing
-question entirely rather than resolving it by assumption.
+**Graph Data Science (GDS) plugin: used, after actually verifying the license question instead of
+guessing.** An initial check was inconclusive, but digging further and testing directly resolved
+it: Neo4j's own docs state Community Edition includes *every* GDS algorithm — the Enterprise-only
+features are backup/restore and Arrow import/export, neither relevant here — capped only at 4 CPU
+cores (irrelevant at this project's scale). Confirmed directly by running it, not just reading
+about it: installed the plugin into a disposable test container via `NEO4J_PLUGINS=["graph-data-
+science"]`, and the startup log itself printed `GDS license state: unlicensed` (the documented
+free/Community mode) before successfully running a real `gds.louvain.stream()` call. GDS is the
+real tool for this job — native, optimized graph algorithms running inside the database engine
+beat a Python round-trip through `networkx` on both performance and on what it demonstrates.
 
 ## Schema — mirrors the existing relational entities exactly, nothing invented
 
@@ -75,19 +79,22 @@ an oversight.
 
 New `app/graph/` package, own image (`docker/Dockerfile.graph`) — not reused from any existing
 service, because its dependency profile is genuinely different (Postgres read access + the `neo4j`
-driver + `networkx`/`python-louvain`; no FastAPI, no Ollama) from every other service in this
-project. No live HTTP API in v1 — batch sync and batch clustering jobs only; an API layer is
-deferred until something actually needs to query the graph at request time (v3, recommendations).
+driver; no FastAPI, no Ollama) from every other service in this project. The sync job is plain
+Python; clustering itself runs server-side via GDS/Cypher, so no `networkx`/graph-algorithm
+dependency is needed in this image at all. No live HTTP API in v1 — batch sync and batch clustering
+jobs only; an API layer is deferred until something actually needs to query the graph at request
+time (v3, recommendations).
 
-## Clustering: skill co-occurrence, validated against an independent signal
+## Clustering: skill co-occurrence, via native GDS, validated against an independent signal
 
-1. The clustering job (`app/graph/cluster_skills.py`) reads the already-synced `HAS_SKILL`/
-   `REQUIRES_SKILL`/`SKILL_OF_OCCUPATION`/`TEACHES_SKILL` edges back out of Neo4j and builds an
-   in-memory **skill co-occurrence graph** in `networkx`: two skills are connected, weighted by how
-   often they co-occur on the same candidate/job/occupation/course.
-2. Runs Louvain community detection (`python-louvain`) over that co-occurrence graph.
-3. Writes the resulting `community_id` back onto each `Skill` node in Neo4j — so Neo4j Browser can
-   color/group skills by discovered cluster directly.
+1. The clustering job (`app/graph/cluster_skills.py`) runs entirely in Cypher via the GDS plugin,
+   not a Python round-trip: a Cypher query first derives a **skill co-occurrence relationship**
+   (two skills connected, weighted by how often they co-occur on the same candidate/job/occupation/
+   course, from the already-synced `HAS_SKILL`/`REQUIRES_SKILL`/`SKILL_OF_OCCUPATION`/
+   `TEACHES_SKILL` edges), then `gds.graph.project` builds an in-memory GDS graph projection over
+   it, and `gds.louvain.write` runs Louvain community detection and writes the resulting
+   `communityId` directly back onto each `Skill` node — all server-side.
+2. Neo4j Browser can then color/group skills by `communityId` directly, no extra processing step.
 
 **Validation, avoiding a circularity mistake similar to the one Phase 4 was careful about**: every
 skill in `SKILL_TAXONOMY` already has a `category` field (programming, cloud, healthcare,
@@ -126,9 +133,8 @@ for recommendations," explicitly deferred to v3.
 
 - Batch sync only — the graph can be stale relative to Postgres between sync runs. Acceptable
   since nothing queries the graph live yet.
-- GDS plugin not used (licensing ambiguity) — Louvain via `networkx`/`python-louvain` instead,
-  which is fine at this dataset's scale but wouldn't scale to a much larger graph the way GDS's
-  native implementation would.
+- GDS Community is capped at 4 CPU cores for parallelism — irrelevant at this project's scale, but
+  a real ceiling if this graph ever grew by orders of magnitude.
 - No live query API — Neo4j Browser and ad-hoc Cypher only for v1, not an application-facing
   endpoint.
 - Clustering scope is skills only in v1 — candidate/job-level clustering is v2, not built now.
