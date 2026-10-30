@@ -1,21 +1,25 @@
-# Production Readiness Gap Assessment (Phase 13)
+# Production Readiness Gap Assessment (Phase 13, updated through Phase 17)
 
-Status: v0.1 — honest assessment, written for this exact purpose: per `docs/prd.md`, "this is not a
+Status: v0.2 — honest assessment, written for this exact purpose: per `docs/prd.md`, "this is not a
 claim of production readiness... an honest gap assessment before any such claim is made." This
 document is that gap assessment, not a victory lap. Every item below is either verified (with how),
-or marked as a gap (with what closing it would take).
+or marked as a gap (with what closing it would take). Originally written at Phase 13; the
+Functional DoD and "still required" list below were updated once Phases 14–17 (behavioral
+analytics, model serving, skill extraction, embedding matching) closed some of what it originally
+flagged as missing — nothing else in this document was rewritten to look better in hindsight.
 
 ## Definition of Done (from `docs/prd.md` §9) — scored honestly
 
 ### Functional
 - [x] **Synthetic data generates reproducibly from a fixed seed** — verified repeatedly (Phase 2
   MD5-hash check, Phase 8 re-verified after a lint-driven refactor touched the generator).
-- [~] **Use cases A–F work end-to-end against synthetic data** — A (candidate→job ranking), B
-  (job→candidate ranking), D (skill-gap analysis), E (course recommendations) are built, tested,
-  and exposed via the API (Phase 6). **C (free-text skill extraction) and F (similarity/semantic
-  search) are not built** — both explicitly deferred (C per assumption A5b, user's call to skip
-  the rule-based step and go straight to embeddings when resumed; F never scheduled). This is a
-  real functional gap, not an oversight: 4 of 6 use cases work, 2 don't exist yet.
+- [x] **Use cases A–F work end-to-end against synthetic data** — A (candidate→job ranking), B
+  (job→candidate ranking), D (skill-gap analysis), E (course recommendations) built since Phase 6.
+  **C (free-text skill extraction, Phase 16) and F (embedding-based semantic matching, Phase 17)**
+  were built later as post-v1 additions — see `docs/skill-extraction.md` and
+  `docs/embedding-matching.md`. Both have a measured, honest baseline (extraction F1 0.504, not
+  yet tuned; embeddings-blended ranking modestly beats rule-based-only on NDCG/MRR) rather than a
+  claim of being "solved" — see those docs' own known-limitations sections.
 - [x] **Ranking quality is evaluated (Precision@K, NDCG@K, MRR), not just "it runs"** — Phase 4/9:
   full-population evaluation (1,899 candidates), results in `docs/evaluation-strategy.md`.
 
@@ -106,14 +110,23 @@ entire project, not an incidental one.
 
 ## What "production ready" would still require, beyond this project's scope
 
-- Use Cases C and F built and evaluated.
 - Automated tests for `rank.py` and route-level API behavior (not just auth boundaries).
 - A real secrets manager (not `.env`/K8s Secret placeholders).
-- TLS, rate limiting, a real authN/authZ model (OAuth2/JWT + roles) if ever multi-tenant.
+- TLS, rate limiting, a real authN/authZ model (OAuth2/JWT + roles) if ever multi-tenant. Rate
+  limiting specifically is where a tool like Redis (distributed token-bucket counters) would
+  become relevant — not needed today since nothing is exposed beyond localhost, and not added
+  speculatively; see `docs/assumptions-register.md`.
+- Making the synchronous Ollama-calling paths (Phase 14's analytics instrumentation hook, Phase
+  16's extraction endpoint) non-blocking under real concurrent load — a message queue (also
+  plausibly Redis-backed) is the documented future answer, triggered by a measured throughput
+  problem, not built speculatively now (see each phase's own "v4" roadmap entries).
 - kubelet-cadvisor RBAC scraping (or an equivalent) for container CPU/RAM in Kubernetes.
 - A sustained load/soak test and a real capacity plan, not one load test at one point in time.
 - Backup/restore tested for the database.
 - The Azure overlay actually deployed and verified against real AKS (per assumption A1 — not done
   by design, zero cloud cost, but that means zero cloud-specific verification too).
+- Use Case C/F tuning and promotion decisions (model/prompt comparison for extraction; whether
+  blended embeddings ranking is worth promoting over rule-based) — both have a measured baseline,
+  neither has been iterated on yet.
 
 None of this is hidden or assumed away — that's the point of this document existing.
