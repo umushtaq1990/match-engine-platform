@@ -62,6 +62,12 @@ update it whenever a doc is added, renamed, or removed.
   tool choice (Ollama), starting models, consumer pattern, what it unblocks (Use Cases C/F), all
   verified with real inference calls (Phase 15, v1). No consumers wired up yet.
 
+## Skill extraction
+- [skill-extraction.md](skill-extraction.md) — Use Case C design: hybrid LLM-extraction +
+  embedding-canonicalization pipeline, golden dataset (generator-injected + hand-authored),
+  extraction-accuracy metrics, MLflow/Postgres result storage (Phase 16, design only — not yet
+  built)
+
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale

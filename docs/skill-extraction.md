@@ -1,0 +1,141 @@
+# Free-Text Skill Extraction — Use Case C (Phase 16, design)
+
+Status: v0.1 — **design only, not yet built**. Same discipline as Phases 12/14/15: written and
+reviewed before any code exists.
+
+## Problem
+
+Extract both **technical and non-technical** skills from free text (a job description, a CV
+snippet) and classify each as **required** or **preferred**, canonicalized onto this project's
+existing 64-skill taxonomy (`Skill`/`SkillSynonym`) — not just technical keywords. The taxonomy
+already spans both (`programming`/`data`/`cloud`/`ai`/`it`/`engineering` alongside `soft_skill`/
+`business`/`hr`/`healthcare`/`trades`/`logistics`/`creative`/`finance`/`office`/`education`), so
+the extraction prompt and evaluation must treat both as first-class, not add non-technical as an
+afterthought.
+
+Per assumption A5b, this use case specifically skips a rule-based baseline and goes straight to an
+NLP/embedding-based approach — the opposite of every other use case in this project, and the
+reason Phase 15 stood up a shared LLM/embedding serving layer before this phase could start.
+
+## Why a hybrid pipeline (LLM extraction + embedding canonicalization), not either alone
+
+`SkillSynonym`'s own docstring (`app/ingestion/source_models.py`) was written anticipating "the
+dictionary-based extractor (Use Case C)" — a simpler design than what A5b later committed to. The
+hybrid pipeline below still uses `SkillSynonym`, just differently: not as a lookup dictionary, but
+as extra reference text that improves embedding-based canonicalization.
+
+- **LLM-only** (forced to pick from the 64-skill list in-prompt) tends to force a match even when
+  the text doesn't really mention anything in the taxonomy — you lose the "this is a real skill
+  mention the taxonomy doesn't cover" signal, which matters for taxonomy maintenance.
+- **Embeddings-only** (no LLM) means hand-building a phrase-chunking/NER step first — reinventing
+  what a small instruct model already does adequately for this volume of text.
+- **Hybrid**: the LLM extracts candidate skill phrases + a required/preferred guess; embedding
+  similarity against the canonical skill set (names *and* synonyms) then maps each phrase to a
+  `skill_id` with a **quantifiable confidence score** (cosine similarity) — a measurable, tunable
+  threshold, the same discipline already used for data-quality check thresholds, not a black-box
+  "trust the LLM" call.
+
+## Pipeline (v1)
+
+1. **LLM extraction** — `llama3.2:1b` via Ollama's `/api/generate`, given the raw text, returns a
+   JSON list of `{phrase, requirement_level_guess}`. Prompt explicitly asks for *all* skill
+   mentions, technical and non-technical, not just an obvious technical subset.
+2. **Embedding canonicalization** — `nomic-embed-text` via `/api/embeddings`. Canonical skill
+   names + all `SkillSynonym` rows are embedded **once** (cached, not recomputed per request —
+   64 skills plus synonyms is a small, static set). Each extracted phrase is embedded and compared
+   by cosine similarity against that cached set; best match above a threshold → that `skill_id`.
+   Below threshold → recorded as "no taxonomy match," not silently dropped.
+3. **Output**: a list of `{skill_id, requirement_level, confidence, source_phrase}` plus a
+   separate list of unmatched phrases.
+
+Both the LLM model and the embedding model are **run parameters passed through to Ollama's API**,
+not hardcoded — swapping `llama3.2:1b` → `qwen2.5:1.5b`, or `nomic-embed-text` → `all-minilm`, is a
+different MLflow run, not a code change. That's what makes "try different models, see what scores
+better" actually work, which is the whole point of this phase.
+
+## Service boundary
+
+| | Decision | Rationale |
+|---|---|---|
+| Service | New `extraction` service, own image (`docker/Dockerfile.extraction`) | Separately testable/evaluable, same bounded-context pattern as `analytics` (Phase 14) |
+| Model access | Calls the existing `ollama` service (Phase 15) over HTTP — no model weights in this image | Reuses the shared serving layer; this service is pure orchestration logic |
+| DB schema | **Public schema** (not an isolated schema like `analytics`) | Unlike behavioral analytics (a genuinely separate concern), this service's eventual purpose (v3) is to populate the *same* `job_skills`/`candidate_skills` tables the matching engine already owns — it's part of the core domain, not an adjacent one. Its eval tables join the same migration history as `evaluation_runs`/`data_quality_runs` |
+| Error handling | Failures surface as real errors to the caller, **not** swallowed like the Phase 14 analytics hook | Analytics impressions are optional side-effects; here, the caller usually has nothing useful without a result (same distinction already flagged in `docs/model-serving.md`'s consumer-pattern section) |
+
+## Golden dataset (ground truth)
+
+Two complementary parts, not one:
+
+**Part A — generator-injected** (`app/ingestion/generate_synthetic_data.py`, enhanced): job
+description text currently is unrelated filler (`fake.paragraph(...)`) — it doesn't mention the
+job's actual skills at all. Enhanced to weave the job's real required/preferred skills into the
+description prose, **sometimes by canonical name, sometimes by a synonym**, so it isn't trivially
+easy. Ground truth = the `JobSkill` rows already generated for that job — cheap, deterministic,
+scales to all 1,000 jobs for free.
+
+This is *not* a repeat of Phase 4's circularity mistake: Phase 4 had to avoid grading the ranking
+formula against labels derived from that same formula. Here, the task is literally "parse this
+text and recover the structured facts it contains" — the text is *constructed from* the ground
+truth by design, which is the correct way to test a parser, not a methodological error. It proves
+mechanical correctness (can the pipeline recover known facts from text), not real-world recall.
+
+**Part B — hand-authored, harder cases** (`data/golden/skill_extraction.yaml`, checked into git):
+a few dozen realistic snippets — job description and CV-style text — specifically covering what
+Part A's templates can't exercise:
+- skills mentioned only via an uncommon synonym or paraphrase, not the canonical name or a known
+  `SkillSynonym` row
+- ambiguous requirement language ("exposure to X is a plus" vs. "must have X")
+- non-technical skills stated in prose, not a bulleted list
+- mentions of real-sounding skills **not in the taxonomy at all** (tests the "no match" path, not
+  just the match path)
+
+Hand-authored because this is exactly the part a template generator structurally cannot produce —
+real ambiguity and phrasing variety. Stored as a versioned fixture file, not a DB table, so changes
+are git-reviewable like any other test fixture.
+
+## Metrics
+
+Different in kind from Phase 4's (which measured *ranking* quality, not *extraction* accuracy):
+
+| Metric | What it measures |
+|---|---|
+| Skill-set Precision / Recall / F1 | Set comparison per example: predicted `skill_id`s vs. expected `skill_id`s, micro-averaged across all golden examples |
+| Requirement-level accuracy | Of the correctly-identified skills (true positives only), what fraction got required/preferred right |
+| Unmatched-phrase rate | How often a real extracted phrase falls below the canonicalization threshold — not an error by itself, but worth tracking per model/threshold config |
+
+## Results storage (mirrors Phase 4's pattern exactly)
+
+- **MLflow** (existing service, new experiment): run-level params (`llm_model`, `embedding_model`,
+  `similarity_threshold`, `prompt_version`) and the three metrics above — a browsable, comparable
+  run history across configs.
+- **Postgres** (`extraction_runs` / `extraction_example_results`, same two-level shape as
+  `evaluation_runs`/`data_quality_runs`): per-example predicted vs. expected detail, for drill-down
+  into exactly which examples a given config got wrong.
+
+## Phased roadmap
+
+- **v1 (this phase)**: pipeline + both golden-dataset parts + evaluation harness +  one baseline
+  MLflow run (`llama3.2:1b` + `nomic-embed-text`, a first-guess similarity threshold) — establish a
+  number, not yet an optimized one.
+- **v2**: the actual "get better scores" step — multiple MLflow runs across alternate models
+  (e.g. `qwen2.5:1.5b`), prompt variants, and threshold values; pick the best-measured config, not
+  an assumed one.
+- **v3, only after v1/v2 prove the pipeline is good enough**: wire extraction into a real ingestion
+  path — e.g. an endpoint that accepts raw text and actually populates `JobSkill` rows — at which
+  point requirement-level output stops being only an eval metric and starts being operational data.
+
+Nothing beyond v1 is scheduled yet.
+
+## Known limitations (v1, by design)
+
+- No negation handling ("no Java experience required" would likely still extract "Java") — not
+  addressed in v1; flagged as a known gap, not silently assumed away.
+- No raw-CV-text field exists anywhere in the current domain model (`Candidate` only has
+  structured `CandidateSkill` rows) — v1's extraction endpoint is stateless (text in, skills out),
+  independent of whether the source is a job description or a CV, so this doesn't block v1, but
+  CV ingestion specifically has no real column to write into yet if v3 is ever reached for
+  candidates.
+- A 1B-parameter LLM may need real prompt iteration to extract non-technical skills as reliably as
+  technical ones — not yet measured, exactly what v1's baseline run exists to establish.
+- Canonicalization threshold is a first-guess starting point, not yet tuned against the golden
+  dataset — that tuning is v2's job, not v1's.
