@@ -13,6 +13,11 @@ update it whenever a doc is added, renamed, or removed.
   was/will be validated
 
 ## Architecture
+- [architecture.md](architecture.md) — the consolidated, arc42-shaped overview: system context,
+  solution strategy, building blocks, runtime views, deployment, quality requirements measured
+  against targets, and risks — the "start here" document, linking out to every deep-dive doc rather
+  than duplicating it. Anchored by two diagrams in `docs/architect/` (solution context + full
+  technical architecture)
 - [data-model.md](data-model.md) — schema reference, design rationale, measured dataset scale
 - [adr/](adr/) — architecture decision records (one file per significant decision, numbered)
   - [0001-decouple-ingestion-migrate-api.md](adr/0001-decouple-ingestion-migrate-api.md)
@@ -45,8 +50,12 @@ update it whenever a doc is added, renamed, or removed.
   load test results and the bottleneck found and fixed, what's still missing (Phase 13)
 
 ## Operations
-- [hardware-inventory.md](hardware-inventory.md) — measured dev machine specs and sizing
-  implications
+- [infrastructure-sizing.md](infrastructure-sizing.md) — CPU/RAM sizing methodology and scenarios:
+  measured per-service memory footprint against the real full stack, the 1M/50K scale-test numbers,
+  Kubernetes resource allocation, and an illustrative Azure cost estimate derived from that sizing
+  (Phase 9, written up fully once real content existed)
+- [hardware-inventory.md](hardware-inventory.md) — the original raw dev-machine measurement;
+  `infrastructure-sizing.md` is now the authoritative, up-to-date sizing reference
 - [offline-deployment.md](offline-deployment.md) — air-gapped deployment bundle, verified
   end-to-end with zero network access (Phase 10)
 - [backup-and-recovery.md](backup-and-recovery.md) — `pg_dump`/`pg_restore` scripts, a real
@@ -107,11 +116,8 @@ update it whenever a doc is added, renamed, or removed.
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale
 below): each is written when its phase produces something real to document, not as a placeholder.
 
-- `architecture.md` — one arc42-style document (system context, building blocks, runtime,
-  deployment views, quality requirements) — **not** a folder of separate diagram files
-- `infrastructure-sizing.md` — CPU/RAM/storage/network sizing methodology and scenarios (Phase 9).
-  Absorbs `hardware-inventory.md` as its measured baseline input, and a cost section absorbs what
-  would otherwise be a separate `cost-model.md` (cost is derived directly from sizing)
+- ~~`architecture.md`~~ / ~~`infrastructure-sizing.md`~~ — **written**, see Architecture/Operations
+  sections above.
 - `deployment-runbook.md` — never built as a standalone doc; `backup-and-recovery.md` was built
   once there was something real to document (see Operations above)
 - `interview-preparation.md` (end of project)

@@ -1203,3 +1203,30 @@ letter fake-redis cases), 172 total passing. All four user-selected Phase 20/21 
 now complete.
 
 ### Phase 25 — status: COMPLETE (both v2 hardening gaps closed, both verified against real running containers including a deliberately simulated consumer crash)
+
+## Documentation consolidation: architecture.md + infrastructure-sizing.md (2026-10-31)
+
+The two remaining "not yet created" docs from `docs/README.md`'s own just-in-time list — written now
+that every phase has produced something real to consolidate.
+
+- **`docs/architecture.md`**: a consolidated, arc42-shaped overview (system context, solution
+  strategy, building blocks, runtime views, deployment, cross-cutting concepts, quality
+  requirements measured against targets, risks, glossary) anchored by the two draw.io diagrams
+  built earlier this session (`docs/architect/`). Links out to every deep-dive doc rather than
+  duplicating content, consistent with this project's own "consolidate, don't fragment" philosophy.
+- **`docs/infrastructure-sizing.md`**: absorbs `hardware-inventory.md` as its measured baseline,
+  adds a fresh real measurement (`docker stats --no-stream` against the entire stack running
+  simultaneously — 11 services, ~3.93 GiB idle / ~6.4 GiB with Ollama's two models loaded, against
+  a ~7.41 GiB WSL2 ceiling), the Phase 20 scale-test numbers, Kubernetes resource allocation (only
+  `api`'s Deployment has explicit requests/limits set — a documented gap, not every component), and
+  an illustrative Azure cost estimate derived directly from that sizing (~$110-150/month for a
+  small single-environment deployment, explicitly not a production capacity plan).
+- `hardware-inventory.md` kept as the original raw capture, with a header note pointing to
+  `infrastructure-sizing.md` as the now-authoritative reference (its own "Implications for sizing"
+  section was stale, predating Phase 15+).
+
+Also removed the two confidential reference `.drawio` files (`Rec_Engine_*`, named after the
+`Recommendation_Engine` project on the standing confidentiality list) from `docs/architect/` now
+that JME has its own original diagrams — they were never opened or read.
+
+### Documentation consolidation — status: COMPLETE (all items from the "Not yet created" list that had real content to document are now written; the rest remain explicitly deferred to end-of-project or until triggered)

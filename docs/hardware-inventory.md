@@ -2,6 +2,13 @@
 
 Captured 2026-10-28 via PowerShell/WMI/nvidia-smi — measured, not estimated.
 
+**Superseded as the sizing reference by [`infrastructure-sizing.md`](infrastructure-sizing.md)**
+(Phase 25), which absorbs this measurement as its baseline input and adds per-service memory
+footprint, scaling-scenario numbers, Kubernetes resource allocation, and a cost estimate. Kept here
+as the original raw capture, not deleted — the "Implications for sizing" section below predates
+Phase 15+ (Ollama, pgvector, Neo4j, Redis) and is stale; treat `infrastructure-sizing.md` as
+authoritative.
+
 | Item | Value |
 |---|---|
 | OS | Windows 11 Home, build 26200, 64-bit |
