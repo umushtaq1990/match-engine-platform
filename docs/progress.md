@@ -1134,3 +1134,37 @@ end-to-end against the real seeded dataset (2,000 candidates, 1,000 jobs) via `d
 --rm graph-cluster-entities`, ~1m runtime.
 
 ### Phase 23 — status: COMPLETE (candidate/job clustering built, measured threshold choice, a genuinely new finding: both independently recover the same 4 domains)
+
+## Phase 24 — behavioral analytics v2: rule-based RFM segmentation (2026-10-31)
+
+Third of four user-selected deferred items — the next documented step in `docs/
+behavioral-analytics.md`'s own roadmap.
+
+**Built**: `app/analytics/segmentation.py` computes three features in one aggregate SQL query
+(conditional `CASE WHEN` counts) — recency (days since last event via the authoritative
+`received_at`), frequency (event count in a rolling 30-day window), and conversion (`job_applied`
+÷ `recommendation_shown`) — rolled up into `active_seeker` / `passive_seeker` / `dormant` via
+documented thresholds (30+ days silent → dormant; >=5 events in-window or >=50% conversion →
+active; else passive). New `GET /actors/{actor_type}/{actor_id}/segment` endpoint.
+
+**A real finding, not hidden**: segmenting the real synthetic dataset produced zero
+`passive_seeker` labels (100/100 active/dormant for the first 200 candidates, 63/137 for
+employers). Root-caused to the Phase 14 event generator's own structure: each simulated session is
+one atomic burst (login + many `recommendation_shown` events at the same timestamp), so recency and
+frequency are strongly correlated by construction — the moment an actor's last event is recent, that
+same session already cleared the frequency threshold. Confirmed this isn't a segmentation-logic bug
+by hand-constructing event sequences in the DB tests that *do* produce `passive_seeker` — the labels
+and thresholds work correctly; the synthetic data just doesn't naturally produce the "recent but
+low-volume" case this generator never modeled.
+
+**Fixed a real naive/aware datetime bug found while testing, not assumed away**: `behavioral_events.
+received_at` is `timestamp without time zone` (Phase 14's migration) — every writer passes an aware
+UTC datetime, but Postgres silently strips it, so reads come back naive and subtracting from an
+aware `now()` raised `TypeError`. Fixed by re-attaching UTC tzinfo on read before the subtraction,
+caught immediately by the DB-touching tests, not discovered later.
+
+11 new tests (7 pure-logic threshold cases, 4 DB-touching aggregate-query cases), 166 total
+passing. Verified live against the real seeded + synthetic-events dataset (28,218 events) via the
+real HTTP endpoint.
+
+### Phase 24 — status: COMPLETE (segmentation built, a real generator-structure finding documented honestly, a real naive-datetime bug found and fixed)

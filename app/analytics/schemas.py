@@ -50,3 +50,14 @@ class EventOut(BaseModel):
     event_type: str
 
     model_config = {"from_attributes": True}
+
+
+class ActorSegmentOut(BaseModel):
+    actor_type: str
+    actor_id: int
+    segment: str
+    days_since_last_event: int | None
+    event_count_window: int
+    shown_count: int
+    applied_count: int
+    conversion_rate: float | None

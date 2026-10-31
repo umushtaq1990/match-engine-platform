@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.analytics.deps import DbSession, RequireApiKey
 from app.analytics.models import BehavioralEvent
 from app.analytics.rate_limit import limiter
-from app.analytics.schemas import EventBatchIn, EventIn, EventOut
+from app.analytics.schemas import ActorSegmentOut, EventBatchIn, EventIn, EventOut
+from app.analytics.segmentation import segment_actor
 
 router = APIRouter(dependencies=[RequireApiKey])
 
@@ -85,3 +86,13 @@ def get_actor_events(
     stmt = stmt.order_by(BehavioralEvent.received_at.desc()).limit(limit)
     rows = db.execute(stmt).scalars().all()
     return [_to_out(row) for row in rows]
+
+
+@router.get("/actors/{actor_type}/{actor_id}/segment", response_model=ActorSegmentOut)
+def get_actor_segment(actor_type: str, actor_id: int, db: Session = DbSession):
+    """Phase 24 (v2 of the behavioral-analytics roadmap): rule-based RFM-style
+    engagement segmentation — active_seeker / passive_seeker / dormant — from
+    recency, rolling-window frequency, and shown->applied conversion rate.
+    See app/analytics/segmentation.py and docs/behavioral-analytics.md.
+    """
+    return segment_actor(db, actor_type, actor_id)

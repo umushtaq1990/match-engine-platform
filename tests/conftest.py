@@ -65,6 +65,31 @@ def matching_db_session():
     connection.close()
 
 
+@pytest.fixture
+def analytics_db_session():
+    """Same real-transaction-wrapped pattern as `matching_db_session`, scoped
+    to the analytics service's own `analytics.behavioral_events` table
+    (Phase 14) instead of the matching engine's tables — used by Phase 24's
+    segmentation tests (tests/analytics/test_segmentation_db.py).
+    """
+    try:
+        engine = create_engine(DATABASE_URL)
+        connection = engine.connect()
+    except Exception as exc:
+        pytest.skip(f"No reachable database for DB-touching tests: {exc}")
+
+    outer_transaction = connection.begin()
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    session.execute(text("TRUNCATE TABLE analytics.behavioral_events RESTART IDENTITY CASCADE"))
+    session.commit()
+
+    yield session
+
+    session.close()
+    outer_transaction.rollback()
+    connection.close()
+
+
 def seed_matching_fixture(session: Session) -> dict:
     """One job (Python required, SQL preferred) and two candidates (one
     eligible match, one not) with hand-computable scores — shared by

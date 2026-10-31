@@ -56,9 +56,10 @@ update it whenever a doc is added, renamed, or removed.
 
 ## Behavioral analytics
 - [behavioral-analytics.md](behavioral-analytics.md) — user engagement/event-tracking: service
-  boundary, event schema, instrumentation hook in the matching API, synthetic event generator, all
-  verified end-to-end (Phase 14, v1). Rule-based segmentation and ML clustering (v2/v3) remain
-  design-only, not yet built.
+  boundary, event schema, instrumentation hook (now Redis Streams-decoupled, Phase 21), synthetic
+  event generator (Phase 14), and rule-based RFM engagement segmentation with a real honest finding
+  about the synthetic generator's recency/frequency correlation (Phase 24). ML clustering (v3)
+  remains design-only.
 
 ## Model serving
 - [model-serving.md](model-serving.md) — shared LLM/embedding serving layer: service boundary,

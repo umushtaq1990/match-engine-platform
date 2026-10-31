@@ -140,6 +140,13 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8001/health)" = "200"
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8001/events -H 'Content-Type: application/json' -d '{"actor_type":"candidate","actor_id":1,"event_type":"login"}')" = "401"
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8001/events -H "X-API-Key: $api_key" -H 'Content-Type: application/json' -d '{"actor_type":"candidate","actor_id":1,"event_type":"login"}')" = "201"
+      - name: Smoke-test Phase 24 engagement segmentation (real synthetic events)
+        run: |
+          set -e
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8001/actors/candidate/2/segment")
+          echo "$response"
+          echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['segment'] in ('active_seeker','passive_seeker','dormant'); assert 'conversion_rate' in d; print('segmentation ok:', d['segment'])"
       - name: Confirm the matching API's instrumentation hook reaches analytics via Redis Streams
         run: |
           set -e

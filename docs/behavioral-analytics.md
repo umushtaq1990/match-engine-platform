@@ -129,17 +129,46 @@ data has real signal rather than being trivially clean:
 - A handful of duplicate events (same actor+entity+type within the same second) are injected
   deliberately, so `dedup` is something the design has to actually handle, not assume away.
 
+## Engagement segmentation (Phase 24)
+
+`GET /actors/{actor_type}/{actor_id}/segment` (`app/analytics/segmentation.py`) rolls up three
+RFM-style features — computed in one aggregate SQL query (conditional `CASE WHEN` counts, not
+several round trips, the same N+1-avoidance discipline Phase 9/20 established elsewhere) — into a
+rule-based label, mirroring assumption A5's "rule-based baseline before ML" principle:
+
+- **Recency**: days since the actor's most recent event (any type), via `received_at` — the
+  server-set, authoritative timestamp (see "Event schema" above), not the client-supplied
+  `occurred_at`.
+- **Frequency**: event count in a rolling 30-day window.
+- **Conversion** (the RFM "monetary" analog here): `job_applied` ÷ `recommendation_shown` counts.
+
+**Thresholds (documented, not hidden)**: no event in 30+ days → `dormant`, regardless of past
+volume. Otherwise, `>=5` events in the window *or* `>=50%` conversion → `active_seeker`; anything
+else recent → `passive_seeker`. Round, interpretable numbers chosen up front, not fit to this one
+synthetic dataset.
+
+**A real, honest finding from running it against the actual synthetic data**: segmenting the first
+200 candidates (and separately the first 200 employers/jobs) produced **zero** `passive_seeker`
+labels — a clean 100/100 active/dormant split for candidates, 63/137 for employers. Traced to the
+synthetic event generator's own structure (`app/analytics/generate_synthetic_events.py`): each
+simulated "session" is one atomic burst — a login plus `TOP_K` `recommendation_shown` events (plus
+possible clicks/applies) all at the same `occurred_at` — rather than independently-varying
+recency and frequency. The moment a candidate's most recent session lands inside the 30-day window,
+that same session has already produced well over 5 events, clearing the `active_seeker` threshold
+immediately. Recency and frequency are strongly correlated by construction in this generator, which
+collapses the three-label space into two real buckets for this dataset. This is a property of the
+synthetic data, not a bug in the segmentation logic — the thresholds and the aggregate query are
+both independently unit- and DB-tested (`tests/analytics/test_segmentation.py`,
+`test_segmentation_db.py`) against hand-constructed event sequences that **do** produce all three
+labels, including `passive_seeker`.
+
 ## Phased roadmap
 
 - **v1 (Phase 14)** — this document's scope: ingestion API, storage, instrumentation hook,
   synthetic event generator, a data-quality check reusing the Phase 2 pattern (orphan `actor_id`/
   `entity_id` references reported, not blocked — see "no FK" above).
-- **v2 — rule-based segmentation**: per-actor RFM-style features (recency of last event, frequency
-  of events in a rolling window, conversion rate = applies ÷ impressions) rolled up into labels
-  via documented thresholds — `active_seeker` / `passive_seeker` / `dormant` for candidates,
-  equivalent labels for employers. Exposed via a new summary endpoint. Deliberately simple and
-  deliberately first, mirroring assumption A5's "rule-based baseline before ML" principle that
-  already governs the matching engine itself.
+- ~~**v2 — rule-based segmentation**...~~ **Done (Phase 24)**: see "Engagement segmentation (Phase
+  24)" below.
 - **v3 — ML clustering, only if v2 is shown insufficient**: real clustering (k-means/HDBSCAN) over
   engagement feature vectors, evaluated against the v2 rule-based labels the same way
   `docs/evaluation-strategy.md` evaluates matching quality — a measured comparison, not an assumed
