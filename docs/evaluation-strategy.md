@@ -69,19 +69,28 @@ MLflow API once the fix was confirmed on a clean re-run.
 
 ## Baseline results
 
-| Metric | Phase 4 (sample of 50) | Phase 9 (full population, 1,899) |
-|---|---|---|
-| k | 10 | 10 |
-| Config | `skill=0.55, location=0.15, salary=0.15, occupation=0.15` | same |
-| Precision@10 | 0.47 | 0.4878 |
-| Recall@10 | 0.7458 | 0.7625 |
-| NDCG@10 | 0.7283 | 0.7461 |
-| MRR | 0.8029 | 0.8032 |
+| Metric | Phase 4 (sample of 50) | Phase 9 (full population, 1,899) | Phase 20 (full population, domain-anchored data) |
+|---|---|---|---|
+| k | 10 | 10 | 10 |
+| Config | `skill=0.55, location=0.15, salary=0.15, occupation=0.15` | same | same |
+| Precision@10 | 0.47 | 0.4878 | 0.4964 |
+| Recall@10 | 0.7458 | 0.7625 | 0.7587 |
+| NDCG@10 | 0.7283 | 0.7461 | 0.7352 |
+| MRR | 0.8029 | 0.8032 | 0.7975 |
 
 The full-population numbers are close to the 50-candidate sample (largest gap: Precision@10, 0.47
 vs. 0.4878) — a useful confirmation that the Phase 4 sample, while small, wasn't misleading. The
 full run is still the one future weight-comparison work should use, now that it's cheap enough to
 be the default rather than a documented compromise.
+
+**Phase 20 update**: the synthetic generator changed (`docs/data-at-scale.md` — occupation skill
+profiles are now anchored to a coherent "domain" instead of sampled uniformly at random, to give
+the knowledge graph real clustering signal). Re-ran this exact evaluation against the new data:
+ranking quality stayed essentially stable (differences within normal run-to-run noise), which is
+the expected, reassuring result — the occupation-alignment ground truth itself didn't change, only
+*which* skills co-occur within an occupation did. The real quality shift from this data change
+shows up in Phase 17's embedding-based evaluation instead, not here — see
+`docs/embedding-matching.md`.
 
 **Reading these honestly**: Recall@10 of ~0.76 and MRR of ~0.80 indicate the ranking generally
 surfaces occupation-aligned jobs near the top — expected, since occupation is one of the four

@@ -944,3 +944,62 @@ itself remains weak pending a possible future, carefully-scoped generator enhanc
 attempted here).
 
 ### Phase 19 — status: v1 COMPLETE (graph + sync + native GDS clustering all verified; clustering signal honestly weak, root-caused, not hidden)
+
+## Phase 20 — Realistic, scalable synthetic data generation (2026-10-31)
+
+In response to wanting data that produces genuinely interesting knowledge-graph insights, plus a
+LinkedIn-scale architecture target (~1M users, ~50K jobs). Fixes Phase 19's root-caused finding and
+proves the architecture at real scale in the same pass — deliberately, since there's no point
+stress-testing a generator that still produces data with no structure in it.
+
+**Built and verified, not assumed**:
+- **Domain-anchored skill sampling**: occupation skill profiles now draw ~70-80% from one of four
+  coarser "domains" (grouping the existing fine-grained categories) plus ~20-30% random noise,
+  replacing uniform-random sampling across all 64 skills. Cascades automatically to candidates/jobs
+  since they already derive their pools from occupation profiles — no other code changed.
+- **Bulk-insert, chunked generation**: candidates/jobs and their skill-junction tables now use
+  batched `executemany`-style Core inserts (10,000 rows/batch) with explicit sequential IDs,
+  replacing one-row-at-a-time ORM inserts. Default scale (2,000/1,000) unchanged — every existing
+  baseline keeps its exact prior measurement context; a new `--scale large` invocation targets the
+  real deployment goal.
+- **The actual 1M/50K stress test, run for real**: `--scale large` generated 1,000,000 candidates,
+  50,000 jobs, 3,000 occupations, 2,000 courses, and ~6.4M skill-junction rows (~7.4M rows total)
+  in **11m40s**. Full graph sync into Neo4j (via Phase 19's `sync_graph.py`, unchanged) completed
+  in **15m50s** for ~1.06M nodes and ~6.4M edges.
+- **Domain fix validated, before/after, not assumed to help**: re-ran Phase 19's clustering —
+  mean category purity 0.1585 → **0.3222**, and all 4 discovered communities now map **exactly
+  1:1** onto the 4 designed domains with zero cross-contamination (previously no correspondence at
+  all). The co-occurrence graph is still topologically complete, but its edge *weights* are now
+  sharply differentiated (min 42/max 335 vs. the old min 3/max 83) — sufficient for weighted
+  Louvain without needing graph sparsity, a more precise finding than "fixed it."
+- **A real N+1 bug found by the stress test itself, not code review**: at 50,000 jobs, rule-based
+  ranking took 3.5s/candidate (consistent with Phase 9's measured per-job rate × 50x more jobs) —
+  expected and architecturally understood. But the *embeddings* path, supposedly immune to job-count
+  scaling via ANN retrieval, took an unexpected 1.637s with only 300 jobs embedded. Traced to
+  `app/embeddings/retrieval.py` calling `load_job_profile` + three `_get_vector` queries **per job**
+  in the stage-2 loop — the exact N+1 pattern Phase 9 already fixed once, reintroduced here. Fixed
+  with new batch-loading functions (`load_job_profiles_by_ids`, `_get_vectors_batch`); re-measured
+  at **~0.11–0.21s**, a ~10-15x improvement, confirmed live via the real `/job-matches/semantic`
+  endpoint (10.7s rule-based vs. 1.2s semantic over HTTP at full 50,000-job scale) — the concrete,
+  measured case for Phase 17's two-stage architecture, not a theoretical argument for it.
+- **Every downstream baseline re-verified, not left stale**: Phase 4/9 matching quality stayed
+  essentially stable (expected — occupation-alignment ground truth didn't change). Phase 16
+  extraction held at F1 0.6766 (consistent with its earlier tuned range). **Phase 17's
+  rule-based-vs-embeddings comparison reversed**: embeddings-only now beats rule-based-only
+  (NDCG 0.798 vs. 0.645) where it previously lost (0.776 vs. 0.849) — a direct, measured
+  consequence of skills finally carrying real domain signal, not a coincidence.
+- A transient `httpx.ReadError` hit two separate long-running Ollama calls mid-session — traced to
+  an 8-hour gap in `ollama`'s own logs (02:32 → 10:42), meaning the host machine slept mid-request
+  and broke the open connections. Not a code or Ollama stability bug; both jobs succeeded cleanly
+  on retry, and the hash-based incremental design meant no already-committed progress was lost.
+- 6 new tests (domain-coverage completeness, anchored-sampling ratio, the new batch-loading
+  function), 140 total passing.
+
+**Explicitly not done in this phase**: the 1M/50K dataset was generated, measured, and then the
+standing dataset was reverted to the (now domain-fixed) small scale for day-to-day consistency with
+every other doc/test/CI check — the large-scale run was a stress test, not a permanent change to
+what's running. Candidate/job-level graph clustering, full-population embeddings/extraction at
+1M/50K scale (sampled only, by design), and promoting blended to the default ranking path all
+remain open, documented next steps.
+
+### Phase 20 — status: v1 COMPLETE (domain fix verified, 1M/50K scale proven, a real N+1 bug found and fixed, every downstream baseline refreshed)

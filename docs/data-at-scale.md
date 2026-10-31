@@ -1,7 +1,8 @@
-# Realistic, Scalable Synthetic Data Generation (Phase 20, design)
+# Realistic, Scalable Synthetic Data Generation (Phase 20)
 
-Status: v0.1 — **design only, not yet built**. Same discipline as every prior phase: written and
-reviewed before any code exists.
+Status: v1 — **implemented, verified at both the default and the 1M/50K target scale**, with a
+real downstream bug found and fixed along the way. This document was written and reviewed before
+any code existed, the same discipline as every prior phase.
 
 ## Two problems, one generator
 
@@ -66,8 +67,8 @@ than Phase 19's baseline (0.045 / 0.16) — a real before/after to report, not a
 
 | Layer | At 1M/50K | Why |
 |---|---|---|
-| Postgres (relational) | **Fully tested, for real** | Bulk insert is exactly what Postgres is built for; tens of millions of narrow rows is unremarkable at its scale |
-| Neo4j (graph sync + GDS) | **Fully tested, for real** | `sync_graph.py`'s batched `MERGE` pattern and GDS's native algorithms are designed for graphs far larger than this |
+| Postgres (relational) | **Fully tested, for real — 11m40s to generate ~7.4M rows** | Bulk insert is exactly what Postgres is built for; tens of millions of narrow rows is unremarkable at its scale |
+| Neo4j (graph sync + GDS) | **Fully tested, for real — 15m50s to sync ~1.06M nodes and ~6.4M edges** | `sync_graph.py`'s batched `MERGE` pattern and GDS's native algorithms are designed for graphs far larger than this |
 | Matching engine (`rank.py`) | **Fully tested, for real** | Pure Python/SQL, no LLM calls — Phase 9's N+1 fix already makes this a fixed small number of queries regardless of row count |
 | Embeddings (Phase 17) | **Sampled, not full-population** | Real local LLM embedding calls (~1–2s each via Ollama) for 1M candidates is weeks of compute, not a realistic local demo — see below |
 | Extraction (Phase 16) | **Sampled, not full-population** | Same constraint — LLM calls don't scale locally the way bulk SQL inserts do |
@@ -96,6 +97,60 @@ on it is now stale the moment this ships, and gets re-run, not left outdated:
   embeddings-only re-measured.
 - Phase 19 clustering (`docs/knowledge-graph.md`) — the whole point of this phase; expect (not
   assume) a real improvement, reported honestly either way.
+
+## Verified against real execution (not fabricated)
+
+**Generation performance, measured, not estimated**:
+
+| Invocation | Rows produced | Wall time |
+|---|---|---|
+| `--scale small` (default, unchanged counts) | ~22,000 total rows | ~7s |
+| `--scale large` (1M candidates / 50K jobs) | ~1,075,000 base rows + **5,833,536** `candidate_skills` + 301,531 `job_skills` + 200,607 assessments ≈ **7.4M rows total** | **11m40s** |
+
+**Domain-anchored sampling fixed the Phase 19 finding, measured before/after**:
+
+| | Phase 19 (uniform-random) | Phase 20 (domain-anchored) |
+|---|---|---|
+| Mean category purity | 0.1585 | **0.3222** |
+| Discovered communities vs. designed domains | No correspondence | **Perfect 1:1 recovery** — all 4 communities map exactly onto `software_engineering`/`business_ops`/`trades_logistics`/`people_services` with zero cross-contamination |
+
+The co-occurrence graph is still topologically complete (2,016 edges — every skill pair still
+co-occurs at least once across 2,000+ candidates/jobs/occupations), but the **weight distribution**
+is now sharply differentiated (min 42, max 335, vs. the old min 3, max 83) — strong within-domain
+co-occurrence, weak cross-domain. That's sufficient signal for weighted Louvain to recover clean
+communities even without graph sparsity — a more precise, more honest finding than "fixed it" would
+be: the graph's *topology* didn't change, its *weights* did, and that was enough.
+
+**A real downstream bug found by the 50K-job stress test, not by code review**: `rank_jobs_for_
+candidate` (rule-based) took **3.5s** for one candidate against 50,000 jobs — consistent with
+Phase 9's measured ~0.06s/job rate at 50x the job count. But `rank_jobs_for_candidate_semantic`
+(Phase 17's embeddings path, supposedly immune to job-count scaling via ANN retrieval) took an
+unexpectedly slow **1.637s** even with only 300 jobs embedded. Investigated, not assumed: traced
+to `app/embeddings/retrieval.py` calling `load_job_profile` and three separate `_get_vector`
+queries **per job in the stage-2 loop** — up to 5 queries × 200 jobs = 1,000 queries per request,
+the exact N+1 pattern Phase 9 already fixed once, reintroduced here. Fixed with
+`load_job_profiles_by_ids` (`app/matching/profiles.py`) and `_get_vectors_batch`
+(`app/embeddings/retrieval.py`) — both batch-load once per request instead of once per job.
+**Re-measured: 1.637s → ~0.11–0.21s, a ~10-15x improvement**, confirmed via the live
+`/job-matches/semantic` endpoint too (1.2s round-trip over HTTP, including network overhead).
+
+**The architectural point this was all for, confirmed live at real scale**: against the full
+50,000-job dataset, the rule-based endpoint took **10.7s** per request; the (now-fixed) semantic
+endpoint took **1.2s** — not because embeddings are inherently faster per comparison, but because
+ANN retrieval narrows the candidate set before scoring, while the rule-based path scores every job
+on every request. This is the concrete, measured case for the two-stage architecture Phase 17 was
+built around, not a theoretical argument.
+
+**Every downstream baseline re-verified, not left stale**:
+
+| Harness | Before (Phase 19 data) | After (Phase 20 domain-anchored data) |
+|---|---|---|
+| Phase 4/9 matching (`docs/evaluation-strategy.md`) | P@10 0.4878, NDCG 0.7461 | P@10 0.4964, NDCG 0.7352 — stable, as expected (occupation-alignment ground truth is unchanged) |
+| Phase 16 extraction (`docs/skill-extraction.md`) | F1 0.504–0.664 | **F1 0.6766** — consistent with the earlier `qwen2.5:1.5b` improvement |
+| Phase 17 embeddings (`docs/embedding-matching.md`) | embeddings-only *underperformed* rule-based (NDCG 0.776 vs 0.849) | **embeddings-only now *beats* rule-based** (NDCG 0.798 vs 0.645) — a direct, measured consequence of skills finally carrying real domain signal; blended is better still (NDCG 0.878) |
+
+The Phase 17 reversal is the most interesting result in this whole phase: embeddings-based matching
+was never weaker *in principle* — it was only ever as good as the skill data it had to work with.
 
 ## Known limitations (v1, by design)
 

@@ -173,6 +173,20 @@ measured baseline that depends on the current `SEED=42` skill distribution (Phas
 Phase 16/17's golden-dataset numbers) — a much larger, riskier change than this phase's actual
 scope. The honest result stands as reported.
 
+### Update (Phase 20): the generator was changed, deliberately and with full re-verification
+
+The decision above held until the user explicitly asked for exactly this change — category-coherent
+skill sampling, as part of a broader scale/realism pass (`docs/data-at-scale.md`). Occupation skill
+profiles are now anchored to one of four coarser "domains" instead of sampled uniformly at random.
+Re-running this exact clustering job afterward: **mean category purity 0.1585 → 0.3222**, and more
+strikingly, **all 4 discovered communities now map 1:1 onto the 4 designed domains with zero
+cross-contamination** — not an approximate improvement, a clean recovery. The co-occurrence graph
+is still topologically complete (every skill pair still co-occurs at least once), but its *weight*
+distribution is now sharply differentiated (min 42/max 335 vs. the old min 3/max 83) — enough for
+weighted Louvain to find real structure without needing a sparse graph. Every downstream baseline
+this change could have invalidated (Phase 4/9, 16, 17) was re-run and republished, not left stale
+— see `docs/data-at-scale.md`'s "Verified against real execution" for the full before/after.
+
 ## Known limitations (v1, by design)
 
 - Batch sync only — the graph can be stale relative to Postgres between sync runs. Acceptable
@@ -182,7 +196,7 @@ scope. The honest result stands as reported.
 - No live query API — Neo4j Browser and ad-hoc Cypher only for v1, not an application-facing
   endpoint.
 - Clustering scope is skills only in v1 — candidate/job-level clustering is v2, not built now.
-- Skill clustering's signal is weak on the current synthetic dataset (modularity 0.045, purity
-  0.16) because occupation-skill assignment is uniform-random, not category-weighted — see the
-  root-cause investigation above. Candidate/job-level clustering (v2) may or may not have the same
-  limitation; not yet tested.
+- ~~Skill clustering's signal is weak~~ **Resolved (Phase 20)**: occupation-skill assignment is now
+  domain-anchored; purity improved 0.1585 → 0.3222 with perfect domain recovery — see the "Update
+  (Phase 20)" note above. Candidate/job-level clustering (v2) hasn't been tested and may or may not
+  benefit the same way.

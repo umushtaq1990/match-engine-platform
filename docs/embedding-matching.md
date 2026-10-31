@@ -180,6 +180,29 @@ candidate/job population ad-hoc (768-dim vectors can't be written into the 384-d
 the near-miss result was a strong enough signal not to invest further time switching models for
 v2.
 
+## Phase 20 re-verification: the rule-based-vs-embeddings comparison reversed
+
+The synthetic generator changed after the comparison above was measured (domain-anchored skill
+sampling instead of uniform-random, to give the knowledge graph real clustering signal — see
+`docs/data-at-scale.md`). Re-ran the exact same three-way comparison against the new data:
+
+| Mode | Precision@10 | Recall@10 | NDCG@10 | MRR |
+|---|---|---|---|---|
+| rule_based | 0.4267 | 0.6586 | 0.6449 | 0.7483 |
+| blended | 0.5600 | 0.8697 | 0.8777 | 0.9000 |
+| embeddings_only | 0.5233 | 0.8150 | 0.7980 | 0.8389 |
+
+**This reverses the original finding**: embeddings-only now *beats* rule-based-only (NDCG 0.798 vs.
+0.645), where it previously underperformed (0.776 vs. 0.849). The explanation is direct, not
+speculative: the Skills-dimension embedding is a weighted average of per-skill vectors — when skill
+assignment was uniform-random noise, that average carried almost no signal; now that skills are
+domain-coherent, the same averaging operation produces a genuinely informative vector. Embeddings
+were never weaker *in principle* — they were only ever as good as the skill data backing them.
+Blended remains the strongest of the three, as before. Rule-based still stays the default ranking
+path in production — this result makes a stronger case for eventually promoting blended, but that
+promotion decision is deliberately not made automatically from one measurement; see "Phased
+roadmap" below.
+
 ## Phased roadmap
 
 - **v1 (this phase)**: pgvector swap, `entity_embeddings` schema + indexes, Skills/Experience/
@@ -187,8 +210,9 @@ v2.
   the refresh/invalidation job, stage-1 ANN retrieval wired into a new optional path on the
   existing ranking functions, and the three-way evaluation harness (rule-based / blended /
   embeddings-only) comparing `all-minilm` vs `nomic-embed-text`.
-- **v2**: if a config measurably beats rule-based-only, promote it to the default path — a
-  decision made from v1's numbers, not assumed now.
+- **v2**: promote blended to the default ranking path — the Phase 20 re-verification above is
+  exactly the measured case this step was waiting for (NDCG 0.878 vs. rule-based's 0.645), but
+  promoting it is a deliberate decision still pending, not auto-applied from one measurement.
 - **v3**: courses dimension (candidate skill-gap → course matching) — explicitly a separate topic,
   deferred per the user's own framing, reusing the same vector infrastructure.
 - **v4, only if pgvector is measured insufficient**: migrate to Qdrant at a real target scale.

@@ -137,6 +137,11 @@ The actual "get better scores" step the v1 baseline existed to enable:
   skills (Python, Docker, Communication as required; Kubernetes as preferred) from a real request,
   with confidence scores all above 0.77 and zero unmatched phrases.
 
+**Phase 20 re-verification**: the synthetic generator changed (domain-anchored skill sampling, see
+`docs/data-at-scale.md`) after this tuning was done. Re-ran the exact same eval (`qwen2.5:1.5b`,
+threshold 0.55) against the new data: **F1 0.6766** — consistent with the 0.60–0.66 range measured
+above, confirming the tuned configuration still holds against the regenerated dataset.
+
 ## Phased roadmap
 
 - **v1 (this phase)**: pipeline + both golden-dataset parts + evaluation harness +  one baseline

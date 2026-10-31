@@ -115,6 +115,45 @@ def load_job_profile(session: Session, job_id: int) -> JobProfile | None:
     )
 
 
+def load_job_profiles_by_ids(session: Session, job_ids: list[int]) -> dict[int, JobProfile]:
+    """Same batch-loading discipline as load_all_job_profiles (Phase 9's N+1
+    fix), scoped to a specific id subset — 2 queries regardless of subset
+    size, not one `load_job_profile` call per id. Added in Phase 20 after a
+    real stress test found `app/embeddings/retrieval.py` was still calling
+    `load_job_profile` in a per-job loop (docs/data-at-scale.md)."""
+    if not job_ids:
+        return {}
+
+    jobs = session.execute(select(Job).where(Job.id.in_(job_ids))).scalars().all()
+
+    skill_rows = session.execute(
+        select(JobSkill.job_id, JobSkill.skill_id, JobSkill.requirement_level).where(
+            JobSkill.job_id.in_(job_ids)
+        )
+    ).all()
+    required_by_job: dict[int, set[int]] = {}
+    preferred_by_job: dict[int, set[int]] = {}
+    for job_id, skill_id, level in skill_rows:
+        target = required_by_job if level == RequirementLevel.required else preferred_by_job
+        target.setdefault(job_id, set()).add(skill_id)
+
+    return {
+        job.id: JobProfile(
+            id=job.id,
+            title=job.title,
+            company_name=job.company_name,
+            required_skill_ids=required_by_job.get(job.id, set()),
+            preferred_skill_ids=preferred_by_job.get(job.id, set()),
+            location_city=job.location_city,
+            location_region=job.location_region,
+            salary_min=job.salary_min,
+            salary_max=job.salary_max,
+            occupation_id=job.occupation_id,
+        )
+        for job in jobs
+    }
+
+
 def load_all_job_profiles(session: Session) -> list[JobProfile]:
     """Batch-loaded version of load_job_profile for every job (Phase 9 fix).
 

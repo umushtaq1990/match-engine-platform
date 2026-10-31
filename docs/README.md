@@ -85,10 +85,11 @@ update it whenever a doc is added, renamed, or removed.
   clustering signal is weak on the current synthetic data (Phase 19, v1)
 
 ## Data at scale
-- [data-at-scale.md](data-at-scale.md) — category-coherent skill sampling (fixing Phase 19's
-  "no clustering signal" finding), bulk-insert generation, a 1M-candidate/50K-job stress-test
-  invocation, and the honest boundary between what scales locally (Postgres/Neo4j/matching) and
-  what doesn't (local LLM embeddings) (Phase 20, design only — not yet built)
+- [data-at-scale.md](data-at-scale.md) — category-coherent skill sampling (fixing Phase 19's "no
+  clustering signal" finding — verified: perfect domain recovery, purity 0.16 -> 0.32), bulk-insert
+  generation verified at the real 1M-candidate/50K-job target (11m40s for ~7.4M rows), a real N+1
+  bug found and fixed in the semantic matching path (10-15x latency improvement), and every
+  downstream baseline (Phase 4, 16, 17) re-verified with fresh numbers (Phase 20, v1)
 
 ## Redis infrastructure
 - [redis-infrastructure.md](redis-infrastructure.md) — three scoped use cases: a Redis-backed

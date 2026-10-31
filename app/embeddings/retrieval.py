@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.embeddings.models import EntityEmbedding
-from app.matching.profiles import load_candidate_profile, load_job_profile
+from app.matching.profiles import load_candidate_profile, load_job_profiles_by_ids
 from app.matching.scoring import _location_component, _occupation_component, _salary_component
 
 DEFAULT_EMBEDDING_MODEL = "all-minilm"
@@ -78,6 +78,29 @@ def _get_vector(
     return list(row) if row is not None else None
 
 
+def _get_vectors_batch(
+    session: Session, entity_type: str, entity_ids: list[int], embedding_model: str
+) -> dict[int, dict[str, list[float]]]:
+    """One query for every (entity_id, dimension) vector needed, instead of
+    one `_get_vector` call per entity per dimension — fixes a real N+1 found
+    by Phase 20's stress test (up to ~5 queries per job in stage 2,
+    50x-amplified at the 50,000-job target scale). See docs/data-at-scale.md.
+    """
+    if not entity_ids:
+        return {}
+    rows = session.execute(
+        select(EntityEmbedding.entity_id, EntityEmbedding.dimension, EntityEmbedding.vector).where(
+            EntityEmbedding.entity_type == entity_type,
+            EntityEmbedding.entity_id.in_(entity_ids),
+            EntityEmbedding.embedding_model == embedding_model,
+        )
+    ).all()
+    result: dict[int, dict[str, list[float]]] = {}
+    for entity_id, dimension, vector in rows:
+        result.setdefault(entity_id, {})[dimension] = list(vector)
+    return result
+
+
 def _stage1_job_ids(
     session: Session, candidate_vector: list[float], embedding_model: str, top_n: int
 ) -> list[int]:
@@ -135,15 +158,21 @@ def rank_jobs_for_candidate_semantic(
 
     job_ids = _stage1_job_ids(session, candidate_skills_vector, embedding_model, stage1_top_n)
 
+    # Both batch-loaded once for the whole stage-1 candidate set, not once
+    # per job_id — see _get_vectors_batch's docstring for the N+1 this fixes.
+    job_profiles = load_job_profiles_by_ids(session, job_ids)
+    job_vectors = _get_vectors_batch(session, "job", job_ids, embedding_model)
+
     results = []
     for job_id in job_ids:
-        job_profile = load_job_profile(session, job_id)
+        job_profile = job_profiles.get(job_id)
         if job_profile is None:
             continue
 
-        job_skills_vector = _get_vector(session, "job", job_id, "skills", embedding_model)
-        job_experience_vector = _get_vector(session, "job", job_id, "experience", embedding_model)
-        job_overall_vector = _get_vector(session, "job", job_id, "overall", embedding_model)
+        vectors = job_vectors.get(job_id, {})
+        job_skills_vector = vectors.get("skills")
+        job_experience_vector = vectors.get("experience")
+        job_overall_vector = vectors.get("overall")
 
         skills_sim = (
             _cosine_similarity(candidate_skills_vector, job_skills_vector)
