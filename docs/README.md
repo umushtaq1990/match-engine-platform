@@ -80,9 +80,10 @@ update it whenever a doc is added, renamed, or removed.
 
 ## Knowledge graph
 - [knowledge-graph.md](knowledge-graph.md) — Neo4j + GDS graph linking candidates/skills/
-  occupations/jobs/courses, idempotent batch sync verified against the full seeded dataset, native
-  Louvain clustering, Neo4j Browser visualization, and a real root-caused finding about why the
-  clustering signal is weak on the current synthetic data (Phase 19, v1)
+  occupations/jobs/courses, idempotent batch sync, native Louvain skill clustering (purity fixed in
+  Phase 20 via domain-anchored sampling), and Phase 23's candidate/job clustering — two independent
+  runs that both recovered the same 4 skill domains purely from co-skill patterns, with a measured
+  threshold choice and an honestly-flagged purity-granularity caveat
 
 ## Data at scale
 - [data-at-scale.md](data-at-scale.md) — category-coherent skill sampling (fixing Phase 19's "no

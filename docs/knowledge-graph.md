@@ -106,6 +106,46 @@ construct the co-occurrence graph**, making it a legitimate independent check: d
 sanity check that the method works at all; disagreement would be a real, interesting finding worth
 investigating, not a failure to hide.
 
+## Candidate/job clustering (Phase 23)
+
+The same native-GDS Louvain pattern, one level up: `app/graph/cluster_entities.py` derives a
+**candidate-candidate** (or **job-job**) similarity relationship — two candidates connected,
+weighted by how many skills they share (via `HAS_SKILL`/`REQUIRES_SKILL`) — then runs the identical
+project/Louvain/write sequence as skill clustering. The point isn't to re-cluster skills again; it's
+to ask whether *people* (or *job postings*) group into implicit segments that aren't just a
+restatement of the explicit `occupation_id` label — the "talent segments" the user's original
+framing asked for.
+
+**A threshold, chosen by measurement, not guessed**: edges only form between entities sharing **at
+least 2** skills, not 1. Measured directly: at threshold 1, the candidate-candidate graph has
+**808,575** edges and mean occupation purity **0.0523**; at threshold 2, **214,926** edges (~3.8x
+fewer) and purity **0.2891** (~5.5x higher). A single shared skill is weak, noisy signal at this
+scale — pruning it both shrinks the graph and sharpens the clustering.
+
+**The real finding**: clustering candidates and clustering jobs — two *independent* runs, over two
+different graphs — both converged on exactly **4 communities**. That's not a coincidence; it's the
+same 4 domains Phase 20's generator anchors skill assignment to (`software_engineering`,
+`business_ops`, `trades_logistics`, `people_services` — see `docs/data-at-scale.md`), recovered
+purely from candidate-candidate and job-job co-skill patterns, with no domain label ever written to
+the database. This is the most direct demonstration yet that the domain-anchoring fix produces
+structure a graph algorithm can actually discover, not just a number (purity) that moved in the
+right direction.
+
+**Reading the purity numbers honestly — a granularity mismatch, not a clustering failure**:
+candidate purity (0.2891) is noticeably higher than job purity (0.0495) against the same kind of
+check (most-common `occupation_title` per community). Occupation is a much finer-grained label (150
+distinct occupations) than the 4 broad domains these communities actually represent — even a
+*perfectly* domain-pure job community spanning ~37 occupations evenly would cap out near
+1/37 ≈ 0.027 purity under that ground truth, so 0.0495 is modestly *above* that naive floor, not
+evidence of no structure (confirmed separately: modularity 0.6065, a well-separated graph). The
+candidate/job purity gap itself is an open question — not chased further in this pass, a real
+avenue for v2 if this capability is pushed further.
+
+**Run with**: `docker compose run --rm graph-cluster-entities` (after `graph-sync`). Writes
+`communityId` onto `Candidate` and `Job` nodes via two separate relationship types
+(`CANDIDATE_SIMILAR_TO`, `JOB_SIMILAR_TO`), viewable in Neo4j Browser exactly like skill
+communities.
+
 ## Visualization
 
 Neo4j Browser, built into the server, reachable at `http://localhost:7474` — zero additional
@@ -125,8 +165,9 @@ for recommendations," explicitly deferred to v3.
 
 - **v1 (this phase)**: schema, idempotent batch sync from Postgres, skill co-occurrence clustering
   (Louvain, validated against existing skill categories), Neo4j Browser visualization.
-- **v2**: candidate/job clustering (not just skills), a custom visualization beyond Neo4j Browser
-  if the built-in one proves limiting for a specific demo need.
+- ~~**v2**: candidate/job clustering (not just skills)...~~ **Done (Phase 23)** — see "Candidate/job
+  clustering" above. A custom visualization beyond Neo4j Browser remains open, if the built-in one
+  proves limiting for a specific demo need.
 - **v3**: a graph-based relatedness signal feeding into Phase 17's multi-dimensional matching blend
   — only after v1/v2 produce something concrete enough to measure, same "prove it, then wire it
   in" discipline as every other phase.

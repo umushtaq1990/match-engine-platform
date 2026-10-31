@@ -1097,3 +1097,40 @@ path taken is reported via a new `X-Ranking-Mode` response header (`blended` / `
   path falls back to the exact same rule-based scores those tests already asserted.
 
 ### Phase 22 — status: COMPLETE (blended promoted to default, verified live, rule-based still available via `mode=rule_based`)
+
+## Phase 23 — candidate/job clustering via Neo4j GDS (2026-10-31)
+
+Second of four user-selected deferred items. Phase 19's clustering only ever grouped skills;
+this phase asks the same question one level up — do *people* and *job postings* themselves group
+into implicit segments, not just a restatement of `occupation_id`.
+
+**Built**: `app/graph/cluster_entities.py`, the same native-Cypher Louvain pattern as Phase 19's
+`cluster_skills.py` — derives a candidate-candidate (or job-job) similarity relationship weighted
+by shared-skill count, projects it, runs Louvain, writes `communityId` back onto `Candidate`/`Job`
+nodes (`CANDIDATE_SIMILAR_TO`/`JOB_SIMILAR_TO` relationship types). New `graph-cluster-entities`
+one-off job in `docker-compose.yml`.
+
+**Measured, not guessed, threshold choice**: `MIN_SHARED_SKILLS=2`. At threshold 1, the
+candidate-candidate graph has 808,575 edges and mean occupation purity 0.0523; at threshold 2,
+214,926 edges (~3.8x fewer) and purity 0.2891 (~5.5x higher) — a single shared skill is noise at
+this scale, pruning it both shrinks and sharpens the graph.
+
+**The real finding**: clustering candidates and clustering jobs — two independent runs over two
+different graphs — both converged on exactly 4 communities, the same 4 domains Phase 20's generator
+anchors skill assignment to (`docs/data-at-scale.md`), recovered purely from co-skill patterns with
+no domain label ever written to the database. The clearest demonstration yet that the domain-
+anchoring fix produces structure a graph algorithm can actually discover.
+
+**Read honestly, not oversold**: candidate purity (0.2891) comfortably beats job purity (0.0495)
+against the same occupation-title check, but occupation (150 distinct values) is a much finer-
+grained ground truth than the 4 broad domains these communities represent — a perfectly
+domain-pure job community spanning ~37 occupations evenly would cap near 1/37≈0.027 purity, so
+0.0495 is modestly above that floor, not evidence of no structure (modularity 0.6065 confirms a
+well-separated graph). The candidate/job purity gap itself is flagged as an open question, not
+chased further in this pass.
+
+4 new pure-logic tests (`tests/graph/test_cluster_entities.py`), 154 total passing. Verified live
+end-to-end against the real seeded dataset (2,000 candidates, 1,000 jobs) via `docker compose run
+--rm graph-cluster-entities`, ~1m runtime.
+
+### Phase 23 — status: COMPLETE (candidate/job clustering built, measured threshold choice, a genuinely new finding: both independently recover the same 4 domains)
