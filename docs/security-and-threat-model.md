@@ -50,16 +50,16 @@ Basic in-app rate limiting added to all three live services (`api`, `analytics`,
 IP), default 100 requests/minute. `/health` and `/readiness` are explicitly exempt — infrastructure
 health checks shouldn't compete with the limit real callers are rate-limited by.
 
-**A real limitation found by testing, not assumed away**: `api` runs 4 `uvicorn` worker processes
-(Phase 13's fix for CPU-bound scoring). Each worker keeps its own independent in-memory counter —
-the same class of bug Phase 13 found with Prometheus metrics under multiple workers. A real test
-(150 rapid sequential requests with one key) let **122** through before 429s started, not a clean
-100 — the effective limit is inflated and unevenly enforced across workers, not a true global
-limit. A correct fix needs a shared counter store (e.g. Redis) — this is the first concrete,
-*measured* case in this project where that tool would provide real value, not a hypothetical one
-(see `docs/production-readiness.md`). Not fixed in v1: `analytics` and `extraction` run a single
-worker each, so this specific issue doesn't affect them, and `api`'s limit — while imprecise — still
-meaningfully bounds abuse, just not to the exact configured number.
+**A real limitation found by testing, then fixed (Phase 21)**: `api` runs 4 `uvicorn` worker
+processes (Phase 13's fix for CPU-bound scoring). Each worker kept its own independent in-memory
+counter — the same class of bug Phase 13 found with Prometheus metrics under multiple workers. A
+real test (150 rapid sequential requests with one key) let **122** through before 429s started, not
+a clean 100 — the effective limit was inflated and unevenly enforced across workers, not a true
+global limit. **Fixed in Phase 21** by pointing `api` and `analytics` at a shared Redis-backed
+`storage_uri` (`app/api/rate_limit.py`, `docs/redis-infrastructure.md`) — re-running the identical
+150-request test against the fix now measures a clean **100 through, 50 blocked**. `extraction`
+still runs a single worker and was left on in-memory storage; `api`'s old imprecise-but-bounded
+behavior is gone, not just documented as acceptable.
 
 **`analytics`'s ingestion routes (`/events`, `/events/batch`) are explicitly exempt**, not
 rate-limited at all: they're internal, best-effort instrumentation traffic driven 1:1 by

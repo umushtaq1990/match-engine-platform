@@ -96,11 +96,15 @@ So the instrumentation point is in `app/api/routes.py`, not in a client SDK: eve
 returned item, via `POST /events/batch` (a batch endpoint specifically so N returned items cost one
 HTTP call to the analytics service, not N).
 
-**v1 is synchronous and best-effort**: the matching API calls the analytics API in-line, logs and
-swallows a failure (never lets an analytics outage break a real matching response), and does not
-retry. This is a deliberate, documented limitation — see "Known limitations" below — not an
-oversight; making it properly non-blocking (background task, or a queue) is listed under the
-phased roadmap.
+**v1 was synchronous and best-effort**: the matching API called the analytics API in-line, logged
+and swallowed a failure (never let an analytics outage break a real matching response), and did not
+retry. **Decoupled in Phase 21** via Redis Streams (`app/api/stream_client.py`,
+`app/analytics/stream_consumer.py`, `docs/redis-infrastructure.md` "Use case 3"): the hook now
+publishes an `XADD` instead of making the HTTP call directly, which is durable across an analytics
+outage (the stream persists events up to a configured `MAXLEN` even while the consumer is down —
+strictly better than v1's "down means dropped"), falling back to the original synchronous HTTP path
+only when `REDIS_URL` isn't configured at all. The `POST /events`/`/events/batch` HTTP endpoints
+below are unchanged and still used for direct/manual submission — both paths coexist.
 
 ## API contract (v1)
 
@@ -140,13 +144,15 @@ data has real signal rather than being trivially clean:
   engagement feature vectors, evaluated against the v2 rule-based labels the same way
   `docs/evaluation-strategy.md` evaluates matching quality — a measured comparison, not an assumed
   improvement.
-- **v4 — scale-driven hardening**: streaming ingestion (Kafka/Redis Streams) if/when synchronous
-  HTTP ingestion is shown to be a bottleneck, a non-blocking instrumentation hook (background task
-  or queue instead of an inline call), a Grafana panel reusing the Phase 9 observability stack, and
-  an analytics-specific data-quality `CronJob` mirroring the Phase 9/12 pattern.
+- ~~**v4 — scale-driven hardening**: streaming ingestion (Kafka/Redis Streams)...~~ **Partially
+  resolved (Phase 21)**: the instrumentation hook is now decoupled via Redis Streams — see above and
+  `docs/redis-infrastructure.md`. Still open from the original v4 scope: a Grafana panel reusing the
+  Phase 9 observability stack, an analytics-specific data-quality `CronJob` mirroring the Phase
+  9/12 pattern, and consumer-group failure handling (`XPENDING`/claim logic for a crashed consumer —
+  deferred to Redis's own v2, see `docs/redis-infrastructure.md` "Known limitations").
 
-None of v2–v4 are scheduled yet — recorded here so the shape of "simple now, advanced later" is
-explicit rather than improvised when the time comes.
+None of v2–v3 (or the remaining v4 items above) are scheduled yet — recorded here so the shape of
+"simple now, advanced later" is explicit rather than improvised when the time comes.
 
 ## Privacy/consent (new assumption)
 
@@ -189,9 +195,12 @@ it should be treated as a precondition for any real use, not an afterthought bol
 - No FK-enforced referential integrity between `analytics.behavioral_events` and the matching
   engine's `candidates`/`jobs` tables — a deliberate decoupling choice, checked by a data-quality
   report instead of a constraint.
-- Instrumentation call from the matching API to the analytics API is synchronous and best-effort;
+- ~~Instrumentation call from the matching API to the analytics API is synchronous and best-effort;
   an analytics outage must not break matching responses, but a dropped event is currently silent
-  (no retry/dead-letter queue yet).
+  (no retry/dead-letter queue yet).~~ **Resolved (Phase 21)**: durable via Redis Streams instead —
+  an analytics outage no longer drops events, they sit in the stream until the consumer catches up.
+  Still no retry/dead-letter handling for a consumer that crashes mid-batch — see
+  `docs/redis-infrastructure.md` "Known limitations".
 - No segmentation, clustering, or dashboard yet — this phase only produces the raw event log.
 - No real privacy/consent/retention mechanism (see A10) — acceptable only because all data is
   synthetic.

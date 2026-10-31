@@ -140,16 +140,52 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8001/health)" = "200"
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8001/events -H 'Content-Type: application/json' -d '{"actor_type":"candidate","actor_id":1,"event_type":"login"}')" = "401"
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8001/events -H "X-API-Key: $api_key" -H 'Content-Type: application/json' -d '{"actor_type":"candidate","actor_id":1,"event_type":"login"}')" = "201"
-      - name: Confirm the matching API's instrumentation hook reaches analytics
+      - name: Confirm the matching API's instrumentation hook reaches analytics via Redis Streams
         run: |
           set -e
+          # Phase 21: this hook now publishes via XADD instead of a synchronous
+          # HTTP POST (docs/redis-infrastructure.md "Use case 3") — the
+          # analytics service's background consumer (app/analytics/
+          # stream_consumer.py) picks it up asynchronously, so give it a
+          # couple of seconds rather than asserting instant delivery.
           api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
           before=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from analytics.behavioral_events where source='api';" | xargs)
           curl -s -o /dev/null -H "X-API-Key: $api_key" http://localhost:8000/candidates/2/job-matches
-          sleep 1
+          sleep 3
           after=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from analytics.behavioral_events where source='api';" | xargs)
           echo "before=$before after=$after"
           [ "$after" -gt "$before" ]
+      - name: Smoke-test Phase 21 result caching (X-Cache header)
+        run: |
+          set -e
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          first=$(curl -s -D - -o /dev/null -H "X-API-Key: $api_key" "http://localhost:8000/candidates/3/job-matches" | grep -i '^x-cache:' | tr -d '\r')
+          second=$(curl -s -D - -o /dev/null -H "X-API-Key: $api_key" "http://localhost:8000/candidates/3/job-matches" | grep -i '^x-cache:' | tr -d '\r')
+          echo "first=$first second=$second"
+          echo "$first" | grep -qi 'MISS'
+          echo "$second" | grep -qi 'HIT'
+      - name: Smoke-test Phase 21 Redis-backed rate limiting (shared counter across worker processes)
+        run: |
+          set -e
+          # Phase 18 found slowapi's default in-memory storage gives each of
+          # api's 4 uvicorn worker processes an independent counter — 150
+          # rapid requests let ~122 through before 429s, not a clean 100. With
+          # REDIS_URL set (docker-compose.yml), all 4 workers share one Redis
+          # counter instead, keyed by X-API-Key (see app/api/rate_limit.py) —
+          # the same key this job's earlier steps already called with, so the
+          # bound checked here is "never more than 100", not an exact count:
+          # a few quota units are already spent by the time this step runs.
+          # See docs/redis-infrastructure.md "Use case 1".
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          ok=0
+          limited=0
+          for i in $(seq 1 150); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $api_key" "http://localhost:8000/candidates/4/job-matches")
+            [ "$code" = "200" ] && ok=$((ok+1))
+            [ "$code" = "429" ] && limited=$((limited+1))
+          done
+          echo "200s=$ok 429s=$limited"
+          [ "$ok" -gt 0 ] && [ "$ok" -le 100 ] && [ "$limited" -gt 0 ]
       - name: Start ollama (Phase 15 shared model-serving layer)
         run: docker compose up -d ollama
       - name: Wait for ollama healthy

@@ -6,17 +6,21 @@ impression, so click-through-rate — the whole point of this subsystem — is
 uncomputable retroactively unless every returned recommendation is logged
 the moment it's shown. See docs/behavioral-analytics.md.
 
-v1 is synchronous and best-effort, by design: the analytics service is a
-separate, independently deployable service (docs/behavioral-analytics.md's
-service-boundary decision), so an outage there must never break a real
-matching response. Every exception is caught and logged, never raised.
-Making this properly non-blocking (background task or queue) is a
-documented future step (v4 in the roadmap), not built now.
+Phase 21: now decoupled via Redis Streams (app/api/stream_client.py) when
+REDIS_URL is configured — an `XADD` instead of a synchronous HTTP call,
+durable even while the analytics service is down (docs/redis-infrastructure.md
+"Use case 3"). Falls back to the original synchronous HTTP POST when Redis
+isn't configured, so a bare local/pytest run behaves exactly as before
+Phase 21. Either way this stays best-effort: every exception is caught and
+logged, never raised — an outage in analytics or Redis must never break a
+real matching response.
 """
 import logging
 import os
 
 import httpx
+
+from app.api.stream_client import publish_events
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,10 @@ def log_recommendations_shown(
         }
         for rank, entity_id in enumerate(entity_ids, start=1)
     ]
+
+    if publish_events(events):
+        return
+
     api_key = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
     try:
         httpx.post(

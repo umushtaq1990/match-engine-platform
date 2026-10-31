@@ -19,8 +19,13 @@ services:
       # never blocks on the analytics service, so no depends_on/healthcheck
       # coupling to it here. See docs/behavioral-analytics.md.
       ANALYTICS_URL: http://analytics:8001
+      # Phase 21: rate-limit storage, result cache, and Streams producer. See
+      # docs/redis-infrastructure.md.
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -84,8 +89,13 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       JME_API_KEY: ${JME_API_KEY}
+      # Phase 21: rate-limit storage and Streams consumer group. See
+      # docs/redis-infrastructure.md.
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
@@ -220,6 +230,24 @@ services:
       ollama:
         condition: service_healthy
     profiles: ["tools"]
+
+  # Phase 21: shared Redis instance serving three use cases — rate-limiting
+  # backend (fixes Phase 18's measured multi-worker counter-inflation bug),
+  # 1-hour result cache (cache-aside on the matching endpoints), and the
+  # Streams broker decoupling the analytics instrumentation hook from a
+  # synchronous HTTP call. One instance for all three in v1, not three
+  # separate deployments — see docs/redis-infrastructure.md.
+  redis:
+    image: redis:7.4.12-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   db:
     image: pgvector/pgvector:0.8.7-pg16
@@ -364,3 +392,4 @@ volumes:
   grafana_data:
   ollama_data:
   neo4j_data:
+  redis_data:

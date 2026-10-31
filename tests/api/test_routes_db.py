@@ -34,6 +34,10 @@ def test_job_matches_route_returns_real_scored_match(matching_db_session):
         assert body[0]["eligible"] is True
         assert body[0]["score"]["total"] == 0.835
         assert body[0]["skill_gap"]["not_recorded_preferred"] == [ids["sql_id"]]
+        # Phase 21: cache-aside is wired in, but there's no Redis container in
+        # this test run (REDIS_URL unset) — every request is a documented
+        # fail-open miss, not a silent no-op. See app/api/cache.py.
+        assert response.headers["X-Cache"] == "MISS"
     finally:
         app.dependency_overrides.clear()
 

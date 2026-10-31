@@ -5,10 +5,11 @@ matching orchestrators (rank.py / course_recommendations.py), and translates
 the result dataclasses into the wire schemas in schemas.py. All routes
 require the X-API-Key header (see deps.require_api_key).
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.api.analytics_client import log_recommendations_shown
+from app.api.cache import cache_key, get_cached, set_cached
 from app.api.deps import DbSession, RequireApiKey
 from app.api.schemas import (
     CourseRecommendationOut,
@@ -51,10 +52,26 @@ def _to_match_out(result: MatchResult) -> MatchOut:
 
 @router.get("/candidates/{candidate_id}/job-matches", response_model=list[MatchOut])
 def get_job_matches_for_candidate(
-    candidate_id: int, top_k: int = 10, include_ineligible: bool = False,
+    candidate_id: int, response: Response, top_k: int = 10, include_ineligible: bool = False,
     db: Session = DbSession,
 ):
-    """Use Case A: rank jobs for a candidate."""
+    """Use Case A: rank jobs for a candidate.
+
+    Phase 21: cache-aside, 1-hour TTL (docs/redis-infrastructure.md "Use case
+    2") — an `X-Cache: HIT`/`MISS` header makes the behavior demonstrable.
+    A cached hit still logs a recommendation_shown impression: the user is
+    seeing the recommendation again regardless of whether it was recomputed.
+    """
+    key = cache_key("job-matches", candidate_id, top_k, include_ineligible)
+    cached = get_cached(key)
+    if cached is not None:
+        response.headers["X-Cache"] = "HIT"
+        log_recommendations_shown(
+            actor_type="candidate", actor_id=candidate_id,
+            entity_type="job", entity_ids=[m["entity_id"] for m in cached],
+        )
+        return cached
+
     try:
         results = rank_jobs_for_candidate(
             db, candidate_id, top_k=top_k, include_ineligible=include_ineligible
@@ -65,24 +82,36 @@ def get_job_matches_for_candidate(
         actor_type="candidate", actor_id=candidate_id,
         entity_type="job", entity_ids=[r.entity_id for r in results],
     )
-    return [_to_match_out(r) for r in results]
+    matches = [_to_match_out(r) for r in results]
+    response.headers["X-Cache"] = "MISS"
+    set_cached(key, [m.model_dump() for m in matches])
+    return matches
 
 
 @router.get("/candidates/{candidate_id}/job-matches/semantic", response_model=list[SemanticMatchOut])
 def get_job_matches_for_candidate_semantic(
-    candidate_id: int, top_k: int = 10, db: Session = DbSession,
+    candidate_id: int, response: Response, top_k: int = 10, db: Session = DbSession,
 ):
     """Phase 17: embeddings-blended job matches — a complementary signal to
     Use Case A's rule-based ranking above, not a replacement for it (see
     docs/embedding-matching.md). Requires embeddings to already be computed
     for this candidate (`python -m app.embeddings.compute_embeddings`) —
     this route never calls the embedding model live.
+
+    Phase 21: same cache-aside, 1-hour TTL policy as the rule-based endpoint
+    above (docs/redis-infrastructure.md "Use case 2").
     """
+    key = cache_key("job-matches-semantic", candidate_id, top_k)
+    cached = get_cached(key)
+    if cached is not None:
+        response.headers["X-Cache"] = "HIT"
+        return cached
+
     try:
         results = rank_jobs_for_candidate_semantic(db, candidate_id, top_k=top_k)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return [
+    matches = [
         SemanticMatchOut(
             job_id=r.job_id, total_score=r.total_score,
             skills_similarity=r.skills_similarity, experience_similarity=r.experience_similarity,
@@ -91,6 +120,9 @@ def get_job_matches_for_candidate_semantic(
         )
         for r in results
     ]
+    response.headers["X-Cache"] = "MISS"
+    set_cached(key, [m.model_dump() for m in matches])
+    return matches
 
 
 @router.get("/jobs/{job_id}/candidate-matches", response_model=list[MatchOut])

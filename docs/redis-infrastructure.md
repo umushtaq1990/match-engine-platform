@@ -1,7 +1,8 @@
-# Redis — Rate Limiting, Result Caching, Async Streaming (Phase 21, design)
+# Redis — Rate Limiting, Result Caching, Async Streaming (Phase 21)
 
-Status: v0.1 — **design only, not yet built**. Same discipline as every prior phase: written and
-reviewed before any code exists.
+Status: v1 — **implemented and verified against real running containers**, all three use cases.
+Same discipline as every prior phase: design written and reviewed first (below), then built, then
+measured — not assumed from the design.
 
 ## Why now, not earlier
 
@@ -87,3 +88,41 @@ limiting, stream consumer) — no new deployable image, just a new official-imag
   job posting changes within that window. A documented staleness bound, not an oversight.
 - Consumer-group error handling is basic (ack-after-write, no retry/dead-letter pipeline for a
   consumer that crashes mid-batch) — a real production concern, explicitly deferred to v2.
+
+## Verified against real execution
+
+Built against the real stack (`db`, `redis`, `api`, `analytics`, all actual containers — nothing
+mocked), using the exact before/after discipline every prior phase has used.
+
+**Use case 1 — rate limiting.** Re-ran Phase 18's exact test (150 rapid concurrent requests, one
+API key, `ThreadPoolExecutor(max_workers=20)` against `/candidates/1/job-matches`) against the
+Redis-backed limiter (`app/api/rate_limit.py`'s `storage_uri=REDIS_URL`): **100 requests succeeded,
+50 got 429s** — a clean, exact split across `api`'s 4 uvicorn worker processes, replacing Phase
+18's measured ~122-through-before-429s inflation. Confirmed this isn't a per-service bucket
+collision risk despite `api` and `analytics` sharing one Redis instance: `slowapi` scopes its Redis
+key by `(key_func_result, endpoint_identity)`, and the two services' endpoint functions are never
+named the same — verified directly by instantiating `limits.storage.RedisStorage` and inspecting
+the actual Redis keys it writes (`LIMITS:LIMITER/<key>/<endpoint>/100/1/minute`), not assumed.
+
+**Use case 2 — result caching.** Called `GET /candidates/5/job-matches` twice: first response
+carried `X-Cache: MISS`, second carried `X-Cache: HIT`, and `redis-cli TTL` on the stored key
+confirmed it was set with ~3590 seconds remaining (a `1-hour` TTL, timing-consistent with the few
+seconds the test took to run). A cached hit still re-logs a `recommendation_shown` impression
+(re-showing a recommendation is still an impression, whether recomputed or not).
+
+**Use case 3 — Redis Streams.** After a batch of matching requests, `XINFO GROUPS
+analytics:recommendation_events` showed `consumers: 1`, `pending: 0`, and `entries-read` matching
+`XLEN` exactly — the background consumer thread (`app/analytics/stream_consumer.py`, started from
+`app/analytics/main.py`'s lifespan handler) is keeping up with zero backlog. Confirmed the events
+actually land in Postgres via the stream path, not just get acknowledged: `select count(*) from
+analytics.behavioral_events where source='api'` increased after each matching request, with the
+correct `actor_id`/`entity_id`/`metadata` content, exactly as the old synchronous HTTP path would
+have produced — proving the two paths are behaviorally equivalent from the caller's perspective,
+just decoupled now.
+
+**Fail-open design, verified by the existing test suite, not just argued.** `REDIS_URL` is unset in
+the bare `pytest` run (no Redis container) — all 146 tests (6 new: `tests/api/test_cache.py`,
+`tests/api/test_stream_client.py`, `tests/analytics/test_stream_consumer.py`) pass unchanged,
+confirming `app/api/cache.py` and `app/api/stream_client.py` degrade to a clean miss/HTTP-fallback
+rather than raising when Redis isn't configured — the same best-effort doctrine
+`app/api/analytics_client.py` already used pre-Phase 21.

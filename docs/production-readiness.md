@@ -139,13 +139,13 @@ entire project, not an incidental one.
 
 - A real secrets manager (not `.env`/K8s Secret placeholders).
 - TLS and a real authN/authZ model (OAuth2/JWT + roles) if ever multi-tenant. Basic rate limiting
-  was added in Phase 18, but imprecisely under `api`'s multiple worker processes — a true global
-  limit needs a shared counter store (Redis), the first concrete, *measured* case in this project
-  where that tool would help, not a hypothetical one — see `docs/security-and-threat-model.md`.
-- Making the synchronous Ollama-calling paths (Phase 14's analytics instrumentation hook, Phase
-  16's extraction endpoint) non-blocking under real concurrent load — a message queue (also
-  plausibly Redis-backed) is the documented future answer, triggered by a measured throughput
-  problem, not built speculatively now (see each phase's own "v4" roadmap entries).
+  was added in Phase 18; the multi-worker-process counter inflation it had under `api`'s 4 workers
+  (~122 through instead of a clean 100) was **fixed in Phase 21** with a Redis-backed shared counter
+  — see `docs/security-and-threat-model.md`, `docs/redis-infrastructure.md`.
+- The analytics instrumentation hook (Phase 14) was decoupled from its synchronous HTTP call via
+  Redis Streams in **Phase 21** (`docs/redis-infrastructure.md` "Use case 3"). Still open: making
+  Phase 16's extraction endpoint's own Ollama-calling path non-blocking under real concurrent load —
+  not built speculatively now, see that phase's own roadmap entry.
 - kubelet-cadvisor RBAC scraping (or an equivalent) for container CPU/RAM in Kubernetes.
 - A real, hours-long soak test and a real capacity plan — Phase 18's 3-minute soak (above) ruled
   out an immediate leak/degradation, not a slow one, and only exercised one endpoint.

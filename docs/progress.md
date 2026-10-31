@@ -1003,3 +1003,59 @@ what's running. Candidate/job-level graph clustering, full-population embeddings
 remain open, documented next steps.
 
 ### Phase 20 — status: v1 COMPLETE (domain fix verified, 1M/50K scale proven, a real N+1 bug found and fixed, every downstream baseline refreshed)
+
+## Phase 21 — Redis: rate limiting, result caching, async streaming (2026-10-31)
+
+Second half of the user's own two-part request ("then i need redis as well ... redis will be
+required to handle asynchronous calls etc and storing active user session results for atleast 1
+hour"). Design doc written and reviewed first (`docs/redis-infrastructure.md`), same discipline as
+every prior phase — three independently-scoped use cases, not "add Redis" as a vague capability.
+
+**Built and verified against real running containers, not assumed from the design**:
+- One shared `redis:7.4.12-alpine` service added to `docker-compose.yml` (official image,
+  confirmed via Docker Hub's API), a dependency of `api` and `analytics` only — `extraction` was
+  left out, consistent with the design doc's service boundary (it runs a single worker, so Phase
+  18's multi-worker rate-limit bug never applied to it).
+- **Use case 1 — rate limiting, re-measured a real fix, not just a code change**: `app/api/
+  rate_limit.py` and `app/analytics/rate_limit.py` now pass `storage_uri=REDIS_URL` to `slowapi`'s
+  `Limiter` when it's configured, falling back to in-memory storage otherwise (so a bare `pytest`
+  run with no Redis container behaves exactly as before). Re-ran Phase 18's exact test — 150 rapid
+  concurrent requests, one API key, against `/candidates/1/job-matches` — against the fix: **100
+  succeeded, 50 got 429s**, a clean split replacing the old ~122-through inflation across `api`'s 4
+  worker processes. Checked directly (not assumed) that `api` and `analytics` sharing one Redis
+  instance for this doesn't cross-contaminate their counters: `slowapi` scopes its Redis key by
+  `(key_func_result, endpoint_identity)`, and the two services' endpoint functions are never named
+  the same — verified by instantiating `limits.storage.RedisStorage` directly and inspecting the
+  actual keys it writes.
+- **Use case 2 — 1-hour cache-aside result caching**: `app/api/cache.py`, wired into both
+  `/candidates/{id}/job-matches` and the `/semantic` variant, with an `X-Cache: HIT`/`MISS` response
+  header. Verified live: first call to a candidate's job-matches returned `MISS`, the identical
+  second call returned `HIT`, and `redis-cli TTL` on the stored key showed ~3590 seconds remaining
+  — a real 1-hour TTL, not just a config value nobody checked. Fail-open by design: a Redis read/
+  write error is caught and logged, never raised, same doctrine as the Phase 14 analytics hook.
+- **Use case 3 — Redis Streams replacing the analytics instrumentation hook's synchronous HTTP
+  call**: `app/api/stream_client.py` (producer, `XADD`) and `app/analytics/stream_consumer.py`
+  (consumer, a background thread started from `app/analytics/main.py`'s lifespan handler,
+  `XREADGROUP`/`XACK`, ack-after-write only). `app/api/analytics_client.py` tries the stream first
+  and falls back to the original HTTP POST only when `REDIS_URL` isn't configured — both the
+  decoupled path and the existing `/events`/`/events/batch` HTTP endpoints coexist. Verified live:
+  `XINFO GROUPS analytics:recommendation_events` showed `pending: 0` with `entries-read` matching
+  `XLEN` exactly (the consumer keeps up with zero backlog), and the actual rows landed in
+  `analytics.behavioral_events` with correct `actor_id`/`entity_id`/`metadata` content — the stream
+  path is behaviorally equivalent to the old HTTP path, just durable across an analytics outage now
+  instead of silently dropping events.
+- `.github/workflows/ci.yml`'s `fresh-volume-smoke-test` job extended with real checks for all
+  three use cases (the Streams-delivery check, an `X-Cache` MISS-then-HIT check, and a 150-request
+  rate-limit check) rather than only re-running at the design-doc level.
+- 6 new tests (`tests/api/test_cache.py`, `tests/api/test_stream_client.py`,
+  `tests/analytics/test_stream_consumer.py`), 146 total passing. All pass with `REDIS_URL` unset
+  (the CI `lint-and-test` job's environment) — the fail-open design is exercised for real by the
+  test suite, not just argued in a docstring.
+
+**Explicitly not done in this phase**: active cache invalidation on profile/job changes (TTL-only
+in v1, a documented staleness bound), consumer-group failure handling for a crashed consumer
+(`XPENDING`/claim logic — basic ack-after-write only), and splitting cache/broker onto separate
+Redis instances — all deferred to a v2, only if actually needed (see
+`docs/redis-infrastructure.md` "Known limitations").
+
+### Phase 21 — status: v1 COMPLETE (all three use cases built and independently verified against real containers)

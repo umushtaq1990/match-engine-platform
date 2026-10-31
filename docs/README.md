@@ -92,10 +92,11 @@ update it whenever a doc is added, renamed, or removed.
   downstream baseline (Phase 4, 16, 17) re-verified with fresh numbers (Phase 20, v1)
 
 ## Redis infrastructure
-- [redis-infrastructure.md](redis-infrastructure.md) — three scoped use cases: a Redis-backed
-  rate-limiting store (fixing Phase 18's measured multi-worker bug), 1-hour result caching, and
-  Redis Streams for async decoupling of the analytics instrumentation hook (Phase 21, design only
-  — not yet built)
+- [redis-infrastructure.md](redis-infrastructure.md) — three scoped use cases, all built and
+  verified: a Redis-backed rate-limiting store (re-measured Phase 18's 122-through bug -> a clean
+  100/50 split), 1-hour cache-aside result caching (`X-Cache: HIT`/`MISS`, verified TTL), and Redis
+  Streams decoupling the analytics instrumentation hook from a synchronous HTTP call (verified
+  consumer-group delivery with zero backlog) (Phase 21, v1)
 
 ## Not yet created — written just-in-time, not upfront
 
