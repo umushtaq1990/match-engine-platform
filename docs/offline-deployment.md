@@ -1,8 +1,8 @@
-# Offline / Disconnected Deployment (Phase 10)
+# Offline / Disconnected Deployment
 
 Status: v0.1 — verified end-to-end on this dev machine.
 
-## What "disconnected deployment validated" means here
+## Purpose & Scope
 
 Per `docs/prd.md`'s quality requirement ("Runs identically from a clean checkout via Docker
 Compose; disconnected deployment validated"): prove the full stack can be built once on a
@@ -11,7 +11,7 @@ network access** — no registry pulls, no `pip install`, nothing reached over t
 time. This matters for the kind of environment a real enterprise architecture has to account for
 (regulated/air-gapped networks), not just convenience.
 
-## How it works
+## Architecture & Design
 
 `scripts/package-offline-bundle.sh`:
 1. Builds all 5 custom images (`api`, `migrate`, `seed`, `dataquality`, `mlflow`) and pulls the 4
@@ -25,13 +25,20 @@ That bundle directory (plus Docker Engine + Compose already installed on the tar
 prerequisite that genuinely can't be bundled, since it's the runtime the bundle depends on) is
 everything a disconnected host needs.
 
-## Verified (not assumed) — the actual test run
+## Implementation
+
+Run `./scripts/package-offline-bundle.sh` to regenerate the bundle whenever deploying. Deploy with
+Compose's `--pull never` flag, which errors loudly if anything would need fetching instead of
+silently pulling.
+
+## Verification & Results
+
+**The actual test run** (not assumed):
 
 1. `docker compose --profile tools down -v` — full teardown.
 2. `docker rmi -f` all 9 images used by this stack — confirmed gone via `docker images`.
 3. `docker load -i dist/offline-bundle/images.tar` — confirmed all 9 reloaded, from the tar alone.
-4. Brought the entire stack up using **only** `--pull never` (Compose's flag that errors loudly if
-   anything would need fetching, instead of silently pulling) — db → migrate (all 3 migrations
+4. Brought the entire stack up using **only** `--pull never` — db → migrate (all 3 migrations
    applied) → seed (2000/1000 rows) → dataquality (10/10 checks passed) → api/mlflow/prometheus/
    cadvisor/grafana (all healthy, real authenticated API call returned 200, Prometheus reported
    both scrape targets `up`).
@@ -39,7 +46,7 @@ everything a disconnected host needs.
 Nothing failed, nothing silently reached the network — `--pull never` would have errored instead of
 masking a pull if anything had been missing from the loaded tar.
 
-## Known limitations
+## Known Limitations
 
 - Docker Engine + Compose itself isn't bundled — it's the assumed baseline runtime, the same way an
   offline Kubernetes deployment still assumes `kubectl`/a running cluster exist. Installing Docker
@@ -51,3 +58,10 @@ masking a pull if anything had been missing from the loaded tar.
   exercises the same code path Docker uses to decide whether to pull (`--pull never`), just without
   physically disconnecting a NIC. The remaining gap (unavailable DNS/registry reachability) is a
   property of the network, not of this bundle or Compose's pull logic.
+
+## Related Documents
+
+- [architecture.md](architecture.md) — overall system overview
+- [kubernetes.md](kubernetes.md) — the other deployment target this project supports
+- [production-readiness.md](production-readiness.md) — broader deployment readiness context
+- [progress.md](progress.md) — full build history

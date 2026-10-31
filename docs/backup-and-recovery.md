@@ -3,14 +3,21 @@
 Status: v1 — implemented and verified end-to-end, closing the gap `docs/production-readiness.md`
 flagged: *"No backup/restore procedure has been built or tested for the Postgres volume."*
 
-## What's backed up
+## Purpose & Scope
+
+Provides a tested backup/restore mechanism for the Postgres instance this project runs, covering
+both databases it hosts. In scope: dump/restore scripts and end-to-end verification against real
+data. Out of scope: automated scheduling, off-host storage, and CI-integrated restore testing (see
+Known Limitations).
+
+## Architecture & Design
 
 Both databases living in the single Postgres instance this project runs: `jme` (core app data —
 candidates, jobs, embeddings, extraction/analytics/evaluation results, everything under the
 `public` and `analytics` schemas) and `mlflow` (experiment tracking backend store). One dump file
 per database, not one combined dump — restoring one doesn't require touching the other.
 
-## Scripts
+## Implementation
 
 - **`scripts/backup_db.sh`** — runs `pg_dump -Fc` (custom format) inside the running `db`
   container for both databases, writing timestamped dumps to `backups/` (git-ignored — these are
@@ -22,7 +29,7 @@ per database, not one combined dump — restoring one doesn't require touching t
   interactive confirmation unless `--yes` is passed. Terminates existing connections to the target
   database first, since Postgres refuses to drop a database with active connections.
 
-## Verified end-to-end (not assumed)
+## Verification & Results
 
 Run for real against this project's actual dev data, never against a disposable copy — because the
 whole point was proving the real mechanics work, not a toy example:
@@ -50,16 +57,15 @@ whole point was proving the real mechanics work, not a toy example:
 5. Disposable restore target dropped afterward; the real `jme` database was never modified by this
    verification.
 
-## A real one-time local fix encountered along the way
+**A real one-time local fix encountered along the way**: the pgvector image swap (Phase 17) left
+`template1`'s collation version mismatched against the new base image's glibc (same root cause as
+the `jme`/`mlflow` collation warnings fixed in that phase) — `CREATE DATABASE` for the disposable
+restore target failed until `template1` (and `postgres`, the default admin database) were also
+refreshed with `ALTER DATABASE ... REFRESH COLLATION VERSION`. Purely a local-dev-environment
+artifact of swapping a running container's image against an existing data directory — a fresh
+checkout/CI run never hits this, since it always creates a new volume.
 
-The pgvector image swap (Phase 17) left `template1`'s collation version mismatched against the new
-base image's glibc (same root cause as the `jme`/`mlflow` collation warnings fixed in that phase) —
-`CREATE DATABASE` for the disposable restore target failed until `template1` (and `postgres`, the
-default admin database) were also refreshed with `ALTER DATABASE ... REFRESH COLLATION VERSION`.
-Purely a local-dev-environment artifact of swapping a running container's image against an existing
-data directory — a fresh checkout/CI run never hits this, since it always creates a new volume.
-
-## Known limitations (v1)
+## Known Limitations
 
 - No automated/scheduled backup job — this is a manual script, run on demand. A real deployment
   would cron this (or use managed-database point-in-time recovery instead of pg_dump entirely).
@@ -67,3 +73,9 @@ data directory — a fresh checkout/CI run never hits this, since it always crea
   strategy keeps copies somewhere the same disk failure can't take out.
 - No restore test automated into CI — this was a one-time manual verification, not a repeatable
   CI check. Worth revisiting if backup/restore logic changes again.
+
+## Related Documents
+
+- [architecture.md](architecture.md) — overall system overview
+- [production-readiness.md](production-readiness.md) — the gap this closes, and what's still missing
+- [progress.md](progress.md) — full build history

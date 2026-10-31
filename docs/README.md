@@ -1,7 +1,11 @@
 # JME Documentation Index
 
 All project docs live flat under `docs/` (per `docs/prd.md` Section 14 / the project brief),
-plus `docs/adr/` for architecture decision records. This file is the table of contents —
+plus `docs/adr/` for architecture decision records. Every subsystem doc follows a standard
+template — Purpose & Scope, Architecture & Design, Implementation, Verification & Results, Known
+Limitations, (Roadmap), Related Documents — so any doc can be read the same way regardless of when
+it was written. `docs/progress.md` is the one exception: it's the chronological build log, kept
+deliberately phase-by-phase since that's its actual job. This file is the table of contents —
 update it whenever a doc is added, renamed, or removed.
 
 ## Product & requirements
@@ -17,7 +21,7 @@ update it whenever a doc is added, renamed, or removed.
   solution strategy, building blocks, runtime views, deployment, quality requirements measured
   against targets, and risks — the "start here" document, linking out to every deep-dive doc rather
   than duplicating it. Anchored by two diagrams in `docs/architect/` (solution context + full
-  technical architecture)
+  technical architecture, both C4-style with explicit doc references on every container)
 - [data-model.md](data-model.md) — schema reference, design rationale, measured dataset scale
 - [adr/](adr/) — architecture decision records (one file per significant decision, numbered)
   - [0001-decouple-ingestion-migrate-api.md](adr/0001-decouple-ingestion-migrate-api.md)
@@ -27,97 +31,91 @@ update it whenever a doc is added, renamed, or removed.
 
 ## Matching engine
 - [matching-engine.md](matching-engine.md) — scoring formula, eligibility rules, skill-gap logic,
-  verified results, known limitations (Phase 3 MVP), API exposure (Phase 6)
+  API exposure, verified results and known limitations
 
 ## Evaluation
 - [evaluation-strategy.md](evaluation-strategy.md) — ground-truth design, metrics, measured
-  baseline results, known limitations (Phase 4)
+  baseline results, known limitations
 
 ## Security
-- [security-and-threat-model.md](security-and-threat-model.md) — API authN/authZ approach, what
-  it does/doesn't protect against, secrets handling, known gaps (Phase 6)
+- [security-and-threat-model.md](security-and-threat-model.md) — API authN/authZ approach, rate
+  limiting, what it does/doesn't protect against, secrets handling, known gaps
 
 ## Observability
 - [observability.md](observability.md) — Prometheus+Grafana+cAdvisor stack, what's verified vs.
-  a known Docker Desktop limitation, batch-time tracking (Phase 9)
+  a known Docker Desktop limitation, batch-time tracking
 
 ## Kubernetes
 - [kubernetes.md](kubernetes.md) — local-cluster deployment (verified end-to-end), Azure-shaped
-  overlay (documented, not provisioned), real bugs found and fixed (Phase 12)
+  overlay (documented, not provisioned), real bugs found and fixed
 
 ## Production readiness
 - [production-readiness.md](production-readiness.md) — honest Definition-of-Done gap assessment,
-  load test results and the bottleneck found and fixed, what's still missing (Phase 13)
+  load/soak test results and the bottleneck found and fixed, what's still missing
 
 ## Operations
 - [infrastructure-sizing.md](infrastructure-sizing.md) — CPU/RAM sizing methodology and scenarios:
   measured per-service memory footprint against the real full stack, the 1M/50K scale-test numbers,
   Kubernetes resource allocation, and an illustrative Azure cost estimate derived from that sizing
-  (Phase 9, written up fully once real content existed)
 - [hardware-inventory.md](hardware-inventory.md) — the original raw dev-machine measurement;
   `infrastructure-sizing.md` is now the authoritative, up-to-date sizing reference
 - [offline-deployment.md](offline-deployment.md) — air-gapped deployment bundle, verified
-  end-to-end with zero network access (Phase 10)
+  end-to-end with zero network access
 - [backup-and-recovery.md](backup-and-recovery.md) — `pg_dump`/`pg_restore` scripts, a real
   verified backup -> restore cycle (row counts and the pgvector extension/index both confirmed
   intact), known limitations (manual, no off-host storage)
-- [progress.md](progress.md) — running log of what's been done, phase by phase
+- [progress.md](progress.md) — chronological build log, phase by phase — the one doc in this
+  index that's intentionally organized by development history rather than by topic
 
 ## Behavioral analytics
 - [behavioral-analytics.md](behavioral-analytics.md) — user engagement/event-tracking: service
-  boundary, event schema, instrumentation hook (now Redis Streams-decoupled, Phase 21), synthetic
-  event generator (Phase 14), and rule-based RFM engagement segmentation with a real honest finding
-  about the synthetic generator's recency/frequency correlation (Phase 24). ML clustering (v3)
-  remains design-only.
+  boundary, event schema, the Redis Streams-decoupled instrumentation hook, the synthetic event
+  generator, and rule-based RFM engagement segmentation with a real honest finding about the
+  synthetic generator's recency/frequency correlation. ML clustering remains a documented future
+  step.
 
 ## Model serving
 - [model-serving.md](model-serving.md) — shared LLM/embedding serving layer: service boundary,
-  tool choice (Ollama), starting models, consumer pattern, what it unblocks (Use Cases C/F), all
-  verified with real inference calls (Phase 15, v1). No consumers wired up yet.
+  tool choice (Ollama), starting models, consumer pattern, verified with real inference calls
 
 ## Skill extraction
 - [skill-extraction.md](skill-extraction.md) — Use Case C: hybrid LLM-extraction +
-  embedding-canonicalization pipeline, golden dataset, extraction-accuracy metrics, a real baseline
-  measured and tuned (F1 0.504 -> 0.60-0.66 after a real threshold sweep + LLM comparison,
-  `qwen2.5:1.5b` promoted as the new default) (Phase 16, tuned Phase 18, v2).
+  embedding-canonicalization pipeline, golden dataset, extraction-accuracy metrics, a measured
+  baseline tuned from F1 0.504 to 0.60-0.66 (`qwen2.5:1.5b` promoted as the default model)
 
 ## Embedding matching
-- [embedding-matching.md](embedding-matching.md) — Use Case F groundwork: pgvector schema,
-  multi-dimensional (skills/experience/overall) embeddings, the two-stage retrieve-then-score
-  architecture for scoring one candidate against 100,000+ jobs, invalidation, the real measured
-  rule-based-vs-embeddings comparison (resolving assumption A5's deferred promise since Phase 4),
-  and a real embedding-model comparison where the simpler model won (Phase 17, tuned Phase 18, v2).
+- [embedding-matching.md](embedding-matching.md) — Use Case F: pgvector schema, multi-dimensional
+  (skills/experience/overall) embeddings, the two-stage retrieve-then-score architecture for
+  scoring one candidate against 100,000+ jobs, the real measured rule-based-vs-embeddings
+  comparison (resolving assumption A5's deferred promise), a model comparison where the simpler
+  model won, and the eventual promotion of blended ranking to the default path
 
 ## Knowledge graph
 - [knowledge-graph.md](knowledge-graph.md) — Neo4j + GDS graph linking candidates/skills/
-  occupations/jobs/courses, idempotent batch sync, native Louvain skill clustering (purity fixed in
-  Phase 20 via domain-anchored sampling), and Phase 23's candidate/job clustering — two independent
-  runs that both recovered the same 4 skill domains purely from co-skill patterns, with a measured
-  threshold choice and an honestly-flagged purity-granularity caveat
+  occupations/jobs/courses: idempotent batch sync, native Louvain skill clustering, and
+  candidate/job clustering — two independent runs that both recovered the same 4 skill domains
+  purely from co-skill patterns, with a measured threshold choice and an honestly-flagged
+  purity-granularity caveat
 
 ## Data at scale
-- [data-at-scale.md](data-at-scale.md) — category-coherent skill sampling (fixing Phase 19's "no
-  clustering signal" finding — verified: perfect domain recovery, purity 0.16 -> 0.32), bulk-insert
-  generation verified at the real 1M-candidate/50K-job target (11m40s for ~7.4M rows), a real N+1
-  bug found and fixed in the semantic matching path (10-15x latency improvement), and every
-  downstream baseline (Phase 4, 16, 17) re-verified with fresh numbers (Phase 20, v1)
+- [data-at-scale.md](data-at-scale.md) — domain-anchored synthetic data generation (fixing the
+  knowledge graph's original "no clustering signal" finding), bulk-insert generation verified at
+  the real 1M-candidate/50K-job target, a real N+1 bug found and fixed in the semantic matching
+  path, and every downstream baseline re-verified with fresh numbers
 
 ## Redis infrastructure
 - [redis-infrastructure.md](redis-infrastructure.md) — three scoped use cases, all built and
-  verified: a Redis-backed rate-limiting store (re-measured Phase 18's 122-through bug -> a clean
-  100/50 split), 1-hour cache-aside result caching (`X-Cache: HIT`/`MISS`, verified TTL), and Redis
-  Streams decoupling the analytics instrumentation hook from a synchronous HTTP call. Phase 25
-  hardened both remaining v1 gaps: version-counter cache invalidation triggered by real embeddings
-  recomputation, and consumer retry/dead-letter handling verified against a deliberately simulated
-  crashed consumer (Phase 21/25, v2)
+  verified: a Redis-backed rate-limiting store (fixing a measured multi-worker counter-inflation
+  bug), 1-hour cache-aside result caching (`X-Cache: HIT`/`MISS`), and Redis Streams decoupling the
+  analytics instrumentation hook from a synchronous HTTP call — plus v2 hardening: version-counter
+  cache invalidation triggered by real embeddings recomputation, and consumer retry/dead-letter
+  handling verified against a deliberately simulated crashed consumer
 
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale
 below): each is written when its phase produces something real to document, not as a placeholder.
 
-- ~~`architecture.md`~~ / ~~`infrastructure-sizing.md`~~ — **written**, see Architecture/Operations
-  sections above.
 - `deployment-runbook.md` — never built as a standalone doc; `backup-and-recovery.md` was built
   once there was something real to document (see Operations above)
 - `interview-preparation.md` (end of project)
@@ -132,3 +130,12 @@ item. A thin doc that restates another doc's content, or that exists before its 
 produced anything real, is worse than no doc — it's something to keep in sync for no benefit.
 Consolidate first; split a section into its own file only once it's grown large enough to need
 one.
+
+### Why every subsystem doc shares one template
+Before this pass, each doc was organized around "Phase N — what changed," which is the right shape
+for a build log but the wrong one for reference material: a reader looking for "how does rate
+limiting work" had to reconstruct the answer from three separate phase sections. Every doc now
+answers the same six questions in the same order, regardless of how many phases contributed to it.
+Nothing was deleted in that pass — every measured number, honest limitation, and finding that used
+to live under a "## Phase N" heading now lives under the template section it actually belongs to;
+phase numbers remain as inline traceability detail, not as the organizing structure.

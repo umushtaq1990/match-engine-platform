@@ -1,10 +1,18 @@
-# Data Model — JME Portfolio Platform
+# Data Model
 
 Status: v0.2, implemented and verified. Schema lives in `app/ingestion/source_models.py`, managed
 via Alembic (`alembic/versions/`). Generator: `app/ingestion/generate_synthetic_data.py` (paths
 updated after the Phase 2 follow-up restructuring into `app/ingestion/`/`app/api/` — see ADR 0001).
 
-## Entity-relationship summary
+## Purpose & Scope
+
+Defines the relational schema underlying the whole platform: the canonical skill/occupation/course
+taxonomy, candidate and job entities, and the junction tables connecting them. Scope covers schema
+design, synthetic data generation, and the deliberate imperfections that keep the dataset realistic.
+
+## Architecture & Design
+
+### Entity-relationship summary
 
 ```
 Skill ──< SkillSynonym
@@ -17,7 +25,24 @@ Occupation ──< Candidate (primary_occupation_id, nullable)
 Occupation ──< Job (occupation_id)
 ```
 
-## Tables
+### Design decision: distinguishing "not recorded" from "assessed absent"
+
+This was an explicit requirement (PRD Use Case D / brief Phase 3). It is modeled with **two
+separate tables**, not a single nullable/tri-state flag on one table:
+
+- A row in `candidate_skills` = positive evidence the candidate has the skill.
+- **No row** in `candidate_skills` for a given (candidate, skill) pair = *not recorded* — unknown,
+  not "absent."
+- A row in `candidate_skill_assessments` with `result = absent` = the skill was *actively checked*
+  and the candidate did not demonstrate it — genuine negative evidence.
+
+Skill-gap logic (Phase 3) must query both tables and treat "no evidence either way" as a distinct
+third state from "confirmed absent," per the brief's explicit instruction not to assume missing
+data means a candidate lacks a skill.
+
+## Implementation
+
+### Tables
 
 | Table | Purpose | Key fields |
 |---|---|---|
@@ -33,22 +58,9 @@ Occupation ──< Job (occupation_id)
 | `jobs` | Job postings | `title`, `company_name`, `occupation_id`, `description_raw`, `salary_min/max` (nullable) |
 | `job_skills` | Requirements per job | `requirement_level` enum (required/preferred) |
 
-## Design decision: distinguishing "not recorded" from "assessed absent"
+## Verification & Results
 
-This was an explicit requirement (PRD Use Case D / brief Phase 3). It is modeled with **two
-separate tables**, not a single nullable/tri-state flag on one table:
-
-- A row in `candidate_skills` = positive evidence the candidate has the skill.
-- **No row** in `candidate_skills` for a given (candidate, skill) pair = *not recorded* — unknown,
-  not "absent."
-- A row in `candidate_skill_assessments` with `result = absent` = the skill was *actively checked*
-  and the candidate did not demonstrate it — genuine negative evidence.
-
-Skill-gap logic (Phase 3) must query both tables and treat "no evidence either way" as a distinct
-third state from "confirmed absent," per the brief's explicit instruction not to assume missing
-data means a candidate lacks a skill.
-
-## Synthetic dataset scale (as generated, measured — not placeholder)
+### Synthetic dataset scale (as generated, measured — not placeholder)
 
 | Entity | Count |
 |---|---|
@@ -69,13 +81,13 @@ favor of 64 *real, meaningful* skill names. A larger taxonomy of meaningless aut
 names would not have served the project's goals (explainability, realistic matching) and was
 judged worse than a smaller curated set. `docs/assumptions-register.md` A4 updated accordingly.
 
-## Reproducibility (verified)
+### Reproducibility (verified)
 
 The generator uses `Faker.seed(42)` and `random.Random(42)`. Verified by hashing the full
 candidates table (`full_name || email`, ordered by id) before and after a repeat run against a
 freshly reset schema: **identical MD5 hash both times**. The generator is deterministic.
 
-## Intentional data imperfections (verified against generated data)
+### Intentional data imperfections (verified against generated data)
 
 | Imperfection | Target rate | Measured rate |
 |---|---|---|
@@ -87,7 +99,7 @@ freshly reset schema: **identical MD5 hash both times**. The generator is determ
 These are deliberate, per the brief's instruction that the dataset must not be "so clean that the
 matching system becomes trivial."
 
-## Known limitations / not yet modeled
+## Known Limitations
 
 - ~~No duplicate-candidate or duplicate-job detection logic yet~~ **RESOLVED (Phase 2 follow-up)**:
   `data_quality.py`'s `duplicate_candidate_emails`/`duplicate_candidate_identity` checks cover
@@ -107,3 +119,12 @@ matching system becomes trivial."
   skill extraction (Use Case C, `docs/skill-extraction.md`) has real ground truth to extract
   against. Extraction output is not yet wired back into `job_skills` itself — that's Use Case C's
   own v3, not built yet.
+
+## Related Documents
+
+- [architecture.md](architecture.md) — overall system overview
+- [data-quality.md](data-quality.md) — automated checks run against this schema
+- [skill-extraction.md](skill-extraction.md) — consumes `description_raw`/`skill_synonyms`
+- [matching-engine.md](matching-engine.md) — the scoring logic built on this schema
+- [assumptions-register.md](assumptions-register.md) — A4 (skill taxonomy scale decision)
+- [progress.md](progress.md) — full build history
