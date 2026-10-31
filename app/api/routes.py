@@ -20,7 +20,7 @@ from app.api.schemas import (
     SemanticMatchOut,
     SkillGapOut,
 )
-from app.embeddings.retrieval import rank_jobs_for_candidate_semantic
+from app.embeddings.retrieval import rank_jobs_for_candidate_blended_default, rank_jobs_for_candidate_semantic
 from app.matching.course_recommendations import recommend_courses_for_candidate
 from app.matching.rank import MatchResult, rank_candidates_for_job, rank_jobs_for_candidate
 
@@ -53,29 +53,46 @@ def _to_match_out(result: MatchResult) -> MatchOut:
 @router.get("/candidates/{candidate_id}/job-matches", response_model=list[MatchOut])
 def get_job_matches_for_candidate(
     candidate_id: int, response: Response, top_k: int = 10, include_ineligible: bool = False,
-    db: Session = DbSession,
+    mode: str = "blended", db: Session = DbSession,
 ):
     """Use Case A: rank jobs for a candidate.
+
+    Phase 22: `mode="blended"` (default) re-orders the rule-based eligible
+    pool by the Phase 17 embeddings-blended score — Phase 20 measured
+    blended NDCG 0.878 vs. rule-based's 0.645 (docs/embedding-matching.md),
+    the case this promotion was waiting for. Falls back to pure rule-based
+    order when the candidate has no embeddings computed yet. Pass
+    `mode=rule_based` to opt back into the original deterministic ordering
+    (e.g. for auditing eligibility reasoning without an ML dependency).
+    The actual ranking path used is reported via `X-Ranking-Mode` —
+    "blended", "rule_based", or "rule_based_no_embeddings" (fallback) — the
+    same transparency discipline as `X-Cache`.
 
     Phase 21: cache-aside, 1-hour TTL (docs/redis-infrastructure.md "Use case
     2") — an `X-Cache: HIT`/`MISS` header makes the behavior demonstrable.
     A cached hit still logs a recommendation_shown impression: the user is
     seeing the recommendation again regardless of whether it was recomputed.
     """
-    key = cache_key("job-matches", candidate_id, top_k, include_ineligible)
+    key = cache_key("job-matches", candidate_id, top_k, include_ineligible, mode)
     cached = get_cached(key)
     if cached is not None:
         response.headers["X-Cache"] = "HIT"
+        response.headers["X-Ranking-Mode"] = cached["ranking_mode"]
         log_recommendations_shown(
             actor_type="candidate", actor_id=candidate_id,
-            entity_type="job", entity_ids=[m["entity_id"] for m in cached],
+            entity_type="job", entity_ids=[m["entity_id"] for m in cached["matches"]],
         )
-        return cached
+        return cached["matches"]
 
     try:
-        results = rank_jobs_for_candidate(
-            db, candidate_id, top_k=top_k, include_ineligible=include_ineligible
-        )
+        if mode == "rule_based":
+            results, ranking_mode = rank_jobs_for_candidate(
+                db, candidate_id, top_k=top_k, include_ineligible=include_ineligible
+            ), "rule_based"
+        else:
+            results, ranking_mode = rank_jobs_for_candidate_blended_default(
+                db, candidate_id, top_k=top_k, include_ineligible=include_ineligible
+            )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     log_recommendations_shown(
@@ -84,7 +101,8 @@ def get_job_matches_for_candidate(
     )
     matches = [_to_match_out(r) for r in results]
     response.headers["X-Cache"] = "MISS"
-    set_cached(key, [m.model_dump() for m in matches])
+    response.headers["X-Ranking-Mode"] = ranking_mode
+    set_cached(key, {"matches": [m.model_dump() for m in matches], "ranking_mode": ranking_mode})
     return matches
 
 
@@ -92,8 +110,10 @@ def get_job_matches_for_candidate(
 def get_job_matches_for_candidate_semantic(
     candidate_id: int, response: Response, top_k: int = 10, db: Session = DbSession,
 ):
-    """Phase 17: embeddings-blended job matches — a complementary signal to
-    Use Case A's rule-based ranking above, not a replacement for it (see
+    """Phase 17: the raw embeddings-blended score breakdown (skills/
+    experience/overall similarity, no eligibility/skill-gap fields) — the
+    same blended score Use Case A's default `mode=blended` above now uses
+    to re-rank, exposed here on its own for inspection (see
     docs/embedding-matching.md). Requires embeddings to already be computed
     for this candidate (`python -m app.embeddings.compute_embeddings`) —
     this route never calls the embedding model live.

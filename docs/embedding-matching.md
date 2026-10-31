@@ -198,10 +198,8 @@ speculative: the Skills-dimension embedding is a weighted average of per-skill v
 assignment was uniform-random noise, that average carried almost no signal; now that skills are
 domain-coherent, the same averaging operation produces a genuinely informative vector. Embeddings
 were never weaker *in principle* — they were only ever as good as the skill data backing them.
-Blended remains the strongest of the three, as before. Rule-based still stays the default ranking
-path in production — this result makes a stronger case for eventually promoting blended, but that
-promotion decision is deliberately not made automatically from one measurement; see "Phased
-roadmap" below.
+Blended remains the strongest of the three, as before. **Promoted to the default ranking path in
+Phase 22** — see "Phased roadmap" below.
 
 ## Phased roadmap
 
@@ -210,9 +208,13 @@ roadmap" below.
   the refresh/invalidation job, stage-1 ANN retrieval wired into a new optional path on the
   existing ranking functions, and the three-way evaluation harness (rule-based / blended /
   embeddings-only) comparing `all-minilm` vs `nomic-embed-text`.
-- **v2**: promote blended to the default ranking path — the Phase 20 re-verification above is
-  exactly the measured case this step was waiting for (NDCG 0.878 vs. rule-based's 0.645), but
-  promoting it is a deliberate decision still pending, not auto-applied from one measurement.
+- ~~**v2**: promote blended to the default ranking path...~~ **Done (Phase 22)**: `GET
+  /candidates/{id}/job-matches` now defaults to `mode=blended` — re-ranking the rule-based eligible
+  pool by the embeddings-blended score, falling back to pure rule-based order when a candidate has
+  no embeddings computed yet (`rule_based_no_embeddings`, reported via `X-Ranking-Mode`). Eligibility
+  and skill-gap fields still come from the rule-based pass unchanged — embeddings don't produce
+  those. `mode=rule_based` opts back into the original deterministic order. See
+  `app/embeddings/retrieval.py`'s `rank_jobs_for_candidate_blended_default`.
 - **v3**: courses dimension (candidate skill-gap → course matching) — explicitly a separate topic,
   deferred per the user's own framing, reusing the same vector infrastructure.
 - **v4, only if pgvector is measured insufficient**: migrate to Qdrant at a real target scale.

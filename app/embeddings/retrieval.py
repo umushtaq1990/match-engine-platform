@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.embeddings.models import EntityEmbedding
 from app.matching.profiles import load_candidate_profile, load_job_profiles_by_ids
+from app.matching.rank import MatchResult, rank_jobs_for_candidate
 from app.matching.scoring import _location_component, _occupation_component, _salary_component
 
 DEFAULT_EMBEDDING_MODEL = "all-minilm"
@@ -219,3 +220,46 @@ def rank_jobs_for_candidate_semantic(
 
     results.sort(key=lambda r: r.total_score, reverse=True)
     return results[:top_k]
+
+
+def rank_jobs_for_candidate_blended_default(
+    session: Session, candidate_id: int, top_k: int = 10, include_ineligible: bool = False,
+) -> tuple[list[MatchResult], str]:
+    """Phase 22: promotes blended ranking to the default path for Use Case A
+    — Phase 20's re-verification measured blended NDCG 0.878 vs. rule-
+    based's 0.645 (docs/embedding-matching.md), a strong enough, stable
+    enough result to stop treating rule-based as the permanent default.
+
+    Keeps every rule-based field (eligibility, skill_gap, explanation) —
+    embeddings don't produce those — and only uses the embedding-based
+    blended score to *re-order* the already-eligibility-filtered rule-based
+    result set. Falls back to pure rule-based order, unchanged, when the
+    candidate has no embeddings yet (embeddings-compute is a batch job, not
+    guaranteed to have run for every candidate) rather than erroring —
+    returns which path was actually used so the caller can report it
+    (app/api/routes.py's `X-Ranking-Mode` header), the same transparency
+    discipline as `X-Cache`.
+    """
+    rule_based_results = rank_jobs_for_candidate(
+        session, candidate_id, top_k=None, include_ineligible=include_ineligible
+    )
+    if not rule_based_results:
+        return rule_based_results[:top_k], "rule_based"
+
+    try:
+        semantic_results = rank_jobs_for_candidate_semantic(
+            session, candidate_id, top_k=len(rule_based_results),
+        )
+    except ValueError:
+        return rule_based_results[:top_k], "rule_based_no_embeddings"
+
+    blended_score_by_job = {r.job_id: r.total_score for r in semantic_results}
+    # Jobs outside the stage-1 ANN retrieval window (no blended score) sort
+    # last, in their original rule-based order — Python's sort is stable, so
+    # ties at the "no blended score" floor preserve the prior ordering.
+    ranked = sorted(
+        rule_based_results,
+        key=lambda r: blended_score_by_job.get(r.entity_id, float("-inf")),
+        reverse=True,
+    )
+    return ranked[:top_k], "blended"

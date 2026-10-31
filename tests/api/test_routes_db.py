@@ -38,6 +38,25 @@ def test_job_matches_route_returns_real_scored_match(matching_db_session):
         # this test run (REDIS_URL unset) — every request is a documented
         # fail-open miss, not a silent no-op. See app/api/cache.py.
         assert response.headers["X-Cache"] == "MISS"
+        # Phase 22: default mode is "blended", but this fixture has no
+        # embeddings computed, so it falls back to rule-based order
+        # (unchanged scores, as asserted above) and reports that honestly.
+        assert response.headers["X-Ranking-Mode"] == "rule_based_no_embeddings"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_job_matches_route_mode_rule_based_skips_the_blended_path(matching_db_session):
+    ids = seed_matching_fixture(matching_db_session)
+    client = _client_bound_to(matching_db_session)
+    try:
+        response = client.get(
+            f"/candidates/{ids['matching_candidate_id']}/job-matches?mode=rule_based",
+            headers=API_KEY_HEADERS,
+        )
+        assert response.status_code == 200
+        assert response.headers["X-Ranking-Mode"] == "rule_based"
+        assert response.json()[0]["score"]["total"] == 0.835
     finally:
         app.dependency_overrides.clear()
 

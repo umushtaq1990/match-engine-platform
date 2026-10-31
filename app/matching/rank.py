@@ -73,8 +73,13 @@ def _build_result(
 
 
 def rank_jobs_for_candidate(
-    session: Session, candidate_id: int, top_k: int = 10, include_ineligible: bool = False
+    session: Session, candidate_id: int, top_k: int | None = 10, include_ineligible: bool = False
 ) -> list[MatchResult]:
+    """`top_k=None` returns every eligible result, unsorted-length-wise
+    unlimited (Python's `list[:None]` slicing already does the right thing)
+    — used by Phase 22's blended-default re-ranking, which needs the full
+    rule-based pool before re-sorting it by embedding similarity.
+    """
     candidate = load_candidate_profile(session, candidate_id)
     if candidate is None:
         raise ValueError(f"No candidate with id={candidate_id}")

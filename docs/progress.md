@@ -1059,3 +1059,41 @@ Redis instances — all deferred to a v2, only if actually needed (see
 `docs/redis-infrastructure.md` "Known limitations").
 
 ### Phase 21 — status: v1 COMPLETE (all three use cases built and independently verified against real containers)
+
+## Phase 22 — promote blended ranking to the default path (2026-10-31)
+
+First of four user-selected deferred items to complete in this round. Phase 20's re-verification
+(docs/embedding-matching.md) measured blended NDCG 0.878 vs. rule-based's 0.645 — the exact case
+the v2 roadmap entry had been waiting for. This phase makes the promotion decision explicit rather
+than leaving a stronger-measured option undeployed.
+
+**Design**: `GET /candidates/{id}/job-matches` now defaults to `mode=blended` — re-ranks the
+rule-based eligible pool (unchanged eligibility/skill-gap/explanation fields, since embeddings
+don't produce those) by the Phase 17 embeddings-blended score, falling back to pure rule-based
+order when a candidate has no embeddings computed yet (a batch job, not guaranteed to have run for
+every candidate). `mode=rule_based` opts back into the original deterministic order. The actual
+path taken is reported via a new `X-Ranking-Mode` response header (`blended` / `rule_based` /
+`rule_based_no_embeddings`), the same transparency discipline Phase 21's `X-Cache` established.
+
+**Built and verified against real running containers, not assumed from the design**:
+- `app/matching/rank.py`'s `rank_jobs_for_candidate` widened to accept `top_k=None` (returns every
+  eligible result — Python's `list[:None]` slicing already does the right thing, no logic change
+  needed) so the new blended path can re-rank the *full* eligible pool, not a rule-based-pre-trimmed
+  one.
+- `app/embeddings/retrieval.py`'s new `rank_jobs_for_candidate_blended_default` composes the
+  rule-based pool with the blended score, sorting jobs outside the stage-1 ANN retrieval window to
+  the bottom in their original rule-based order (Python's stable sort) rather than dropping them.
+- `app/api/routes.py` wires in `mode`, updates the cache key to include it, and caches the ranking
+  mode alongside the results so a cache hit still reports the correct `X-Ranking-Mode`.
+- Verified live against the real seeded dataset with embeddings computed for a 20-candidate/50-job
+  sample: `GET /candidates/1/job-matches` (default) returned job 28 first (`X-Ranking-Mode:
+  blended`); the same candidate with `mode=rule_based` returned job 347 first (rule-based total
+  0.535) — a real, measured re-ranking, not just a header flip. `GET /candidates/500/job-matches`
+  (no embeddings computed) correctly reported `X-Ranking-Mode: rule_based_no_embeddings` with
+  unchanged rule-based scores.
+- 4 new tests (`tests/embeddings/test_retrieval_db.py`'s fallback/blended/no-eligible-jobs cases,
+  `tests/api/test_routes_db.py`'s explicit `mode=rule_based` route test), 150 total passing. The
+  pre-existing route tests needed no changes — the fixture has no embeddings, so the new default
+  path falls back to the exact same rule-based scores those tests already asserted.
+
+### Phase 22 — status: COMPLETE (blended promoted to default, verified live, rule-based still available via `mode=rule_based`)
