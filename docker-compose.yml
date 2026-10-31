@@ -223,6 +223,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       OLLAMA_URL: http://ollama:11434
+      # Phase 25: invalidates a candidate's job-matches cache the instant
+      # their embeddings are recomputed (app/embeddings/cache_invalidation.py).
+      # No depends_on/healthcheck coupling to redis — fail-open by design,
+      # same as every other Redis integration in this project; this job must
+      # still work (just without active invalidation) if redis isn't running.
+      REDIS_URL: redis://redis:6379/0
     command: ["python", "-m", "app.embeddings.compute_embeddings"]
     depends_on:
       db:

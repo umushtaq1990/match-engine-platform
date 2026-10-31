@@ -19,6 +19,8 @@ import os
 
 import redis
 
+from app.embeddings.cache_invalidation import get_candidate_cache_version
+
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.environ.get("REDIS_URL")
@@ -33,6 +35,16 @@ if REDIS_URL:
 
 def cache_key(*parts: object) -> str:
     return "jme:cache:" + ":".join(str(p) for p in parts)
+
+
+def candidate_cache_key(category: str, candidate_id: int, *parts: object) -> str:
+    """Phase 25: a version-stamped cache key (see
+    app/embeddings/cache_invalidation.py) — a candidate's job-matches cache
+    becomes unreachable the instant their embeddings are recomputed, instead
+    of only expiring after the full 1-hour TTL.
+    """
+    version = get_candidate_cache_version(candidate_id)
+    return cache_key(category, candidate_id, f"v{version}", *parts)
 
 
 def get_cached(key: str) -> list | dict | None:

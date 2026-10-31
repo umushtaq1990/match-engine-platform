@@ -1,8 +1,9 @@
-# Redis — Rate Limiting, Result Caching, Async Streaming (Phase 21)
+# Redis — Rate Limiting, Result Caching, Async Streaming (Phase 21, hardened Phase 25)
 
-Status: v1 — **implemented and verified against real running containers**, all three use cases.
-Same discipline as every prior phase: design written and reviewed first (below), then built, then
-measured — not assumed from the design.
+Status: v2 — **implemented and verified against real running containers**, all three v1 use cases
+plus v2 hardening (active cache invalidation, consumer retry/dead-letter handling). Same discipline
+as every prior phase: design written and reviewed first (below), then built, then measured — not
+assumed from the design.
 
 ## Why now, not earlier
 
@@ -75,19 +76,50 @@ limiting, stream consumer) — no new deployable image, just a new official-imag
 ## Phased roadmap
 
 - **v1 (this phase)**: all three use cases above, verified independently.
-- **v2, only if actually needed**: active cache invalidation on profile/job changes (not TTL-only),
-  consumer-group failure handling (`XPENDING`/claim logic for a crashed consumer — not built in
-  v1, a real production gap, documented not hidden), splitting cache/broker onto separate Redis
-  instances if one instance's load ever actually becomes a bottleneck.
+- ~~**v2, only if actually needed**: active cache invalidation...~~ **Done (Phase 25)** — see
+  "v2 hardening" below. Splitting cache/broker onto separate Redis instances remains open, only if
+  one instance's load ever actually becomes a bottleneck.
 
-## Known limitations (v1, by design)
+## v2 hardening (Phase 25)
+
+**Active cache invalidation, scoped to the one real mutation path that exists**: there is still no
+candidate/job *profile* mutation endpoint anywhere in this API (extraction's `/extract` is
+read-only; data only changes via the seed generator or `embeddings-compute`) — so "invalidate on
+profile change" can't be built against a trigger that doesn't exist, honestly, not papered over.
+What *does* change a candidate's job-matches ranking today is `embeddings-compute` recomputing
+their embeddings (Phase 22 made `mode=blended` the default, which depends on them). `app/embeddings/
+cache_invalidation.py` implements a **version-counter** scheme rather than a `SCAN`/pattern-delete
+sweep: each candidate's cache key is stamped with a version (`GET
+jme:cache:version:candidate:{id}`, default 0); invalidation is a single `INCR` — O(1), no blocking
+scan over the keyspace — and the old versioned entries simply age out via their own TTL instead of
+needing to be found and deleted. Verified live: computed embeddings for a candidate with none
+before, confirmed the version key went `None -> 1`, and the identical request that previously
+returned a cached `rule_based_no_embeddings` MISS-then-HIT pair came back as a **fresh MISS,
+`blended`** — the stale fallback result never stayed queryable past the moment it became wrong, not
+just "after up to an hour."
+
+**Consumer-group retry/dead-letter handling**: `app/analytics/stream_consumer.py` now calls
+`XPENDING`/`XCLAIM` each loop iteration to find messages idle longer than 30s (claimed by some
+consumer — possibly one that crashed mid-processing — and never acked). A message under 3 delivery
+attempts is reclaimed and retried; at or beyond 3, it's moved to a `:dead-letter` stream instead of
+blocking the main stream forever. Verified live by deliberately simulating a crash: `XADD`'d a
+message, read it with a throwaway consumer that never acked it (standing in for a process that died
+mid-handling), then confirmed the real background consumer reclaimed it ~30s later via `XCLAIM`,
+processed it, and the row landed correctly in Postgres — `XPENDING` showed zero entries afterward,
+dead-letter stream untouched (correctly, since it succeeded within the retry budget).
+
+## Known limitations (v2, by design)
 
 - Single Redis instance, no Sentinel/Cluster HA — acceptable for a single-developer local
   platform, a real gap for anything beyond it.
-- Cache invalidation is TTL-only (1 hour) — no active invalidation when a candidate's profile or a
-  job posting changes within that window. A documented staleness bound, not an oversight.
-- Consumer-group error handling is basic (ack-after-write, no retry/dead-letter pipeline for a
-  consumer that crashes mid-batch) — a real production concern, explicitly deferred to v2.
+- Cache invalidation only covers the candidate-embeddings trigger above — there's still no
+  candidate/job profile mutation endpoint to invalidate against; TTL remains the only staleness
+  bound for any other kind of change. A job's own embedding changing doesn't invalidate any
+  candidate's cache either — no traceable "which candidates cached this job" index exists, a real,
+  documented gap, not an oversight.
+- Dead-letter messages are appended to a stream, not alerted on or automatically replayed — a human
+  (or a future tool) has to go look. Splitting cache/broker onto separate Redis instances remains
+  open, only if one instance's load ever actually becomes a bottleneck.
 
 ## Verified against real execution
 

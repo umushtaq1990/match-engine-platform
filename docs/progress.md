@@ -1168,3 +1168,38 @@ passing. Verified live against the real seeded + synthetic-events dataset (28,21
 real HTTP endpoint.
 
 ### Phase 24 — status: COMPLETE (segmentation built, a real generator-structure finding documented honestly, a real naive-datetime bug found and fixed)
+
+## Phase 25 — Redis v2 hardening: cache invalidation + consumer dead-letter (2026-10-31)
+
+Last of four user-selected deferred items, closing both gaps `docs/redis-infrastructure.md`
+explicitly flagged as "Known limitations (v1)".
+
+**Active cache invalidation, scoped honestly**: there is still no candidate/job profile mutation
+endpoint anywhere in this API — extraction's `/extract` is read-only, data only changes via the
+seed generator or `embeddings-compute`. Rather than inventing a mutation endpoint just to have
+something to invalidate on, this phase hooks into the one real trigger that exists: `embeddings-
+compute` recomputing a candidate's embeddings (which Phase 22's `mode=blended` default depends on).
+`app/embeddings/cache_invalidation.py` uses a version-counter scheme (`INCR` a per-candidate
+version key) instead of a `SCAN`/pattern-delete sweep — O(1) invalidation, no blocking scan, old
+versioned cache entries just age out via their own TTL. Lives in `app/embeddings/` rather than
+`app/api/` specifically so it can be imported from both the `api` image and the
+`extraction`-based `embeddings-compute` image without crossing the established service boundary
+(`app/api/` is never imported from the extraction family).
+
+**Consumer retry/dead-letter handling**: `app/analytics/stream_consumer.py` now runs `XPENDING`/
+`XCLAIM` each loop iteration, reclaiming messages idle 30+ seconds (orphaned by a consumer that
+crashed mid-processing) for retry, and moving anything that's failed 3+ times to a `:dead-letter`
+stream instead of blocking the main stream forever.
+
+**Both verified live, not assumed**: computed embeddings for a candidate with none before —
+confirmed their cache version went `None -> 1` and the identical request flipped from a cached
+`rule_based_no_embeddings` HIT to a fresh MISS with `blended`. Separately, deliberately simulated a
+crashed consumer (read a message with a throwaway consumer name, never acked it), then confirmed
+the real background consumer reclaimed it via `XCLAIM` ~30s later, processed it correctly, and
+`XPENDING` showed zero entries afterward.
+
+6 new tests (2 cache-invalidation fail-open, 1 candidate_cache_key format, 3 consumer retry/dead-
+letter fake-redis cases), 172 total passing. All four user-selected Phase 20/21 deferred items are
+now complete.
+
+### Phase 25 — status: COMPLETE (both v2 hardening gaps closed, both verified against real running containers including a deliberately simulated consumer crash)

@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.api.analytics_client import log_recommendations_shown
-from app.api.cache import cache_key, get_cached, set_cached
+from app.api.cache import candidate_cache_key, get_cached, set_cached
 from app.api.deps import DbSession, RequireApiKey
 from app.api.schemas import (
     CourseRecommendationOut,
@@ -73,7 +73,7 @@ def get_job_matches_for_candidate(
     A cached hit still logs a recommendation_shown impression: the user is
     seeing the recommendation again regardless of whether it was recomputed.
     """
-    key = cache_key("job-matches", candidate_id, top_k, include_ineligible, mode)
+    key = candidate_cache_key("job-matches", candidate_id, top_k, include_ineligible, mode)
     cached = get_cached(key)
     if cached is not None:
         response.headers["X-Cache"] = "HIT"
@@ -121,7 +121,7 @@ def get_job_matches_for_candidate_semantic(
     Phase 21: same cache-aside, 1-hour TTL policy as the rule-based endpoint
     above (docs/redis-infrastructure.md "Use case 2").
     """
-    key = cache_key("job-matches-semantic", candidate_id, top_k)
+    key = candidate_cache_key("job-matches-semantic", candidate_id, top_k)
     cached = get_cached(key)
     if cached is not None:
         response.headers["X-Cache"] = "HIT"

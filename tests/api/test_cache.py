@@ -18,3 +18,9 @@ def test_get_cached_is_a_miss_without_a_configured_client():
 def test_set_cached_is_a_noop_without_a_configured_client():
     # Would raise (AttributeError on a None client) if this didn't short-circuit.
     cache.set_cached(cache.cache_key("job-matches", 1, 10, False), [{"entity_id": 1}])
+
+
+def test_candidate_cache_key_embeds_version_zero_without_a_configured_client():
+    # Phase 25: version defaults to 0 when there's no Redis client to read
+    # jme:cache:version:candidate:{id} from (app/embeddings/cache_invalidation.py).
+    assert cache.candidate_cache_key("job-matches", 1, 10, False) == "jme:cache:job-matches:1:v0:10:False"

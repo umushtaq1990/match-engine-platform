@@ -97,8 +97,10 @@ update it whenever a doc is added, renamed, or removed.
 - [redis-infrastructure.md](redis-infrastructure.md) — three scoped use cases, all built and
   verified: a Redis-backed rate-limiting store (re-measured Phase 18's 122-through bug -> a clean
   100/50 split), 1-hour cache-aside result caching (`X-Cache: HIT`/`MISS`, verified TTL), and Redis
-  Streams decoupling the analytics instrumentation hook from a synchronous HTTP call (verified
-  consumer-group delivery with zero backlog) (Phase 21, v1)
+  Streams decoupling the analytics instrumentation hook from a synchronous HTTP call. Phase 25
+  hardened both remaining v1 gaps: version-counter cache invalidation triggered by real embeddings
+  recomputation, and consumer retry/dead-letter handling verified against a deliberately simulated
+  crashed consumer (Phase 21/25, v2)
 
 ## Not yet created — written just-in-time, not upfront
 

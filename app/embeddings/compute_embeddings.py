@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
+from app.embeddings.cache_invalidation import invalidate_candidate_cache
 from app.embeddings.hashing import DIMENSION_HASHERS
 from app.embeddings.models import EntityEmbedding
 from app.embeddings.pipeline import compute_embedding
@@ -69,6 +70,17 @@ def refresh_entity(
                 computed_at=datetime.now(timezone.utc),
             ))
         stats["computed"] += 1
+
+    # Phase 25: a candidate's job-matches cache (app/api/cache.py) depends
+    # directly on their own embeddings existing/being current — the default
+    # ranking mode (Phase 22) silently falls back to rule-based otherwise.
+    # Without this, a candidate whose embeddings just went from "missing" to
+    # "present" could keep serving a stale "rule_based_no_embeddings" result
+    # for up to the full 1-hour TTL. Jobs aren't invalidated here: a job's
+    # own embedding changing doesn't have a traceable "which candidates
+    # cached this job" index, a real, documented v3 gap, not an oversight.
+    if entity_type == "candidate" and stats["computed"] > 0:
+        invalidate_candidate_cache(entity_id)
     return stats
 
 

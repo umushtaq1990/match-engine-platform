@@ -29,6 +29,20 @@ STREAM_NAME = "analytics:recommendation_events"
 CONSUMER_GROUP = "analytics-ingest"
 CONSUMER_NAME = f"analytics-{os.getpid()}"
 
+# Phase 25: closes the "no retry/dead-letter pipeline for a crashed
+# consumer" gap documented in docs/redis-infrastructure.md "Known
+# limitations". A message pending (claimed but unacked) for longer than
+# MIN_IDLE_MS almost certainly means the consumer that claimed it crashed or
+# hung mid-processing — Redis has no way to know that on its own, which is
+# exactly what XPENDING/XCLAIM exist to let a *different* consumer detect
+# and recover from. After MAX_DELIVERIES attempts, a message is assumed to
+# be poison (malformed payload, a bug a retry won't fix) and moved to a
+# dead-letter stream instead of blocking the main stream forever.
+MIN_IDLE_MS = 30_000
+MAX_DELIVERIES = 3
+DEAD_LETTER_STREAM = f"{STREAM_NAME}:dead-letter"
+DEAD_LETTER_MAXLEN = 10_000
+
 _stop_event = threading.Event()
 _thread: threading.Thread | None = None
 
@@ -58,12 +72,63 @@ def _handle_message(client: redis.Redis, message_id: str, fields: dict) -> None:
     client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
 
 
+def _dead_letter(client: redis.Redis, message_id: str, times_delivered: int) -> None:
+    entries = client.xrange(STREAM_NAME, min=message_id, max=message_id)
+    if entries:
+        _, fields = entries[0]
+        client.xadd(
+            DEAD_LETTER_STREAM,
+            {**fields, "original_id": message_id, "times_delivered": str(times_delivered)},
+            maxlen=DEAD_LETTER_MAXLEN, approximate=True,
+        )
+        logger.error(
+            "Message %s exceeded %s delivery attempts, moved to %s",
+            message_id, MAX_DELIVERIES, DEAD_LETTER_STREAM,
+        )
+    else:
+        logger.warning(
+            "Message %s exceeded %s delivery attempts but its entry was already trimmed "
+            "from the stream (MAXLEN) — acking without a dead-letter copy", message_id, MAX_DELIVERIES,
+        )
+    client.xack(STREAM_NAME, CONSUMER_GROUP, message_id)
+
+
+def _reclaim_stale_messages(client: redis.Redis) -> None:
+    """Scans for messages claimed by some consumer (possibly a crashed one)
+    for longer than MIN_IDLE_MS, and either retries them (re-claimed by this
+    consumer) or dead-letters them, depending on how many times they've
+    already been delivered. Safe to call from multiple consumer processes —
+    XCLAIM only succeeds for a message still at the idle time it checked.
+    """
+    pending = client.xpending_range(
+        STREAM_NAME, CONSUMER_GROUP, min="-", max="+", count=10, idle=MIN_IDLE_MS,
+    )
+    for entry in pending:
+        message_id, times_delivered = entry["message_id"], entry["times_delivered"]
+        if times_delivered >= MAX_DELIVERIES:
+            _dead_letter(client, message_id, times_delivered)
+            continue
+        claimed = client.xclaim(
+            STREAM_NAME, CONSUMER_GROUP, CONSUMER_NAME,
+            min_idle_time=MIN_IDLE_MS, message_ids=[message_id],
+        )
+        for claimed_id, fields in claimed:
+            try:
+                _handle_message(client, claimed_id, fields)
+            except Exception:
+                logger.exception(
+                    "Reclaimed message %s failed again (attempt %s/%s), will retry later",
+                    claimed_id, times_delivered + 1, MAX_DELIVERIES,
+                )
+
+
 def _consume_loop() -> None:
     client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     _ensure_group(client)
     logger.info("Analytics Redis Streams consumer started (group=%s)", CONSUMER_GROUP)
     while not _stop_event.is_set():
         try:
+            _reclaim_stale_messages(client)
             response = client.xreadgroup(
                 CONSUMER_GROUP, CONSUMER_NAME, {STREAM_NAME: ">"}, count=10, block=2000,
             )
@@ -79,7 +144,8 @@ def _consume_loop() -> None:
                     _handle_message(client, message_id, fields)
                 except Exception:
                     logger.exception(
-                        "Failed to process stream message %s, leaving unacked", message_id
+                        "Failed to process stream message %s, leaving unacked for later retry",
+                        message_id,
                     )
 
 

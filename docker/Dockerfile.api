@@ -14,6 +14,7 @@ COPY app/ingestion/source_models.py ./app/ingestion/source_models.py
 COPY app/embeddings/__init__.py ./app/embeddings/__init__.py
 COPY app/embeddings/models.py ./app/embeddings/models.py
 COPY app/embeddings/retrieval.py ./app/embeddings/retrieval.py
+COPY app/embeddings/cache_invalidation.py ./app/embeddings/cache_invalidation.py
 
 # Required for the multiprocess Prometheus metrics fix in app/api/main.py -
 # must exist and be set before uvicorn forks its workers.
