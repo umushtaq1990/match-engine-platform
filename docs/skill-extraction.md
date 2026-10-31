@@ -110,6 +110,33 @@ Both the LLM model and the embedding model are **run parameters passed through t
 not hardcoded — swapping models is a different MLflow run, not a code change. That's what makes
 "try different models, see what scores better" actually work.
 
+### CV upload storage
+
+A candidate can upload their CV as a PDF (`POST /candidates/{id}/cv`, `GET /candidates/{id}/cv` for
+metadata, `GET /candidates/{id}/cv/download` for the file itself) — a genuinely basic feature by
+design: PDF only, 2MB cap, one CV per candidate (a re-upload overwrites the prior one, no version
+history), no virus scanning. The point was answering "where does a real candidate's uploaded
+document live," not building a document-management system.
+
+**Tool choice, verified not assumed**: SeaweedFS, not MinIO. MinIO stopped publishing public
+container images in 2025 — confirmed directly, not assumed from a changelog: `docker pull
+minio/minio` returns "pull access denied, repository does not exist," and both Docker Hub's and
+Quay's tag-listing APIs refuse unauthenticated access for that repository. SeaweedFS's
+`chrislusf/seaweedfs` image is still freely pullable (confirmed: `docker pull
+chrislusf/seaweedfs:4.51` succeeds), open source, and speaks the same S3-compatible API any client
+library already expects — the `minio` Python package (an S3 client despite its name) works against
+it unmodified, confirmed by a real upload/download round trip before any application code was
+written. Runs in `mini` mode (bundles master/volume/filer/S3 gateway in one process), appropriate
+at this project's scale (50-100 CVs) rather than a distributed storage cluster.
+
+Only object *metadata* (`CandidateDocument`: candidate_id, object key, filename, content type,
+size, upload timestamp) lives in Postgres — the PDF bytes themselves live only in object storage,
+never duplicated into the relational database. Validation checks both the declared Content-Type
+*and* the actual PDF magic bytes (`%PDF-`), since a client can claim any content type it likes for
+a request body. Deliberately not fail-open like the Redis integrations elsewhere in this project —
+if object storage is unreachable, the upload fails with a real `503`, since a CV upload with
+nowhere to put the file is a genuine failure the caller must see, not something to silently drop.
+
 ## Verification & Results
 
 **Generator enhancement**: `app/ingestion/generate_synthetic_data.py` now weaves each job's actual
@@ -177,15 +204,22 @@ hook's best-effort design actually holds in practice.
 is healthy and models are pulled, and makes one real (not mocked) extraction call, asserting a real
 skill was matched with the correct requirement level.
 
+**CV upload, verified live against the real stack, not just unit tests**: uploaded a real PDF to
+`/candidates/1/cv`, confirmed the row landed in `candidate_documents` (correct filename/size), the
+object itself landed in SeaweedFS (`client.list_objects` showed `candidates/1/cv.pdf`, matching
+size), and `/candidates/1/cv/download` returned bytes that `diff`'d identical to the original file.
+Validation re-checked live too: a `.png` upload correctly returned `422` ("Only application/pdf is
+accepted"), a 3MB file correctly returned `422` ("File too large"), and an unknown candidate_id
+correctly returned `404` before ever touching object storage.
+
 ## Known Limitations
 
 - No negation handling ("no Java experience required" would likely still extract "Java") — flagged
   as a known gap, not silently assumed away.
-- No raw-CV-text field exists anywhere in the current domain model (`Candidate` only has structured
-  `CandidateSkill` rows) — the extraction endpoint is stateless (text in, skills out), independent
-  of whether the source is a job description or a CV, so this doesn't block current use, but CV
-  ingestion specifically has no real column to write into yet if a future write-path is built for
-  candidates.
+- ~~No raw-CV-text field exists anywhere in the current domain model...~~ **Partially resolved**: a
+  candidate can now upload and store a CV as a PDF (see "CV upload storage" above). What's still
+  missing: the PDF's text is never parsed or run through `extract_skills` automatically — upload and
+  extraction are two separate, deliberately un-chained steps in v1 (see Roadmap).
 - Recall improved from 0.447 (original `llama3.2:1b`) to 0.60–0.68 (`qwen2.5:1.5b`) but is still not
   close to 1.0 — some real skill mentions are still missed, most likely needing few-shot examples in
   the prompt to close the remaining gap further. Not yet attempted.
@@ -195,6 +229,11 @@ skill was matched with the correct requirement level.
 ## Roadmap
 
 - ~~Threshold sweep and model comparison~~ — **done**, see Verification & Results above.
+- ~~Basic CV upload storage~~ — **done**, see "CV upload storage" above.
+- **Parse the uploaded PDF's text and run it through `extract_skills` automatically**, a natural
+  next step now that both halves exist independently — not built yet because PDF text extraction is
+  a real, separate failure mode (scanned/image-only PDFs have no extractable text at all), deserving
+  its own measured pass rather than being bolted on silently.
 - **Wire extraction into a real write path**, only after the current pipeline is shown good enough:
   e.g. an endpoint that accepts raw text and actually populates `JobSkill` rows, at which point
   requirement-level output stops being only an eval metric and starts being operational data. Not

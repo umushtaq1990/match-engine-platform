@@ -1,4 +1,6 @@
-"""Wire schemas for the skill-extraction API (Use Case C, Phase 16)."""
+"""Wire schemas for the skill-extraction API (Use Case C)."""
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from app.extraction.pipeline import (
@@ -30,3 +32,13 @@ class UnmatchedPhraseOut(BaseModel):
 class ExtractResponse(BaseModel):
     matches: list[SkillMatchOut]
     unmatched: list[UnmatchedPhraseOut]
+
+
+class CandidateDocumentOut(BaseModel):
+    candidate_id: int
+    original_filename: str
+    content_type: str
+    size_bytes: int
+    uploaded_at: datetime
+
+    model_config = {"from_attributes": True}

@@ -1,6 +1,7 @@
-"""ORM models for skill-extraction evaluation run results (Use Case C,
-Phase 16). Same two-level pattern as app/evaluation/eval_models.py and
-app/ingestion/quality_models.py (run summary + per-example detail).
+"""ORM models for Use Case C (skill extraction): evaluation run results
+(two-level pattern, same as app/evaluation/eval_models.py and
+app/ingestion/quality_models.py — run summary + per-example detail) and CV
+document metadata (CandidateDocument).
 
 Lives in the public schema, not an isolated one like app/analytics/models.py
 — see docs/skill-extraction.md "Service boundary": unlike behavioral
@@ -10,7 +11,7 @@ already owns), not a genuinely separate concern.
 """
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,3 +55,22 @@ class ExtractionExampleResult(Base):
     unmatched_phrases: Mapped[list] = mapped_column(JSONB)
 
     run: Mapped["ExtractionRun"] = relationship(back_populates="example_results")
+
+
+class CandidateDocument(Base):
+    """Metadata for a candidate's uploaded CV (object bytes live in
+    SeaweedFS's S3-compatible object storage, never here — see
+    app/extraction/document_storage.py and docs/skill-extraction.md "CV
+    upload storage"). One row per candidate: a re-upload overwrites the
+    prior object at the same key and updates this row in place, it doesn't
+    accumulate a version history — a documented v1 simplification.
+    """
+    __tablename__ = "candidate_documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"), unique=True, index=True)
+    object_key: Mapped[str] = mapped_column(String(255))
+    original_filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(100))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    uploaded_at: Mapped[datetime] = mapped_column()

@@ -17,7 +17,7 @@
           <mxGeometry x="60" y="200" width="2140" height="170" as="geometry" />
         </mxCell>
         <mxCell id="band2bg" value="Data, Observability &amp; Ops" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#cccccc;dashed=1;verticalAlign=top;align=left;fontStyle=1;fontSize=13;fontColor=#999999;spacingTop=4;spacingLeft=8;" vertex="1" parent="1">
-          <mxGeometry x="60" y="420" width="2140" height="210" as="geometry" />
+          <mxGeometry x="60" y="420" width="2160" height="210" as="geometry" />
         </mxCell>
 
         <!-- Band 0: actors / external triggers -->
@@ -63,6 +63,9 @@
         </mxCell>
         <mxCell id="neo4j" value="neo4j — Neo4j 5 + GDS&#10;knowledge graph + Louvain clustering&#10;&#10;docs/knowledge-graph.md" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;boundedLbl=1;" vertex="1" parent="1">
           <mxGeometry x="800" y="440" width="320" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="seaweedfs" value="seaweedfs — S3-compatible object storage&#10;candidate CV uploads (PDF, &lt;=2MB)&#10;&#10;docs/skill-extraction.md" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;boundedLbl=1;" vertex="1" parent="1">
+          <mxGeometry x="1990" y="440" width="220" height="150" as="geometry" />
         </mxCell>
 
         <!-- Band 3: observability + MLOps storage + cloud mapping, side panels -->
@@ -126,6 +129,14 @@
         </mxCell>
         <mxCell id="e12" value="skill taxonomy" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.5;exitY=1;entryX=0.8;entryY=0;" edge="1" parent="1" source="extraction" target="db">
           <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23" value="store / retrieve CV (S3 API)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.9;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="extraction" target="seaweedfs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="890" y="435" />
+              <mxPoint x="2100" y="435" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="e13" value="backend store" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.3;exitY=1;entryX=0.95;entryY=0;" edge="1" parent="1" source="mlflow" target="db">
           <mxGeometry relative="1" as="geometry">

@@ -95,7 +95,7 @@ jobs:
         run: |
           count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from information_schema.tables where table_schema='public';")
           echo "table count: $count"
-          [ "$(echo $count | xargs)" = "20" ]
+          [ "$(echo $count | xargs)" = "21" ]
       - name: Seed synthetic data
         run: docker compose run --rm seed
       - name: Confirm seeded row counts
@@ -237,6 +237,19 @@ jobs:
           response=$(curl -s -X POST http://localhost:8002/extract -H "X-API-Key: $api_key" -H 'Content-Type: application/json' -d '{"text":"The ideal candidate must have strong experience with Python."}')
           echo "$response"
           echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); m=d['matches']; assert len(m) >= 1 and any(x['requirement_level']=='required' for x in m), 'expected a required match'; print('extraction ok:', m)"
+      - name: Smoke-test CV upload storage (real SeaweedFS round trip)
+        run: |
+          set -e
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          printf '%%PDF-1.4\n%%ci smoke test cv\n%%%%EOF' > /tmp/ci_test_cv.pdf
+          upload=$(curl -s -X POST http://localhost:8002/candidates/1/cv -H "X-API-Key: $api_key" -F "file=@/tmp/ci_test_cv.pdf;type=application/pdf")
+          echo "$upload"
+          echo "$upload" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['size_bytes'] > 0; print('upload ok:', d)"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8002/candidates/1/cv)" = "401"
+          curl -s http://localhost:8002/candidates/1/cv/download -H "X-API-Key: $api_key" -o /tmp/ci_downloaded_cv.pdf
+          diff /tmp/ci_test_cv.pdf /tmp/ci_downloaded_cv.pdf && echo "downloaded CV matches uploaded CV exactly"
+          reject=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8002/candidates/1/cv -H "X-API-Key: $api_key" -F "file=@/tmp/ci_test_cv.pdf;type=image/png")
+          test "$reject" = "422"
       - name: Compute a sample of embeddings (Phase 17 — all-minilm already pulled above)
         run: docker compose run --rm embeddings-compute python -m app.embeddings.compute_embeddings --candidate-limit 10 --job-limit 30
       - name: Confirm embeddings were stored

@@ -1230,3 +1230,40 @@ Also removed the two confidential reference `.drawio` files (`Rec_Engine_*`, nam
 that JME has its own original diagrams — they were never opened or read.
 
 ### Documentation consolidation — status: COMPLETE (all items from the "Not yet created" list that had real content to document are now written; the rest remain explicitly deferred to end-of-project or until triggered)
+
+## Phase 26 — basic CV upload storage (2026-10-31)
+
+User-prompted addition: does the system need somewhere to put a candidate's uploaded CV, and does
+that belong on the architecture diagrams? Answer: yes to both, scoped deliberately small — PDF
+only, 2MB cap, one CV per candidate, no automatic text extraction yet.
+
+**A real tool-choice course-correction, found by verifying not assuming**: the obvious default,
+MinIO, turned out to no longer be viable — `docker pull minio/minio` returns "pull access denied,
+repository does not exist," and both Docker Hub's and Quay's tag-listing APIs refuse unauthenticated
+access, confirming MinIO Inc. stopped publishing public container images in 2025. Switched to
+SeaweedFS (`chrislusf/seaweedfs:4.51`, confirmed freely pullable), whose `mini` mode bundles an
+S3-compatible gateway in one process — the same `minio` Python package (an S3 client despite its
+name) works against it unmodified, verified with a real upload/download round trip before any
+application code was written.
+
+**Built**: `app/extraction/document_storage.py` (upload/download/validation — PDF magic-byte check
+plus declared Content-Type, not fail-open like the project's Redis integrations, since a CV upload
+with nowhere to go is a real failure the caller must see), a new `CandidateDocument` metadata table
+(object key/filename/content-type/size/timestamp — the bytes themselves never touch Postgres), and
+three new `extraction` endpoints: `POST /candidates/{id}/cv`, `GET /candidates/{id}/cv`, `GET
+/candidates/{id}/cv/download`.
+
+**Verified live against the real stack, not just unit tests**: uploaded a real PDF, confirmed the
+row landed in `candidate_documents`, confirmed the object itself landed in SeaweedFS (`list_objects`
+showed the exact key and size), and confirmed the downloaded bytes `diff`'d identical to the
+original file. Validation re-checked live too: wrong content-type → 422, oversized file → 422,
+unknown candidate → 404 (before ever touching object storage).
+
+Added `seaweedfs` to the technical architecture diagram (re-validated with the crossing-detection
+script — zero overlaps, zero box crossings, including the new edge). 10 new tests (6 pure validation
+logic, 4 DB+route round-trip with a fake object store so CI doesn't need real SeaweedFS for the unit
+suite), 185 total passing. CI's fresh-volume-smoke-test extended with a real upload/download/reject
+round trip against the actual SeaweedFS container; the hardcoded "20 tables" assertion updated to 21
+for the new table.
+
+### Phase 26 — status: COMPLETE (basic CV storage built and verified live, a real tool-choice correction found and documented)

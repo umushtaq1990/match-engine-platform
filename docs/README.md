@@ -81,7 +81,8 @@ update it whenever a doc is added, renamed, or removed.
 ## Skill extraction
 - [skill-extraction.md](skill-extraction.md) — Use Case C: hybrid LLM-extraction +
   embedding-canonicalization pipeline, golden dataset, extraction-accuracy metrics, a measured
-  baseline tuned from F1 0.504 to 0.60-0.66 (`qwen2.5:1.5b` promoted as the default model)
+  baseline tuned from F1 0.504 to 0.60-0.66 (`qwen2.5:1.5b` promoted as the default model), and
+  basic CV upload storage (PDF-only, 2MB cap, SeaweedFS object storage)
 
 ## Embedding matching
 - [embedding-matching.md](embedding-matching.md) — Use Case F: pgvector schema, multi-dimensional

@@ -172,16 +172,52 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       JME_API_KEY: ${JME_API_KEY}
       OLLAMA_URL: http://ollama:11434
+      # CV upload storage (basic, PDF-only, 2MB cap — docs/skill-extraction.md
+      # "CV upload storage"). SeaweedFS's S3-compatible API, not MinIO —
+      # MinIO stopped publishing public container images in 2025 (confirmed:
+      # `docker pull minio/minio` is refused without login).
+      CV_STORAGE_ENDPOINT: seaweedfs:8333
+      CV_STORAGE_ACCESS_KEY: ${CV_STORAGE_ACCESS_KEY}
+      CV_STORAGE_SECRET_KEY: ${CV_STORAGE_SECRET_KEY}
+      CV_STORAGE_BUCKET: candidate-cvs
     depends_on:
       db:
         condition: service_healthy
       ollama:
+        condition: service_healthy
+      seaweedfs:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
       interval: 10s
       timeout: 3s
       retries: 5
+
+  # CV upload object storage (Use Case C) — SeaweedFS, open source, S3-
+  # compatible, still freely pullable (verified directly; MinIO's own image
+  # is not, as of 2025 — see the extraction service's env comment above).
+  # `mini` mode bundles master/volume/filer/S3 gateway in one process,
+  # appropriate at this project's scale (50-100 candidate CVs, not a
+  # distributed storage cluster). Credentials via AWS_* env vars, SeaweedFS's
+  # own documented quick-setup path — same `.env`-driven secrets pattern as
+  # every other service in this project.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.51
+    command: ["mini", "-dir=/data"]
+    ports:
+      - "8333:8333"
+    environment:
+      AWS_ACCESS_KEY_ID: ${CV_STORAGE_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${CV_STORAGE_SECRET_KEY}
+      S3_BUCKET: candidate-cvs
+    volumes:
+      - seaweedfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8333 || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # One-off job: runs the skill-extraction evaluation harness
   # (app/extraction/run_extraction_eval.py) against the golden dataset and
@@ -416,3 +452,4 @@ volumes:
   ollama_data:
   neo4j_data:
   redis_data:
+  seaweedfs_data:

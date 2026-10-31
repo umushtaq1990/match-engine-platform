@@ -39,3 +39,15 @@ def test_require_api_key_rejects_none():
 def test_require_api_key_accepts_configured_value(monkeypatch):
     monkeypatch.setenv("JME_API_KEY", "test-key-123")
     require_api_key("test-key-123")  # does not raise
+
+
+def test_cv_upload_route_rejects_missing_api_key():
+    response = client.post(
+        "/candidates/1/cv", files={"file": ("cv.pdf", b"%PDF-1.4", "application/pdf")}
+    )
+    assert response.status_code == 401
+
+
+def test_cv_metadata_route_rejects_missing_api_key():
+    response = client.get("/candidates/1/cv")
+    assert response.status_code == 401
