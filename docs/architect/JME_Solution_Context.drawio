@@ -1,124 +1,129 @@
 <mxfile host="app.diagrams.net" modified="2026-10-31T00:00:00.000Z" agent="claude-code" version="24.7.17" type="device">
   <diagram name="Solution Context" id="jme-solution-context">
-    <mxGraphModel dx="1400" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1000" math="0" shadow="0">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="950" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <!-- Title -->
-        <mxCell id="title" value="Project JME — AI Talent-Matching Platform: Solution Context" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="40" y="20" width="900" height="40" as="geometry" />
+        <mxCell id="title" value="Project JME — Solution Context (C4 Level 1)" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="15" width="900" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Actors and external systems (top) -&gt; the platform's exposed capabilities (inside the boundary) -&gt; the internal engine and data layer they rest on." style="text;html=1;fontSize=12;fontColor=#666666;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="48" width="1200" height="25" as="geometry" />
         </mxCell>
 
         <!-- Platform boundary -->
         <mxCell id="boundary" value="Project JME Platform" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;align=center;fontStyle=1;fontSize=16;spacingTop=10;" vertex="1" parent="1">
-          <mxGeometry x="280" y="90" width="1140" height="660" as="geometry" />
+          <mxGeometry x="280" y="200" width="1680" height="580" as="geometry" />
         </mxCell>
 
-        <!-- Left actors -->
-        <mxCell id="candidate" value="Candidate&#10;(Job Seeker)" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="60" y="150" width="160" height="70" as="geometry" />
+        <!-- Band 0: actors / external systems -->
+        <mxCell id="employer" value="Employer / Recruiter" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="310" y="90" width="160" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="employer" value="Employer /&#10;Recruiter" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="60" y="270" width="160" height="70" as="geometry" />
+        <mxCell id="candidate" value="Candidate" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="560" y="90" width="160" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="mlengineer" value="Data / ML Engineer&#10;(Platform Operator)" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="60" y="390" width="160" height="70" as="geometry" />
+        <mxCell id="mlengineer" value="Data / ML Engineer" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="90" width="200" height="80" as="geometry" />
         </mxCell>
-
-        <!-- Right external systems -->
-        <mxCell id="hris" value="Upstream HRIS / ATS&#10;(synthetic source feed)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1460" y="150" width="200" height="90" as="geometry" />
+        <mxCell id="hris" value="Upstream HRIS / ATS&#10;(synthetic feed)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;arcSize=10;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1690" y="90" width="160" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="coursecatalog" value="Course Catalog Provider&#10;(synthetic source feed)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1460" y="280" width="200" height="90" as="geometry" />
+        <mxCell id="coursecatalog" value="Course Catalog Provider&#10;(synthetic feed)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;arcSize=10;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1870" y="90" width="160" height="80" as="geometry" />
         </mxCell>
 
-        <!-- Exposed capability row -->
-        <mxCell id="matchapi" value="Matching &amp; Recommendations API&#10;(rule-based + embeddings blended)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="310" y="140" width="240" height="90" as="geometry" />
+        <!-- Band 1: client-facing / tooling capabilities (all one row, no column skips below) -->
+        <mxCell id="extractapi" value="Skill Extraction API&#10;&#10;docs/skill-extraction.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="310" y="240" width="190" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="extractapi" value="Skill Extraction API&#10;(LLM + embedding canonicalization)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="590" y="140" width="240" height="90" as="geometry" />
+        <mxCell id="matchapi" value="Matching &amp; Recommendations API&#10;&#10;docs/matching-engine.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="540" y="240" width="230" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="analyticsapi" value="Behavioral Analytics API&#10;(event ingestion)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="870" y="140" width="240" height="90" as="geometry" />
+        <mxCell id="analyticsapi" value="Behavioral Analytics API&#10;&#10;docs/behavioral-analytics.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="800" y="240" width="190" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="graphexplorer" value="Knowledge Graph Explorer&#10;(Neo4j Browser + GDS clustering)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1150" y="140" width="240" height="90" as="geometry" />
+        <mxCell id="graphexplorer" value="Knowledge Graph Explorer&#10;&#10;docs/knowledge-graph.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;arcSize=10;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="240" width="190" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="observability" value="Observability&#10;&#10;docs/observability.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=10;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="240" width="190" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="mlopsbox" value="Experiment Tracking&#10;&#10;docs/evaluation-strategy.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=10;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="240" width="190" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="batchbox" value="Batch Pipelines&#10;&#10;docs/data-at-scale.md, docs/data-quality.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;dashed=1;arcSize=10;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1680" y="240" width="240" height="100" as="geometry" />
         </mxCell>
 
-        <!-- Core internal row -->
-        <mxCell id="coreengine" value="Core Matching &amp; AI/ML Engine&#10;(skill-gap scoring, embeddings retrieval,&#10;knowledge-graph insights)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="310" y="280" width="560" height="140" as="geometry" />
-        </mxCell>
-        <mxCell id="dataplatform" value="Data &amp; Event Platform&#10;(PostgreSQL + pgvector, Neo4j, Redis)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="910" y="280" width="480" height="140" as="geometry" />
+        <!-- Band 2: core engine (only under matchapi's column -> nothing else drops through it) -->
+        <mxCell id="coreengine" value="Core Matching &amp; AI/ML Engine&#10;&#10;docs/matching-engine.md, docs/embedding-matching.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;arcSize=10;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="540" y="420" width="230" height="120" as="geometry" />
         </mxCell>
 
-        <!-- Ops row -->
-        <mxCell id="observability" value="Observability&#10;(Prometheus + Grafana)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="310" y="480" width="260" height="90" as="geometry" />
-        </mxCell>
-        <mxCell id="mlopsbox" value="Experiment Tracking&#10;(MLflow)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="610" y="480" width="260" height="90" as="geometry" />
-        </mxCell>
-        <mxCell id="batchbox" value="Batch Pipelines&#10;(seed, migrate, embeddings-compute,&#10;graph-sync, data-quality checks)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;dashed=1;arcSize=10;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="910" y="480" width="480" height="90" as="geometry" />
+        <!-- Band 3: data layer, one wide banner everything above can drop straight into -->
+        <mxCell id="dataplatform" value="Data &amp; Event Platform  (PostgreSQL + pgvector, Neo4j, Redis)&#10;&#10;docs/data-model.md, docs/redis-infrastructure.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;arcSize=10;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="310" y="600" width="1610" height="140" as="geometry" />
         </mxCell>
 
         <!-- Legend -->
-        <mxCell id="legend" value="Legend: blue = client-facing API · purple = AI/ML internal engine · green = data platform · orange = MLOps/observability · dashed = batch job · yellow = external synthetic source" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" vertex="1" parent="1">
-          <mxGeometry x="60" y="880" width="1500" height="30" as="geometry" />
+        <mxCell id="legend" value="Legend: blue = client-facing API · purple = AI/ML internal engine · green = data platform · orange = MLOps/observability · dashed border = batch job · yellow = external synthetic source · dashed arrow = asynchronous" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="280" y="800" width="1680" height="30" as="geometry" />
         </mxCell>
 
-        <!-- Edges -->
-        <mxCell id="e1" value="GET job-matches" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="candidate" target="matchapi">
+        <!-- Edges — every edge only crosses one empty inter-band gap, never another box -->
+        <mxCell id="e1" value="POST job text" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="employer" target="extractapi">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2" value="impressions / clicks&#10;(auto-logged)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="candidate" target="analyticsapi">
+        <mxCell id="e2" value="GET candidate-matches" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="employer" target="matchapi">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" value="GET candidate-matches" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="employer" target="matchapi">
+        <mxCell id="e3" value="GET job-matches" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="1" source="candidate" target="matchapi">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e4" value="POST job text" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="employer" target="extractapi">
+        <mxCell id="e4" value="explores clusters" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=0.3;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="mlengineer" target="graphexplorer">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e5" value="explores clusters" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="mlengineer" target="graphexplorer">
+        <mxCell id="e5" value="monitors" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="mlengineer" target="observability">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e6" value="monitors" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="mlengineer" target="observability">
+        <mxCell id="e6" value="reviews experiments" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=0.7;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="mlengineer" target="mlopsbox">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e7" value="reviews experiments" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="mlengineer" target="mlopsbox">
+        <mxCell id="e7" value="operates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=0.9;exitY=1;entryX=0.3;entryY=0;" edge="1" parent="1" source="mlengineer" target="batchbox">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1340" y="205" />
+              <mxPoint x="1752" y="205" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" value="candidate / job source data&#10;(synthetic)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.6;entryY=0;" edge="1" parent="1" source="hris" target="batchbox">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e8" value="operates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="mlengineer" target="batchbox">
+        <mxCell id="e9" value="course source data&#10;(synthetic)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;exitX=0.5;exitY=1;entryX=0.8;entryY=0;" edge="1" parent="1" source="coursecatalog" target="batchbox">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e9" value="candidate / job source data&#10;(synthetic)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="hris" target="batchbox">
+        <mxCell id="e10" value="logs impressions&#10;(async, Redis Streams)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="matchapi" target="analyticsapi">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e10" value="course source data&#10;(synthetic)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;" edge="1" parent="1" source="coursecatalog" target="batchbox">
+        <mxCell id="e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="matchapi" target="coreengine">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="matchapi" target="coreengine">
+        <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.06;entryY=0;" edge="1" parent="1" source="extractapi" target="dataplatform">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="extractapi" target="coreengine">
+        <mxCell id="e13" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.4;entryY=0;" edge="1" parent="1" source="analyticsapi" target="dataplatform">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e13" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="analyticsapi" target="dataplatform">
+        <mxCell id="e14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.6;entryY=0;" edge="1" parent="1" source="graphexplorer" target="dataplatform">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="coreengine" target="dataplatform">
+        <mxCell id="e15" value="loads / transforms" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;exitX=0.3;exitY=1;entryX=0.9;entryY=0;" edge="1" parent="1" source="batchbox" target="dataplatform">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="graphexplorer" target="dataplatform">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e16" value="loads / transforms" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;" edge="1" parent="1" source="batchbox" target="dataplatform">
+        <mxCell id="e16" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="coreengine" target="dataplatform">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
