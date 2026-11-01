@@ -112,6 +112,11 @@ update it whenever a doc is added, renamed, or removed.
   cache invalidation triggered by real embeddings recomputation, and consumer retry/dead-letter
   handling verified against a deliberately simulated crashed consumer
 
+## Demo frontend
+- [frontend.md](frontend.md) — minimal Streamlit UI over the existing matching/extraction APIs,
+  a separate Docker image, built as an end-to-end demo of the Candidate (upload CV → see job
+  matches) and Employer (see candidate matches) flows, verified live against the real stack
+
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale

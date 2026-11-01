@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [api, migrate, seed, dataquality, mlflow, analytics, extraction, graph]
+        image: [api, migrate, seed, dataquality, mlflow, analytics, extraction, graph, frontend]
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.image }} image
@@ -250,6 +250,27 @@ jobs:
           diff /tmp/ci_test_cv.pdf /tmp/ci_downloaded_cv.pdf && echo "downloaded CV matches uploaded CV exactly"
           reject=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8002/candidates/1/cv -H "X-API-Key: $api_key" -F "file=@/tmp/ci_test_cv.pdf;type=image/png")
           test "$reject" = "422"
+      - name: Start frontend (Phase 27 demo UI)
+        run: docker compose up -d frontend
+      - name: Wait for frontend healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' jme-frontend-1 2>/dev/null || echo "starting")
+            [ "$status" = "healthy" ] && exit 0
+            sleep 2
+          done
+          echo "frontend never became healthy" && docker compose logs frontend && exit 1
+      - name: Smoke-test the frontend (serves, and reaches api/extraction internally)
+        run: |
+          set -e
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8501/_stcore/health)" = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8501/)" = "200"
+          docker exec jme-frontend-1 python -c "
+          import os, requests
+          r = requests.get('http://api:8000/candidates/2/job-matches', headers={'X-API-Key': os.environ['JME_API_KEY']}, timeout=10)
+          assert r.status_code == 200, r.text
+          print('frontend -> api internal call ok')
+          "
       - name: Compute a sample of embeddings (Phase 17 — all-minilm already pulled above)
         run: docker compose run --rm embeddings-compute python -m app.embeddings.compute_embeddings --candidate-limit 10 --job-limit 30
       - name: Confirm embeddings were stored

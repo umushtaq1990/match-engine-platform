@@ -76,6 +76,7 @@ See the Technical Architecture diagram for the full picture. By layer:
 
 | Layer | Components | Doc |
 |---|---|---|
+| Demo frontend | `frontend` (Streamlit, separate image — Candidate upload-CV/view-matches and Employer view-matches flows over `api`/`extraction`) | `docs/frontend.md` |
 | Application services | `api` (matching engine, 4 workers), `analytics` (event ingestion + Streams consumer), `extraction` (skill parsing) | `docs/matching-engine.md`, `docs/behavioral-analytics.md`, `docs/skill-extraction.md` |
 | AI/ML serving | `ollama` (qwen2.5:1.5b generation; nomic-embed-text, all-minilm embeddings) | `docs/model-serving.md` |
 | Data platform | PostgreSQL 16 + pgvector (relational + vector), Neo4j 5 + GDS (knowledge graph), Redis 7 (rate limit/cache/streams), SeaweedFS (S3-compatible object storage for CV uploads) | `docs/data-model.md`, `docs/knowledge-graph.md`, `docs/redis-infrastructure.md`, `docs/skill-extraction.md` |
@@ -99,7 +100,13 @@ candidate's embeddings change — bumps their Redis cache-version key (`app/embe
 cache_invalidation.py`), making any cached ranking for them unreachable immediately rather than
 waiting out the TTL.
 
-**C. The knowledge graph gets rebuilt** (`graph-sync` then `graph-cluster`/`graph-cluster-entities`):
+**C. A user clicks through the demo frontend** (`frontend`, Streamlit): a candidate picks their
+`candidate_id`, uploads a CV (`POST /candidates/{id}/cv` on `extraction`), then requests their job
+matches, which hits the same `GET /candidates/{id}/job-matches` endpoint and cache/ranking path as
+flow A above — the UI is a thin client over the existing APIs, not a new path. An employer picks a
+`job_id` and gets the inverse (`GET /jobs/{id}/candidate-matches`). See `docs/frontend.md`.
+
+**D. The knowledge graph gets rebuilt** (`graph-sync` then `graph-cluster`/`graph-cluster-entities`):
 an idempotent batch ETL mirrors every relational entity/junction table into Neo4j, then native-GDS
 Louvain clustering runs entirely in Cypher — once over skills (Phase 19) and once over
 candidates/jobs by shared-skill similarity (Phase 23) — writing `communityId` back onto the graph,

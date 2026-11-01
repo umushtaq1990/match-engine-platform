@@ -1267,3 +1267,36 @@ round trip against the actual SeaweedFS container; the hardcoded "20 tables" ass
 for the new table.
 
 ### Phase 26 — status: COMPLETE (basic CV storage built and verified live, a real tool-choice correction found and documented)
+
+## Phase 27 — minimal end-to-end demo frontend (2026-11-01)
+
+User-prompted addition, framed explicitly as "very simple... complicated functionality we can
+introduce later": every prior phase built a real capability behind an API, but nothing let a human
+actually click through the flow — the platform was API-only. Built a thin Streamlit UI, as a
+**separate Docker image**, over the APIs that already exist: Candidate mode (enter an existing
+`candidate_id`, upload a CV, view job matches) and Employer mode (enter an existing `job_id`, view
+candidate matches). No new backend logic, no auth, no candidate/job creation — reuses the existing
+seeded dataset, the same scoping discipline as every other phase in this project.
+
+**Built**: `app/frontend/streamlit_app.py` (one script, a sidebar role radio switches between the
+two modes), `docker/Dockerfile.frontend` + `app/requirements-frontend.txt` (just `streamlit` and
+`requests` — no `requirements-base.txt`, since the frontend never touches Postgres directly, only
+calls `api`/`extraction` over HTTP with the same `X-API-Key` header every other caller uses,
+attached server-side so it never reaches the browser), and a new `frontend` service in
+`docker-compose.yml` (depends on `api`/`extraction` being healthy, its own `/_stcore/health`
+healthcheck).
+
+**Verified live against the real stack, not just mocked unit tests**: built the image, started it
+alongside real `api`/`extraction`/`db`/`redis`/`seaweedfs` containers, and replicated the app's three
+HTTP calls directly — CV upload (`201`, landed in both Postgres and object storage), candidate
+job-matches (`200`, 10 ranked results, ranking-mode header present), employer candidate-matches
+(`200`, 10 ranked results) — then confirmed the frontend container reaches `api` over the internal
+Docker network from inside the running container itself, not just via the host-mapped port.
+
+7 new tests using Streamlit's own official `streamlit.testing.v1.AppTest` headless test framework
+(role switching, button clicks, mocked HTTP responses, error paths, disabled-upload-with-no-file),
+192 total passing. CI's `build-and-scan` matrix extended with the `frontend` image; a new smoke-test
+step in `fresh-volume-smoke-test` starts it after `api`/`extraction` are healthy and runs the same
+internal-network check inside the container. Full detail: `docs/frontend.md`.
+
+### Phase 27 — status: COMPLETE (minimal Streamlit frontend built, containerized, and verified live for both Candidate and Employer flows)

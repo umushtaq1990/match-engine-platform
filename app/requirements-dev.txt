@@ -6,6 +6,7 @@
 -r requirements-evaluation.txt
 -r requirements-extraction.txt
 -r requirements-graph.txt
+-r requirements-frontend.txt
 pytest==8.3.3
 httpx==0.27.2
 ruff==0.7.4

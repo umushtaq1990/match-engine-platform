@@ -193,6 +193,32 @@ services:
       timeout: 3s
       retries: 5
 
+  # Phase 27: minimal end-to-end demo frontend — a thin UI over api/extraction,
+  # nothing else (no app/db.py, no ORM, never touches Postgres directly). The
+  # one real gap every prior phase left open: the platform was API-only, with
+  # no way for a human to click through the flow it's built for. See
+  # docs/frontend.md.
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      API_URL: http://api:8000
+      EXTRACTION_URL: http://extraction:8002
+      JME_API_KEY: ${JME_API_KEY}
+    depends_on:
+      api:
+        condition: service_healthy
+      extraction:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # CV upload object storage (Use Case C) — SeaweedFS, open source, S3-
   # compatible, still freely pullable (verified directly; MinIO's own image
   # is not, as of 2025 — see the extraction service's env comment above).
