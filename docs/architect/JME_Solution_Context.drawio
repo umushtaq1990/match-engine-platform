@@ -139,6 +139,9 @@
                         <Array as="points"/>
                     </mxGeometry>
                 </mxCell>
+                <mxCell id="e18" edge="1" parent="1" source="mlopsbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#82b366;fontColor=#82b366;exitX=0.5;exitY=1;entryX=0.8;entryY=0;" target="dataplatform" value="backend store (same Postgres, mlflow db)">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
                 <mxCell id="e15" edge="1" parent="1" source="batchbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#82b366;fontColor=#82b366;exitX=0.3;exitY=1;entryX=0.9;entryY=0;" target="dataplatform" value="loads / transforms">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
