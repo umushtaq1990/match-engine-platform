@@ -130,7 +130,7 @@
                 <mxCell id="seaweedfs_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="20" width="24.39" x="1235.0" y="806.9399999999999" as="geometry" />
                 </mxCell>
-                <mxCell id="grafana" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#b85450;strokeWidth=4;dashed=1;dashPattern=1 2;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Grafana&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Prometheus + cAdvisor + Grafana&lt;br/&gt;docs/observability.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="grafana" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#b85450;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Grafana&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Prometheus + cAdvisor + Grafana&lt;br/&gt;docs/observability.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="1735" y="800" as="geometry" />
                 </mxCell>
                 <mxCell id="grafana_icon" parent="1" style="image;aspect=fixed;html=1;align=center;fontSize=12;image=img/lib/azure2/other/Grafana.svg;points=[[0.5,0,0],[0.5,1,0],[0,0.5,0],[1,0.5,0],[0.982,0.007,0],[0.985,0.99,0],[0.015,0.99,0],[0.018,0.007,0]];" value="" vertex="1">
