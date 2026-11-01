@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram name="Technical Architecture" id="jme-technical-architecture">
-        <mxGraphModel dx="1762" dy="645" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="710" math="0" shadow="0">
+        <mxGraphModel dx="1914" dy="774" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="710" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -298,12 +298,22 @@
                 <mxCell id="neo4j" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="Knowledge-Graph&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;neo4j — Neo4j 5 + GDS — knowledge graph + Louvain clustering&lt;br/&gt;docs/knowledge-graph.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="100" width="160" x="40" y="609" as="geometry"/>
                 </mxCell>
-                <mxCell id="e_future_analytics_neo4j" edge="1" parent="1" source="analytics_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#999999;fontColor=#999999;exitX=0.1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="neo4j" value="future: enrich segmentation with graph clusters (not built)">
+                <mxCell id="e_future_matching_neo4j" edge="1" parent="1" source="matching_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#999999;fontColor=#999999;exitX=0.1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.1;entryDx=0;entryDy=0;" target="neo4j" value="future: graph-based candidate/job similarity (not built)">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="331" y="410"/>
-                            <mxPoint x="10" y="410"/>
-                            <mxPoint x="10" y="659"/>
+                            <mxPoint x="56" y="420"/>
+                            <mxPoint x="15" y="420"/>
+                            <mxPoint x="15" y="619"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_future_analytics_neo4j" edge="1" parent="1" source="analytics_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#999999;fontColor=#999999;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0;entryDx=0;entryDy=0;" target="neo4j" value="future: enrich &lt;br&gt;segmentation with&lt;br&gt;&amp;nbsp;graph clusters&lt;br&gt;&amp;nbsp;(not built)">
+                    <mxGeometry relative="1" x="0.298" y="-30" as="geometry">
+                        <mxPoint as="offset"/>
+                        <Array as="points">
+                            <mxPoint x="210" y="374"/>
+                            <mxPoint x="210" y="410"/>
+                            <mxPoint x="40" y="410"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
