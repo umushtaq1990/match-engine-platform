@@ -58,7 +58,7 @@
                 <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Node fill: blue = client-facing API · purple = AI/ML internal engine · green = data platform · orange = MLOps/observability · dashed border = batch job · gold = external synthetic source" vertex="1">
                     <mxGeometry height="22" width="1680" x="280" y="800" as="geometry"/>
                 </mxCell>
-                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · gray = operator/admin action · gold dashed = external synthetic feed · red dashed = async internal logging · purple = AI/ML internal call · green = data platform read/write" vertex="1">
+                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · orange = operator/admin action · gold dashed = external synthetic feed · red dashed = async internal logging · purple = AI/ML internal call · green = data platform read/write" vertex="1">
                     <mxGeometry height="22" width="1680" x="280" y="824" as="geometry"/>
                 </mxCell>
                 <mxCell id="e1" edge="1" parent="1" source="employer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#333333;fontColor=#333333;exitX=0.5;exitY=1;entryX=0.153;entryY=0.02;entryDx=0;entryDy=0;entryPerimeter=0;" target="extractapi" value="POST job text">
@@ -88,20 +88,20 @@
                         <mxPoint x="681.22" y="220" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e4" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#666666;fontColor=#666666;exitX=0.3;exitY=1;entryX=0.5;entryY=0;" target="graphexplorer" value="explores clusters">
+                <mxCell id="e4" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.3;exitY=1;entryX=0.5;entryY=0;" target="graphexplorer" value="explores clusters">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e5" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#666666;fontColor=#666666;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="observability" value="monitors">
+                <mxCell id="e5" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="observability" value="monitors">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e6" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#666666;fontColor=#666666;exitX=0.7;exitY=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="mlopsbox" value="reviews experiments">
+                <mxCell id="e6" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.7;exitY=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="mlopsbox" value="reviews experiments">
                     <mxGeometry relative="1" x="0.0033" as="geometry">
                         <Array as="points">
                             <mxPoint x="1555" y="170"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e7" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#666666;fontColor=#666666;exitX=1;exitY=0.75;entryX=0;entryY=0;exitDx=0;exitDy=0;entryDx=0;entryDy=0;" target="batchbox" value="operates">
+                <mxCell id="e7" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=1;exitY=0.75;entryX=0;entryY=0;exitDx=0;exitDy=0;entryDx=0;entryDy=0;" target="batchbox" value="operates">
                     <mxGeometry relative="1" x="0.1846" as="geometry"/>
                 </mxCell>
                 <mxCell id="e8" edge="1" parent="1" source="hris" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;strokeColor=#d6b656;fontColor=#d6b656;exitX=0.5;exitY=1;entryX=0.368;entryY=-0.031;entryDx=0;entryDy=0;entryPerimeter=0;" target="batchbox" value="candidate / job source data&#xa;(synthetic)">
