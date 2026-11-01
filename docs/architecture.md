@@ -7,7 +7,10 @@ bullet"); this document's own job is synthesis, not new content.
 
 Two diagrams anchor this document, built fresh from the real implemented system (not mockups):
 - [`docs/architect/JME_Solution_Context.drawio`](architect/JME_Solution_Context.drawio) — who uses
-  this system and what it exposes to them.
+  this system and what it exposes to them. Rendered below (generated directly from the diagram's
+  own coordinates — open the `.drawio` source in diagrams.net/VS Code to edit it).
+
+  ![Solution Context diagram](architect/JME_Solution_Context.svg)
 - [`docs/architect/JME_Technical_Architecture.drawio`](architect/JME_Technical_Architecture.drawio)
   — every live service, data store, and AI/ML component, and how they connect.
 
