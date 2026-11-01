@@ -10,16 +10,25 @@
                 <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=9;fontColor=#666666;align=center;verticalAlign=middle;" value="Actors and external systems (top) -&gt; the platform&#39;s exposed capabilities (inside the boundary) -&gt; the internal engine and data layer they rest on." vertex="1">
                     <mxGeometry height="18" width="1080" y="42" as="geometry"/>
                 </mxCell>
-                <mxCell id="boundary" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;align=center;fontStyle=1;fontSize=12;spacingTop=6;strokeWidth=3;" value="Project JME Platform" vertex="1">
+                <mxCell id="boundary" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;align=center;fontStyle=1;fontSize=12;spacingTop=6;strokeWidth=3;" value="" vertex="1">
                     <mxGeometry height="366.5" width="940" x="70" y="130" as="geometry"/>
                 </mxCell>
-                <mxCell id="employer" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;" value="Employer / Recruiter" vertex="1">
-                    <mxGeometry height="55" width="110" x="90" y="60" as="geometry"/>
+                <mxCell id="B8rJlV0jECggVh8yTC3D-7" edge="1" parent="1" source="candidate" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" target="extractapi">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="130" y="160"/>
+                        </Array>
+                    </mxGeometry>
                 </mxCell>
-                <mxCell id="candidate" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;" value="Candidate" vertex="1">
+                <mxCell id="B8rJlV0jECggVh8yTC3D-8" connectable="0" parent="B8rJlV0jECggVh8yTC3D-7" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="&lt;font style=&quot;font-size: 8px;&quot;&gt;Post Job Text/Candidate CV Profile&lt;/font&gt;" vertex="1">
+                    <mxGeometry relative="1" x="0.2511" y="-1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="candidate" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;" value="Candidate / Recruiter / Employer" vertex="1">
                     <mxGeometry height="55" width="110" x="250" y="63" as="geometry"/>
                 </mxCell>
-                <mxCell id="mlengineer" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;" value="Data / ML Engineer" vertex="1">
+                <mxCell id="mlengineer" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;" value="&lt;div&gt;&lt;br&gt;&lt;/div&gt;Data / ML Engineer" vertex="1">
                     <mxGeometry height="55" width="130" x="640" y="63" as="geometry"/>
                 </mxCell>
                 <mxCell id="hris" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;arcSize=10;fontSize=8;" value="Upstream HRIS / ATS&#xa;(synthetic feed)" vertex="1">
@@ -50,7 +59,7 @@
                     <mxGeometry height="55" width="150" x="195" y="288" as="geometry"/>
                 </mxCell>
                 <mxCell id="dataplatform" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;arcSize=10;fontSize=9;" value="Data &amp; Event Platform (PostgreSQL + pgvector, Neo4j, Redis)&#xa;data-model.md, redis-infrastructure.md" vertex="1">
-                    <mxGeometry height="55" width="920" x="80" y="420" as="geometry"/>
+                    <mxGeometry height="55" width="685" x="195" y="420" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend" parent="1" style="text;html=1;fontSize=8;align=left;verticalAlign=middle;fontColor=#666666;" value="Node fill: blue = client-facing API · purple = AI/ML internal engine · green = data platform · orange = MLOps/observability · dashed border = batch job · gray (box) = external synthetic source" vertex="1">
                     <mxGeometry height="16" width="1040" x="70" y="508" as="geometry"/>
@@ -58,42 +67,19 @@
                 <mxCell id="legend2" parent="1" style="text;html=1;fontSize=8;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · orange = operator/admin action · blue dashed = external synthetic feed · red dashed = async internal logging · purple = AI/ML internal call · green = data platform read/write" vertex="1">
                     <mxGeometry height="16" width="1040" x="70" y="524" as="geometry"/>
                 </mxCell>
-                <mxCell id="e1" edge="1" parent="1" source="employer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#333333;fontColor=#333333;strokeWidth=1;entryX=0;entryY=0;entryDx=0;entryDy=0;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" target="extractapi" value="POST job text">
-                    <mxGeometry relative="1" x="-0.0244" y="-7" as="geometry">
+                <mxCell id="e3" edge="1" parent="1" source="candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#333333;fontColor=#333333;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.75;entryY=0;entryDx=0;entryDy=0;exitDx=0;exitDy=0;" target="matchapi" value="GET job/candidate matches">
+                    <mxGeometry relative="1" x="0.0853" y="25" as="geometry">
                         <mxPoint as="offset"/>
                         <Array as="points">
-                            <mxPoint x="117.5" y="150"/>
-                            <mxPoint x="80" y="150"/>
-                        </Array>
-                        <mxPoint x="120" y="147.5" as="sourcePoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e2" edge="1" parent="1" source="employer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#333333;fontColor=#333333;strokeWidth=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" target="matchapi" value="GET candidate-matches">
-                    <mxGeometry relative="1" x="-0.1678" as="geometry">
-                        <mxPoint as="offset"/>
-                        <mxPoint x="120" y="150" as="sourcePoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e3" edge="1" parent="1" source="candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#333333;fontColor=#333333;strokeWidth=1;exitX=0.5;exitY=1;" target="matchapi" value="GET job-matches">
-                    <mxGeometry relative="1" x="0.5806" as="geometry">
-                        <mxPoint as="offset"/>
-                        <Array as="points">
-                            <mxPoint x="305" y="170"/>
-                            <mxPoint x="305" y="170"/>
+                            <mxPoint x="307.5" y="118"/>
                         </Array>
                         <mxPoint x="305" y="179.01" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e17" edge="1" parent="1" source="candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#333333;fontColor=#333333;strokeWidth=1;exitX=0.25;exitY=0;entryX=0.6;entryY=-0.036;exitDx=0;exitDy=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="extractapi" value="upload CV (PDF)">
-                    <mxGeometry relative="1" x="-0.4789" as="geometry">
-                        <Array as="points">
-                            <mxPoint x="305" y="135"/>
-                            <mxPoint x="140" y="135"/>
-                        </Array>
-                    </mxGeometry>
-                </mxCell>
                 <mxCell id="e4" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#d79b00;fontColor=#d79b00;strokeWidth=1;exitX=0;exitY=0.75;entryX=0.5;entryY=0;exitDx=0;exitDy=0;" target="graphexplorer" value="explores clusters">
-                    <mxGeometry relative="1" x="-0.0974" as="geometry"/>
+                    <mxGeometry relative="1" x="-0.1472" y="-4" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
                 </mxCell>
                 <mxCell id="e5" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#d79b00;fontColor=#d79b00;strokeWidth=1;exitX=0.25;exitY=1;entryX=0.6;entryY=0.036;exitDx=0;exitDy=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="observability" value="monitors">
                     <mxGeometry relative="1" x="0.1006" as="geometry"/>
@@ -137,37 +123,34 @@
                         <mxPoint x="270" y="240" as="sourcePoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e12" edge="1" parent="1" source="extractapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" target="dataplatform" value="">
-                    <mxGeometry relative="1" as="geometry">
-                        <Array as="points">
-                            <mxPoint x="105" y="420"/>
-                        </Array>
+                <mxCell id="e12" edge="1" parent="1" source="extractapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="dataplatform" value="">
+                    <mxGeometry relative="1" x="-0.0876" as="geometry">
                         <mxPoint x="105" y="420" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e13" edge="1" parent="1" source="analyticsapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.376;entryY=-0.027;entryDx=0;entryDy=0;entryPerimeter=0;exitDx=0;exitDy=0;" target="dataplatform" value="">
+                <mxCell id="e13" edge="1" parent="1" source="analyticsapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.336;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;exitDx=0;exitDy=0;" target="dataplatform" value="">
                     <mxGeometry relative="1" x="0.005" as="geometry"/>
                 </mxCell>
-                <mxCell id="e14" edge="1" parent="1" source="graphexplorer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;" target="dataplatform" value="">
+                <mxCell id="e14" edge="1" parent="1" source="graphexplorer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="dataplatform" value="">
                     <mxGeometry relative="1" x="0.2091" as="geometry">
                         <Array as="points">
-                            <mxPoint x="560" y="220"/>
-                            <mxPoint x="560" y="420"/>
+                            <mxPoint x="537.5" y="330"/>
+                            <mxPoint x="537.5" y="330"/>
                         </Array>
                         <mxPoint x="560" y="240" as="sourcePoint"/>
                         <mxPoint x="560" y="420" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e15" edge="1" parent="1" source="batchbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#82b366;fontColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.936;entryY=-0.053;entryDx=0;entryDy=0;entryPerimeter=0;" target="dataplatform" value="loads / transforms">
+                <mxCell id="e15" edge="1" parent="1" source="batchbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#82b366;fontColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="dataplatform" value="loads / transforms">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e16" edge="1" parent="1" source="coreengine" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.207;entryY=0.091;entryDx=0;entryDy=0;entryPerimeter=0;" target="dataplatform" value="">
+                <mxCell id="e16" edge="1" parent="1" source="coreengine" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.109;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="dataplatform" value="">
                     <mxGeometry relative="1" x="0.5731" as="geometry">
                         <Array as="points"/>
                         <mxPoint x="270" y="417.97" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e18" edge="1" parent="1" source="mlopsbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#82b366;fontColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.783;entryY=0;entryDx=0;entryDy=0;entryPerimeter=0;" target="dataplatform" value="backend store (same Postgres, mlflow db)">
+                <mxCell id="e18" edge="1" parent="1" source="mlopsbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#82b366;fontColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.882;entryY=0.036;entryDx=0;entryDy=0;entryPerimeter=0;" target="dataplatform" value="backend store (same Postgres, mlflow db)">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="matchapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=9;" value="Matching &amp; Recommendations API&#xa;matching-engine.md" vertex="1">
