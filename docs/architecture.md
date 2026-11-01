@@ -164,6 +164,8 @@ the running decision log for this project. Larger, discrete decisions get their 
   `metrics-server`.
 - Candidate/job embeddings and extraction are computed at a sampled scale, not the full 1M/50K
   population, by design (`docs/data-at-scale.md`).
+- No logging pipeline — observability is metrics-only (Prometheus/cAdvisor/Grafana); a shared,
+  structured logging package across services is planned but not built (`docs/observability.md`).
 
 Full "what's still missing for real production use" accounting: `docs/production-readiness.md`.
 
