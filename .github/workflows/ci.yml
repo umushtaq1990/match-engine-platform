@@ -31,7 +31,7 @@ jobs:
           --health-timeout 3s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -54,7 +54,7 @@ jobs:
       matrix:
         image: [api, migrate, seed, dataquality, mlflow, analytics, extraction, graph, frontend]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build ${{ matrix.image }} image
         run: docker build -f docker/Dockerfile.${{ matrix.image }} -t match-engine-${{ matrix.image }}:ci .
       - name: Scan ${{ matrix.image }} image (Trivy, report-only)
@@ -74,7 +74,7 @@ jobs:
     needs: build-and-scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Write CI env file
         run: cp .env.example .env
       - name: Build every service image (including profiled tools)
