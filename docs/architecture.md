@@ -166,6 +166,9 @@ the running decision log for this project. Larger, discrete decisions get their 
   population, by design (`docs/data-at-scale.md`).
 - No logging pipeline — observability is metrics-only (Prometheus/cAdvisor/Grafana); a shared,
   structured logging package across services is planned but not built (`docs/observability.md`).
+- Kubernetes manifests only cover `api`/`postgres`/`mlflow`/`prometheus`/`grafana` — everything
+  added since Phase 11 (`redis`, `extraction`, `ollama`, `neo4j`, `seaweedfs`, `frontend`) has no
+  k8s manifest and no scaling path outside the single Docker Compose container (`docs/kubernetes.md`).
 
 Full "what's still missing for real production use" accounting: `docs/production-readiness.md`.
 

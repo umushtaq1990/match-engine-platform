@@ -138,6 +138,13 @@ Verified end-to-end on a local `kind` cluster, not assumed:
 - **No Helm** — a deliberate choice (see Architecture & Design above), reconsider only if a third
   real environment needs config this different from local/Azure that overlays stop being the
   simpler option.
+- **Manifests are stale relative to the full Docker Compose stack**: `k8s/base/` only covers `api`,
+  `postgres`, `mlflow`, `prometheus`, `grafana`, plus the `migrate`/`seed`/`dataquality` jobs — the
+  deployment this doc describes predates `redis` (Phase 21), `extraction`/`ollama` (Phase 15-16),
+  `neo4j` (Phase 19), `seaweedfs` (Phase 26), and `frontend` (Phase 27), none of which have a
+  Kubernetes manifest today. `api` is the only service with any replica/autoscaling config at all;
+  everything added since Phase 11 only exists as a single Docker Compose container locally, with no
+  scaling path defined anywhere. Not a deliberate scope decision — just not revisited since.
 
 ## Related Documents
 
