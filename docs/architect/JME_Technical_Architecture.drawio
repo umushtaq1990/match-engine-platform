@@ -115,7 +115,7 @@
                 <mxCell id="postgres_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="20" width="24.39" x="405" y="850" as="geometry" />
                 </mxCell>
-                <mxCell id="redis" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Redis&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;redis — Redis 7 — rate limit · 1h cache · Streams broker&lt;br/&gt;docs/redis-infrastructure.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="redis" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d79b00;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Redis&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;redis — Redis 7 — rate limit · 1h cache · Streams broker&lt;br/&gt;docs/redis-infrastructure.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="730" y="800" as="geometry" />
                 </mxCell>
                 <mxCell id="redis_icon" parent="1" style="outlineConnect=0;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;shape=mxgraph.aws3.redis;fillColor=#2E73B8;gradientColor=none;" value="" vertex="1">
@@ -130,7 +130,7 @@
                 <mxCell id="seaweedfs_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="20" width="24.39" x="1235.0" y="806.9399999999999" as="geometry" />
                 </mxCell>
-                <mxCell id="grafana" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d79b00;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Grafana&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Prometheus + cAdvisor + Grafana&lt;br/&gt;docs/observability.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="grafana" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#b85450;strokeWidth=4;dashed=1;dashPattern=1 2;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Grafana&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Prometheus + cAdvisor + Grafana&lt;br/&gt;docs/observability.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="1735" y="800" as="geometry" />
                 </mxCell>
                 <mxCell id="grafana_icon" parent="1" style="image;aspect=fixed;html=1;align=center;fontSize=12;image=img/lib/azure2/other/Grafana.svg;points=[[0.5,0,0],[0.5,1,0],[0,0.5,0],[1,0.5,0],[0.982,0.007,0],[0.985,0.99,0],[0.015,0.99,0],[0.018,0.007,0]];" value="" vertex="1">
@@ -228,7 +228,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_scrape_matching" edge="1" parent="1" source="neo4j" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;entryX=0;entryY=1;entryDx=0;entryDy=0;" target="grafana" value="/metrics + container scrape">
+                <mxCell id="e_scrape_matching" edge="1" parent="1" source="neo4j" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;dashPattern=1 2;strokeColor=#b85450;fontColor=#b85450;entryX=0;entryY=1;entryDx=0;entryDy=0;" target="grafana" value="/metrics + container scrape">
                     <mxGeometry relative="1" x="-0.0034" as="geometry">
                         <Array as="points">
                             <mxPoint x="280" y="940" />
@@ -238,7 +238,7 @@
                         <mxPoint x="920" y="900" as="targetPoint" />
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_scrape_analytics" edge="1" parent="1" source="analytics_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;" target="grafana" value="/metrics + container scrape">
+                <mxCell id="e_scrape_analytics" edge="1" parent="1" source="analytics_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;dashPattern=1 2;strokeColor=#b85450;fontColor=#b85450;" target="grafana" value="/metrics + container scrape">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="538.5" y="760" />
@@ -246,7 +246,7 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_scrape_extraction" edge="1" parent="1" source="extraction_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;entryX=0.439;entryY=-0.025;entryDx=0;entryDy=0;entryPerimeter=0;" target="grafana" value="/metrics + container scrape">
+                <mxCell id="e_scrape_extraction" edge="1" parent="1" source="extraction_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;dashPattern=1 2;strokeColor=#b85450;fontColor=#b85450;entryX=0.439;entryY=-0.025;entryDx=0;entryDy=0;entryPerimeter=0;" target="grafana" value="/metrics + container scrape">
                     <mxGeometry relative="1" x="0.3393" as="geometry">
                         <mxPoint as="offset" />
                         <Array as="points">
@@ -256,7 +256,7 @@
                         <mxPoint x="1160" y="960" as="targetPoint" />
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_scrape_mlflow" edge="1" parent="1" source="mlflow" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;" target="grafana" value="container scrape">
+                <mxCell id="e_scrape_mlflow" edge="1" parent="1" source="mlflow" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;dashPattern=1 2;strokeColor=#b85450;fontColor=#b85450;" target="grafana" value="container scrape">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="1262.5" y="760" />
@@ -264,14 +264,14 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_scrape_ollama" edge="1" parent="1" source="ollama" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;exitX=0;exitY=0.75;exitDx=0;exitDy=0;" value="container scrape" target="grafana">
+                <mxCell id="e_scrape_ollama" edge="1" parent="1" source="ollama" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;dashPattern=1 2;strokeColor=#b85450;fontColor=#b85450;exitX=0;exitY=0.75;exitDx=0;exitDy=0;" value="container scrape" target="grafana">
                     <mxGeometry relative="1" x="0.5" as="geometry">
                         </mxGeometry>
                 </mxCell>
-                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Node outline: blue = app/API service · purple = AI/ML serving · green = data store · orange = MLOps/observability · orange dashed = batch job · gray actor icon = client/operator · dashed gray box = documented, not provisioned" vertex="1">
+                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Node outline: blue = app/API service · purple = AI/ML serving · green = data store · orange = MLOps / Redis · red dotted = observability (Grafana) · orange dashed = batch job · gray actor icon = client/operator · dashed gray box = documented, not provisioned" vertex="1">
                     <mxGeometry height="22" width="1900" x="11.61" y="1100" as="geometry" />
                 </mxCell>
-                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · gray dashed = future/not-provisioned path · orange = operator/admin/CI action · blue = app -&gt; data store · purple = AI/ML call · green = batch -&gt; data store · red dashed = async/fail-open" vertex="1">
+                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · gray dashed = future/not-provisioned path · orange = operator/admin/CI action · blue = app -&gt; data store · purple = AI/ML call · green = batch -&gt; data store · red dashed = async/fail-open · red dotted = observability scrape" vertex="1">
                     <mxGeometry height="22" width="1900" x="11.61" y="1122" as="geometry" />
                 </mxCell>
                 <mxCell id="XE2xbM_b2EB1ewLkHZes-1" edge="1" parent="1" source="matching_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;exitX=0.75;exitY=1;exitDx=0;exitDy=0;" target="neo4j" value="">
