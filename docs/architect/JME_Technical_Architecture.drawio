@@ -84,6 +84,9 @@
                 <mxCell id="e_frontend_extraction" edge="1" parent="1" source="frontend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#333333;fontColor=#333333;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" target="extraction_api" value="POST CV upload">
                     <mxGeometry relative="1" x="0.5453" as="geometry" />
                 </mxCell>
+                <mxCell id="e_frontend_analytics" edge="1" parent="1" source="frontend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#999999;fontColor=#999999;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="analytics_api" value="future: behavioral dashboard (not built)">
+                    <mxGeometry relative="1" as="geometry" />
+                </mxCell>
                 <mxCell id="e_matching_analytics" edge="1" parent="1" source="matching_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#b85450;fontColor=#b85450;" target="analytics_api" value="XADD (async, fail-open to HTTP)">
                     <mxGeometry relative="1" x="0.0244" y="26" as="geometry">
                         <mxPoint as="offset" />
