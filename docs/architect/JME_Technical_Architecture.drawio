@@ -4,11 +4,11 @@
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
-                <mxCell id="title" parent="1" style="text;html=1;fontSize=18;fontStyle=1;align=left;verticalAlign=middle;" value="Project JME — Technical Architecture (C4 Level 2: Containers)" vertex="1">
-                    <mxGeometry height="30" width="1200" x="40" y="10" as="geometry"/>
+                <mxCell id="title" parent="1" style="text;html=1;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;" value="Project JME — Technical Architecture (C4 Level 2: Containers)" vertex="1">
+                    <mxGeometry height="30" width="2220" x="0" y="10" as="geometry"/>
                 </mxCell>
-                <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=12;fontColor=#666666;align=left;verticalAlign=middle;" value="Docker Compose locally; Kubernetes/AKS-shaped target documented, not provisioned (docs/kubernetes.md). Strictly layered top-to-bottom: every arrow only ever crosses one empty gap, never another box." vertex="1">
-                    <mxGeometry height="25" width="1400" x="40" y="40" as="geometry"/>
+                <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=12;fontColor=#666666;align=center;verticalAlign=middle;" value="Docker Compose locally; Kubernetes/AKS-shaped target documented, not provisioned (docs/kubernetes.md). Strictly layered top-to-bottom: every arrow only ever crosses one empty gap, never another box." vertex="1">
+                    <mxGeometry height="25" width="2220" x="0" y="45" as="geometry"/>
                 </mxCell>
                 <mxCell id="band1bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#cccccc;dashed=1;verticalAlign=top;align=left;fontStyle=1;fontSize=13;fontColor=#999999;spacingTop=4;spacingLeft=8;" value="Application &amp; AI/ML Services" vertex="1">
                     <mxGeometry height="170" width="2140" x="60" y="200" as="geometry"/>
