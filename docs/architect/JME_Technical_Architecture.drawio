@@ -37,7 +37,7 @@
                 <mxCell id="e_gw_sso" edge="1" parent="1" source="apigateway" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;strokeColor=#999999;fontColor=#999999;" target="sso" value="authenticates">
                     <mxGeometry relative="1" as="geometry" />
                 </mxCell>
-                <mxCell id="frontend" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;App Frontend&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Streamlit UI (separate image)&lt;br/&gt;Candidate: upload CV, view job matches&lt;br/&gt;Employer: view candidate matches&lt;br/&gt;docs/frontend.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="frontend" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;App Frontend&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Streamlit UI (separate image)&lt;br/&gt;Candidate: upload CV, view job matches&lt;br/&gt;Employer: view candidate matches&lt;br/&gt;docs/frontend.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="100" width="205" x="80" y="420" as="geometry" />
                 </mxCell>
                 <mxCell id="frontend_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
@@ -54,25 +54,25 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="matching_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Matching Engine API&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;(uvicorn, 4 workers)&lt;br/&gt;docs/matching-engine.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="matching_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Matching Engine API&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;(uvicorn, 4 workers)&lt;br/&gt;docs/matching-engine.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="190" x="80" y="600" as="geometry" />
                 </mxCell>
                 <mxCell id="matching_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="20" width="24.39" x="90" y="650" as="geometry" />
                 </mxCell>
-                <mxCell id="analytics_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Behavioral Analytics API&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;+ Redis Streams consumer&lt;br/&gt;docs/behavioral-analytics.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="analytics_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Behavioral Analytics API&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;+ Redis Streams consumer&lt;br/&gt;docs/behavioral-analytics.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="436" y="600" as="geometry" />
                 </mxCell>
                 <mxCell id="analytics_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="20" width="24.39" x="445" y="650" as="geometry" />
                 </mxCell>
-                <mxCell id="extraction_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Skill Extraction API&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;(uvicorn, 1 worker)&lt;br/&gt;docs/skill-extraction.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="extraction_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Skill Extraction API&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;(uvicorn, 1 worker)&lt;br/&gt;docs/skill-extraction.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="800" y="600" as="geometry" />
                 </mxCell>
                 <mxCell id="extraction_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="20" width="24.39" x="930" y="650" as="geometry" />
                 </mxCell>
-                <mxCell id="mlflow" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;mlflow&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Experiment Tracking Server&lt;br/&gt;docs/evaluation-strategy.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="mlflow" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d79b00;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;mlflow&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Experiment Tracking Server&lt;br/&gt;docs/evaluation-strategy.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="1160" y="600" as="geometry" />
                 </mxCell>
                 <mxCell id="mlflow_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
@@ -92,7 +92,7 @@
                         <mxPoint as="offset" />
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ollama" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;div&gt;Model&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Ollama LLM + Embedding Server&lt;br/&gt;qwen2.5:1.5b · nomic-embed-text · all-minilm&lt;br/&gt;docs/model-serving.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="ollama" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#9673a6;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;div&gt;Model&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Ollama LLM + Embedding Server&lt;br/&gt;qwen2.5:1.5b · nomic-embed-text · all-minilm&lt;br/&gt;docs/model-serving.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="1400" y="800" as="geometry" />
                 </mxCell>
                 <mxCell id="ollama_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
@@ -109,13 +109,13 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="postgres" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="PostgreSQL 16 + pgvector&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;relational schema + vector embeddings (HNSW)&lt;br/&gt;docs/data-model.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="postgres" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="PostgreSQL 16 + pgvector&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;relational schema + vector embeddings (HNSW)&lt;br/&gt;docs/data-model.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="395" y="800" as="geometry" />
                 </mxCell>
                 <mxCell id="postgres_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="20" width="24.39" x="405" y="850" as="geometry" />
                 </mxCell>
-                <mxCell id="redis" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Redis&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;redis — Redis 7 — rate limit · 1h cache · Streams broker&lt;br/&gt;docs/redis-infrastructure.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="redis" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Redis&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;redis — Redis 7 — rate limit · 1h cache · Streams broker&lt;br/&gt;docs/redis-infrastructure.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="730" y="800" as="geometry" />
                 </mxCell>
                 <mxCell id="redis_icon" parent="1" style="outlineConnect=0;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;shape=mxgraph.aws3.redis;fillColor=#2E73B8;gradientColor=none;" value="" vertex="1">
@@ -124,13 +124,13 @@
                 <mxCell id="neo4j_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="20" width="24.39" x="231.61" y="858.94" as="geometry" />
                 </mxCell>
-                <mxCell id="seaweedfs" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="Seaweedfs&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;S3-compatible object storage&lt;br/&gt;candidate CV uploads (PDF, &lt;=2MB)&lt;br/&gt;docs/skill-extraction.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="seaweedfs" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="Seaweedfs&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;S3-compatible object storage&lt;br/&gt;candidate CV uploads (PDF, &lt;=2MB)&lt;br/&gt;docs/skill-extraction.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="1065" y="800" as="geometry" />
                 </mxCell>
                 <mxCell id="seaweedfs_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="20" width="24.39" x="1235.0" y="806.9399999999999" as="geometry" />
                 </mxCell>
-                <mxCell id="grafana" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Grafana&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Prometheus + cAdvisor + Grafana&lt;br/&gt;docs/observability.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="grafana" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d79b00;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Grafana&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Prometheus + cAdvisor + Grafana&lt;br/&gt;docs/observability.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="1735" y="800" as="geometry" />
                 </mxCell>
                 <mxCell id="grafana_icon" parent="1" style="image;aspect=fixed;html=1;align=center;fontSize=12;image=img/lib/azure2/other/Grafana.svg;points=[[0.5,0,0],[0.5,1,0],[0,0.5,0],[1,0.5,0],[0.982,0.007,0],[0.985,0.99,0],[0.015,0.99,0],[0.018,0.007,0]];" value="" vertex="1">
@@ -193,7 +193,7 @@
                         <mxPoint x="520" y="800" as="targetPoint" />
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="pipeline" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Pipeline&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Batch &amp;amp; Automation Jobs&lt;br/&gt;migrate · seed · dataquality · analytics-seed&lt;br/&gt;embeddings-compute · graph-sync · graph-cluster&lt;br/&gt;graph-cluster-entities · extraction-eval · ollama-pull&lt;br/&gt;docs/data-at-scale.md, docs/knowledge-graph.md,&lt;br/&gt;docs/embedding-matching.md, docs/data-quality.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="pipeline" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d79b00;strokeWidth=4;dashed=1;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Pipeline&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Batch &amp;amp; Automation Jobs&lt;br/&gt;migrate · seed · dataquality · analytics-seed&lt;br/&gt;embeddings-compute · graph-sync · graph-cluster&lt;br/&gt;graph-cluster-entities · extraction-eval · ollama-pull&lt;br/&gt;docs/data-at-scale.md, docs/knowledge-graph.md,&lt;br/&gt;docs/embedding-matching.md, docs/data-quality.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="120" width="240" x="11.61" y="960" as="geometry" />
                 </mxCell>
                 <mxCell id="pipeline_icon" parent="1" style="sketch=0;pointerEvents=1;shadow=0;dashed=0;html=1;strokeColor=none;fillColor=#505050;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;outlineConnect=0;align=center;shape=mxgraph.office.concepts.script;" value="" vertex="1">
@@ -268,7 +268,7 @@
                     <mxGeometry relative="1" x="0.5" as="geometry">
                         </mxGeometry>
                 </mxCell>
-                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Node fill: FFCC99 outline = app/data service · gray actor icon = client/operator · dashed gray box = documented, not provisioned" vertex="1">
+                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Node outline: blue = app/API service · purple = AI/ML serving · green = data store · orange = MLOps/observability · orange dashed = batch job · gray actor icon = client/operator · dashed gray box = documented, not provisioned" vertex="1">
                     <mxGeometry height="22" width="1900" x="11.61" y="1100" as="geometry" />
                 </mxCell>
                 <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · gray dashed = future/not-provisioned path · orange = operator/admin/CI action · blue = app -&gt; data store · purple = AI/ML call · green = batch -&gt; data store · red dashed = async/fail-open" vertex="1">
@@ -284,7 +284,7 @@
                         <mxPoint x="1290" y="1061" as="targetPoint" />
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="neo4j" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="Knowledge-Graph&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;neo4j — Neo4j 5 + GDS — knowledge graph + Louvain clustering&lt;br/&gt;docs/knowledge-graph.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                <mxCell id="neo4j" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="Knowledge-Graph&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;neo4j — Neo4j 5 + GDS — knowledge graph + Louvain clustering&lt;br/&gt;docs/knowledge-graph.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="80" width="205" x="60" y="800" as="geometry" />
                 </mxCell>
                 <mxCell id="XE2xbM_b2EB1ewLkHZes-2" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
