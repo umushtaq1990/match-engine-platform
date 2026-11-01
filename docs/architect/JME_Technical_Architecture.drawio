@@ -1,194 +1,294 @@
 <mxfile host="65bd71144e">
     <diagram name="Technical Architecture" id="jme-technical-architecture">
-        <mxGraphModel dx="301" dy="774" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2220" pageHeight="1150" math="0" shadow="0">
+        <mxGraphModel dx="3461" dy="1106" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1450" math="0" shadow="0">
             <root>
-                <mxCell id="0"/>
-                <mxCell id="1" parent="0"/>
+                <mxCell id="0" />
+                <mxCell id="1" parent="0" />
                 <mxCell id="title" parent="1" style="text;html=1;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;" value="Project JME — Technical Architecture (C4 Level 2: Containers)" vertex="1">
-                    <mxGeometry height="30" width="2220" x="0" y="10" as="geometry"/>
+                    <mxGeometry height="30" width="2000" x="-194.8" y="210" as="geometry" />
                 </mxCell>
                 <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=12;fontColor=#666666;align=center;verticalAlign=middle;" value="Docker Compose locally; Kubernetes/AKS-shaped target documented, not provisioned (docs/kubernetes.md). Strictly layered top-to-bottom: every arrow only ever crosses one empty gap, never another box." vertex="1">
-                    <mxGeometry height="25" width="2220" x="0" y="45" as="geometry"/>
+                    <mxGeometry height="25" width="1360" x="40" y="250" as="geometry" />
                 </mxCell>
-                <mxCell id="band1bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#cccccc;dashed=1;verticalAlign=top;align=left;fontStyle=1;fontSize=13;fontColor=#999999;spacingTop=4;spacingLeft=8;" value="Application &amp; AI/ML Services" vertex="1">
-                    <mxGeometry height="170" width="2140" x="60" y="200" as="geometry"/>
+                <mxCell id="candidate" parent="1" style="html=1;verticalLabelPosition=bottom;align=center;labelBackgroundColor=#ffffff;verticalAlign=top;strokeWidth=2;strokeColor=#666666;shadow=0;dashed=0;shape=mxgraph.ios7.icons.user;fontSize=10;" value="Candidate                 Employer                 Recruiter" vertex="1">
+                    <mxGeometry height="70" width="70" x="147.5" y="285" as="geometry" />
                 </mxCell>
-                <mxCell id="band2bg" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#cccccc;dashed=1;verticalAlign=top;align=left;fontStyle=1;fontSize=13;fontColor=#999999;spacingTop=4;spacingLeft=8;" value="Data, Observability &amp; Ops" vertex="1">
-                    <mxGeometry height="210" width="2160" x="60" y="420" as="geometry"/>
+                <mxCell id="ingressband" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;fontStyle=1;fontSize=12;fontColor=#666666;spacingTop=6;spacingLeft=10;" value="Future ingress layer — documented, not provisioned today                 (each service is reached directly on its mapped container port)" vertex="1">
+                    <mxGeometry height="130" width="740" x="400" y="300" as="geometry" />
                 </mxCell>
-                <mxCell id="candidate" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="Candidate" vertex="1">
-                    <mxGeometry height="70" width="150" x="80" y="90" as="geometry"/>
+                <mxCell id="revproxy" parent="1" style="shape=image;verticalLabelPosition=bottom;labelBackgroundColor=default;verticalAlign=top;aspect=fixed;imageAspect=0;image=data:image/png,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;fontSize=10;" value="Reverse Proxy" vertex="1">
+                    <mxGeometry height="46.31" width="76" x="579" y="347" as="geometry" />
                 </mxCell>
-                <mxCell id="employer" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="Employer / Recruiter" vertex="1">
-                    <mxGeometry height="70" width="150" x="280" y="90" as="geometry"/>
+                <mxCell id="loadbalancer" parent="1" style="fillColor=#28A8E0;verticalLabelPosition=bottom;sketch=0;html=1;strokeColor=#ffffff;verticalAlign=top;align=center;points=[[0.145,0.145,0],[0.5,0,0],[0.855,0.145,0],[1,0.5,0],[0.855,0.855,0],[0.5,1,0],[0.145,0.855,0],[0,0.5,0]];pointerEvents=1;shape=mxgraph.cisco_safe.compositeIcon;bgIcon=ellipse;resIcon=mxgraph.cisco_safe.capability.load_balancer;" value="&lt;font style=&quot;font-size: 8px;&quot;&gt;Load Balance&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="36" width="36" x="699" y="349" as="geometry" />
                 </mxCell>
-                <mxCell id="cicd" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;arcSize=10;fontSize=12;" value="CI/CD&#xa;(GitHub Actions)" vertex="1">
-                    <mxGeometry height="70" width="170" x="480" y="90" as="geometry"/>
+                <mxCell id="apigateway" parent="1" style="editableCssRules=.*;sketch=0;html=1;verticalAlign=top;labelPosition=center;verticalLabelPosition=bottom;align=center;spacingTop=-6;fontSize=11;fontStyle=1;fontColor=#999999;shape=image;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMzY3LjgxODMyODg1NzQyMTkiIHZpZXdCb3g9IjcuMTA1NDI3MzU3NjAxMDAyZS0xNSAwIDM2Ni40MTAxODY3Njc1NzgxIDM2Ny44MTgzMjg4NTc0MjE5IiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCBtZWV0IiB3aWR0aD0iMzY2LjQxMDE5Njc2NzU3OTEiIHZlcnNpb249IjEuMSIgaWQ9InN2Zzk4NyIgem9vbUFuZFBhbj0ibWFnbmlmeSI+JiN4YTsJPHN0eWxlIHR5cGU9InRleHQvY3NzIj4JLnN0MHtmaWxsOiM0Mjg1ZjQ7fQk8L3N0eWxlPgkmI3hhOyAgPHBhdGggY2xhc3M9InN0MCIgZD0ibSA0OC4yNTE5NiwxMTEuNTM5MDYgYyAtNy42MTg2NCwyZS00IC0xMy43OTQ3Miw2LjE3NjI4IC0xMy43OTQ5MywxMy43OTQ5MiAyLjFlLTQsNy42MTg2NCA2LjE3NjI5LDEzLjc5NDcyIDEzLjc5NDkzLDEzLjc5NDkyIGggMTQ1LjE0NjkyIHYgLTI3LjU4OTg0IHogbSAyMzguNjA4NTksNTcuNDUxMTcgaCA2NS43NTQ2OSBjIDcuNjE4NjQsLTIuMWUtNCAxMy43OTQ3MSwtNi4xNzYyOCAxMy43OTQ5MiwtMTMuNzk0OTIgLTIuMWUtNCwtNy42MTg2NCAtNi4xNzYyOCwtMTMuNzk0NzEgLTEzLjc5NDkyLC0xMy43OTQ5MiBIIDI4NC44NTA2IFogTSAxMy43OTQ5MiwxNzAuOTc0NjEgQyA2LjE3NjI4MDEsMTcwLjk3NDgyIDIuMTAwOTE5ZS00LDE3Ny4xNTA4OSA5LjE4OTkyMWUtOCwxODQuNzY5NTMgLTguNjk5MDgxZS00LDE5Mi4zODg5MyA2LjE3NTUyMDEsMTk4LjU2NjE5IDEzLjc5NDkyLDE5OC41NjY0IEggMTkzLjM5ODg4IFYgMTcwLjk3NDYxIFogTSAyODQuMzA3OCwyMjcuNTY2NCBoIDY4LjMwNzQ0IGMgNy42MTg2NCwtMi4xZS00IDEzLjc5NDcxLC02LjE3NjI4IDEzLjc5NDkyLC0xMy43OTQ5MiAtMi4xZS00LC03LjYxODY0IC02LjE3NjI4LC0xMy43OTQ3MSAtMTMuNzk0OTIsLTEzLjc5NDkyIGggLTY1LjkyMTc4IHogbSAtMjM2LjA1NTg0LDEuNjk3MjcgYyAtNy42MTg2NCwyZS00IC0xMy43OTQ3Miw2LjE3NjI4IC0xMy43OTQ5MywxMy43OTQ5MiAyLjFlLTQsNy42MTg2NCA2LjE3NjI5LDEzLjc5NDcyIDEzLjc5NDkzLDEzLjc5NDkyIEggMTkzLjM5ODg4IFYgMjI5LjI2MzY3IFogTSAxODkuNTIxNDksMCBjIC0yNC41NzQxMSwwIC00OS4xNjczNywyMC4wNTUwNyAtNTkuNDM3NSw3NS4zNzMwNCBoIDMwLjU4MDA3IGMgNC42MTYzMywtMjQuMTYyMDYgMTUuMzQ4OTYsLTQ3LjUyMTQ4IDI3Ljg1MzUyLC00Ny41MjE0OCAxMi4xNTg4LDAgMzkuNDU4OTgsNTcuNDUwNDQgMzkuNDU4OTgsMTYwLjQxNDA2IDAsNjkuOTE1MTMgLTE5LjU3ODA5LDE1Mi4xMTUyNCAtNDEuMTcxODcsMTUyLjExNTIzIC0xNS4yNjg4MSwyZS01IC0yMS4yMTY2OCwtMjguMzMzNTYgLTI1LjQ0MzM2LC00Ni43MTg3NCBsIC0zMC40MTQwNiwtMC4wNjg0IGMgNC4yMjA3NCwyMC41NDA4NyAxNi45MDc2OCw3NC4yMjQ2IDU3LjcxMjg5LDc0LjIyNDYgNTMuNDM2NzIsMCA2OC45MTIxMSwtMTExLjk5MzA1IDY4LjkxMjExLC0xODAuNDYyODkgQyAyNTcuNTcyMjcsOTMuODAwNzYgMjM2LjU4MzQsMCAxODkuNTIxNDksMCBaIi8+JiN4YTs8L3N2Zz4=;" value="API Gateway" vertex="1">
+                    <mxGeometry height="42" width="42" x="809" y="343" as="geometry" />
                 </mxCell>
-                <mxCell id="mlengineer" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="Data / ML Engineer" vertex="1">
-                    <mxGeometry height="70" width="180" x="1970" y="90" as="geometry"/>
+                <mxCell id="sso" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.single_sign_on;" value="SSO / ID" vertex="1">
+                    <mxGeometry height="40" width="40" x="899" y="345" as="geometry" />
                 </mxCell>
-                <mxCell id="api" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=11;" value="api&#xa;Matching Engine API&#xa;(uvicorn, 4 workers)&#xa;&#xa;docs/matching-engine.md" vertex="1">
-                    <mxGeometry height="130" width="260" x="80" y="220" as="geometry"/>
+                <mxCell id="e_rp_lb" edge="1" parent="1" source="revproxy" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#999999;fontColor=#999999;" target="loadbalancer" value="forwards">
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
-                <mxCell id="analytics" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=11;" value="analytics&#xa;Behavioral Analytics API&#xa;+ Redis Streams consumer&#xa;&#xa;docs/behavioral-analytics.md" vertex="1">
-                    <mxGeometry height="130" width="260" x="370" y="220" as="geometry"/>
+                <mxCell id="e_lb_gw" edge="1" parent="1" source="loadbalancer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#999999;fontColor=#999999;" target="apigateway" value="forwards">
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
-                <mxCell id="extraction" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=11;" value="extraction&#xa;Skill Extraction API&#xa;(uvicorn, 1 worker)&#xa;&#xa;docs/skill-extraction.md" vertex="1">
-                    <mxGeometry height="130" width="260" x="660" y="220" as="geometry"/>
+                <mxCell id="e_gw_sso" edge="1" parent="1" source="apigateway" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#999999;fontColor=#999999;" target="sso" value="authenticates">
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
-                <mxCell id="ollama" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;arcSize=10;fontSize=11;" value="ollama&#xa;LLM + Embedding Server&#xa;qwen2.5:1.5b · nomic-embed-text · all-minilm&#xa;&#xa;docs/model-serving.md" vertex="1">
-                    <mxGeometry height="130" width="260" x="950" y="220" as="geometry"/>
+                <mxCell id="frontend" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;App Frontend&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Streamlit UI (separate image)&lt;br/&gt;Candidate: upload CV, view job matches&lt;br/&gt;Employer: view candidate matches&lt;br/&gt;docs/frontend.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="100" width="205" x="80" y="420" as="geometry" />
                 </mxCell>
-                <mxCell id="mlflow" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=10;fontSize=11;" value="mlflow&#xa;Experiment Tracking Server&#xa;&#xa;docs/evaluation-strategy.md" vertex="1">
-                    <mxGeometry height="130" width="260" x="1240" y="220" as="geometry"/>
+                <mxCell id="frontend_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="90" y="490" as="geometry" />
                 </mxCell>
-                <mxCell id="batchbox" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;dashed=1;arcSize=10;fontSize=11;" value="Batch &amp; Automation Jobs&#xa;migrate · seed · dataquality · analytics-seed&#xa;embeddings-compute · graph-sync · graph-cluster&#xa;graph-cluster-entities · extraction-eval · ollama-pull&#xa;&#xa;docs/data-at-scale.md, docs/knowledge-graph.md,&#xa;docs/embedding-matching.md, docs/data-quality.md" vertex="1">
-                    <mxGeometry height="130" width="400" x="1530" y="220" as="geometry"/>
+                <mxCell id="e_cand_frontend" edge="1" parent="1" source="candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#333333;fontColor=#333333;" target="frontend" value="browses (web UI)">
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
-                <mxCell id="db" parent="1" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;boundedLbl=1;" value="db — PostgreSQL 16 + pgvector&#xa;relational schema + vector embeddings (HNSW)&#xa;&#xa;docs/data-model.md" vertex="1">
-                    <mxGeometry height="150" width="320" x="80" y="440" as="geometry"/>
-                </mxCell>
-                <mxCell id="redis" parent="1" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;boundedLbl=1;" value="redis — Redis 7&#xa;rate limit · 1h cache · Streams broker&#xa;&#xa;docs/redis-infrastructure.md" vertex="1">
-                    <mxGeometry height="150" width="320" x="440" y="440" as="geometry"/>
-                </mxCell>
-                <mxCell id="neo4j" parent="1" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;boundedLbl=1;" value="neo4j — Neo4j 5 + GDS&#xa;knowledge graph + Louvain clustering&#xa;&#xa;docs/knowledge-graph.md" vertex="1">
-                    <mxGeometry height="150" width="320" x="800" y="440" as="geometry"/>
-                </mxCell>
-                <mxCell id="seaweedfs" parent="1" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;boundedLbl=1;" value="seaweedfs — S3-compatible object storage&#xa;candidate CV uploads (PDF, &lt;=2MB)&#xa;&#xa;docs/skill-extraction.md" vertex="1">
-                    <mxGeometry height="150" width="220" x="1990" y="440" as="geometry"/>
-                </mxCell>
-                <mxCell id="prometheus" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;arcSize=10;fontSize=12;" value="prometheus" vertex="1">
-                    <mxGeometry height="60" width="220" x="1240" y="440" as="geometry"/>
-                </mxCell>
-                <mxCell id="cadvisor" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;arcSize=10;fontSize=12;" value="cadvisor&#xa;(container CPU/RAM)" vertex="1">
-                    <mxGeometry height="60" width="220" x="1240" y="520" as="geometry"/>
-                </mxCell>
-                <mxCell id="grafana" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;arcSize=10;fontSize=12;" value="grafana&#xa;&#xa;docs/observability.md" vertex="1">
-                    <mxGeometry height="140" width="220" x="1500" y="440" as="geometry"/>
-                </mxCell>
-                <mxCell id="cloudnote" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;dashed=1;arcSize=10;fontSize=11;align=left;spacingLeft=8;" value="Docker Compose (local) -&gt; Kubernetes (AKS-shaped)&#xa;&#xa;- db -&gt; Azure Database for PostgreSQL&#xa;- api/analytics/extraction -&gt; AKS pods + HPA&#xa;- redis -&gt; Azure Cache for Redis&#xa;- images -&gt; ACR, ingress -&gt; AGIC&#xa;&#xa;Designed, not provisioned — docs/kubernetes.md" vertex="1">
-                    <mxGeometry height="180" width="220" x="1760" y="440" as="geometry"/>
-                </mxCell>
-                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Node fill: blue = app service · purple = AI/ML serving · green = data store · orange = MLOps/observability · dashed border = batch job/note · gray = client/actor" vertex="1">
-                    <mxGeometry height="22" width="1900" x="80" y="650" as="geometry"/>
-                </mxCell>
-                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · orange = operator/admin action · blue = app -&gt; data store · purple = AI/ML call · green = batch -&gt; data store · gold = observability scrape · red dashed = async/fail-open" vertex="1">
-                    <mxGeometry height="22" width="1900" x="80" y="674" as="geometry"/>
-                </mxCell>
-                <mxCell id="e1" edge="1" parent="1" source="candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#333333;fontColor=#333333;exitX=0.5;exitY=1;entryX=0.3;entryY=0;strokeWidth=1;" target="api" value="GET /job-matches">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e2" edge="1" parent="1" source="employer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#333333;fontColor=#333333;exitX=0.3;exitY=1;entryX=0.7;entryY=0;strokeWidth=1;" target="api" value="GET /candidate-matches">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e3" edge="1" parent="1" source="employer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#333333;fontColor=#333333;exitX=0.7;exitY=1;entryX=0.3;entryY=0;strokeWidth=1;" target="extraction" value="POST /extract">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e4" edge="1" parent="1" source="cicd" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.5;exitY=1;entryX=0.3;entryY=0;strokeWidth=1;" target="api" value="build + scan + smoke test">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e5" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0;exitY=0.5;entryX=1;entryY=0.3;strokeWidth=1;" target="batchbox" value="runs">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e6" edge="1" parent="1" source="api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.3;exitY=1;entryX=0.3;entryY=0;strokeWidth=1;" target="db" value="SQLAlchemy / psycopg2">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e7" edge="1" parent="1" source="api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.7;exitY=1;entryX=0.2;entryY=0;strokeWidth=1;" target="redis" value="rate limit · cache · XADD">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e8" edge="1" parent="1" source="api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;strokeColor=#b85450;fontColor=#b85450;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=1;" target="analytics" value="XADD (async, fail-open to HTTP)">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e9" edge="1" parent="1" source="analytics" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.3;exitY=1;entryX=0.55;entryY=0;strokeWidth=1;" target="db" value="behavioral_events">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e10" edge="1" parent="1" source="analytics" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.7;exitY=1;entryX=0.45;entryY=0;strokeWidth=1;" target="redis" value="rate limit · XREADGROUP">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e11" edge="1" parent="1" source="extraction" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#9673a6;fontColor=#9673a6;exitX=0.7;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=1;" target="ollama" value="generate + embed">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e12" edge="1" parent="1" source="extraction" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.5;exitY=1;entryX=0.8;entryY=0;strokeWidth=1;" target="db" value="skill taxonomy">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e23" edge="1" parent="1" source="extraction" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.9;exitY=1;entryX=0.5;entryY=0;strokeWidth=1;" target="seaweedfs" value="store / retrieve CV (S3 API)">
-                    <mxGeometry relative="1" as="geometry">
+                <mxCell id="e_gw_frontend" edge="1" parent="1" source="apigateway" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#999999;fontColor=#999999;" target="frontend" value="would front UI + APIs below">
+                    <mxGeometry relative="1" x="0.0017" as="geometry">
                         <Array as="points">
-                            <mxPoint x="890" y="435"/>
-                            <mxPoint x="2100" y="435"/>
+                            <mxPoint x="380" y="364" />
+                            <mxPoint x="380" y="445" />
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e13" edge="1" parent="1" source="mlflow" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.3;exitY=1;entryX=0.95;entryY=0;strokeWidth=1;" target="db" value="backend store">
+                <mxCell id="matching_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Matching Engine API&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;(uvicorn, 4 workers)&lt;br/&gt;docs/matching-engine.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="190" x="80" y="600" as="geometry" />
+                </mxCell>
+                <mxCell id="matching_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="90" y="650" as="geometry" />
+                </mxCell>
+                <mxCell id="analytics_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Behavioral Analytics API&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;+ Redis Streams consumer&lt;br/&gt;docs/behavioral-analytics.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="205" x="436" y="600" as="geometry" />
+                </mxCell>
+                <mxCell id="analytics_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="445" y="650" as="geometry" />
+                </mxCell>
+                <mxCell id="extraction_api" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Skill Extraction API&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;(uvicorn, 1 worker)&lt;br/&gt;docs/skill-extraction.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="205" x="800" y="600" as="geometry" />
+                </mxCell>
+                <mxCell id="extraction_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="930" y="650" as="geometry" />
+                </mxCell>
+                <mxCell id="mlflow" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;mlflow&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Experiment Tracking Server&lt;br/&gt;docs/evaluation-strategy.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="205" x="1160" y="600" as="geometry" />
+                </mxCell>
+                <mxCell id="mlflow_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="1175" y="610" as="geometry" />
+                </mxCell>
+                <mxCell id="e_frontend_matching" edge="1" parent="1" source="frontend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#333333;fontColor=#333333;" target="matching_api" value="GET job-matches / candidate-matches">
+                    <mxGeometry relative="1" as="geometry" />
+                </mxCell>
+                <mxCell id="e_frontend_extraction" edge="1" parent="1" source="frontend" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#333333;fontColor=#333333;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" target="extraction_api" value="POST CV upload">
+                    <mxGeometry relative="1" x="0.5453" as="geometry" />
+                </mxCell>
+                <mxCell id="e_matching_analytics" edge="1" parent="1" source="matching_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#b85450;fontColor=#b85450;" target="analytics_api" value="XADD (async, fail-open to HTTP)">
+                    <mxGeometry relative="1" x="0.0244" y="26" as="geometry">
+                        <mxPoint as="offset" />
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="ollama" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;div&gt;Model&lt;/div&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Ollama LLM + Embedding Server&lt;br/&gt;qwen2.5:1.5b · nomic-embed-text · all-minilm&lt;br/&gt;docs/model-serving.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="205" x="1400" y="800" as="geometry" />
+                </mxCell>
+                <mxCell id="ollama_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="1419.9999999999998" y="804.47" as="geometry" />
+                </mxCell>
+                <mxCell id="ollama_icon" parent="1" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#01A88D;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.sagemaker_model;" value="" vertex="1">
+                    <mxGeometry height="31.06" width="31.06" x="1569.9999999999998" y="798.94" as="geometry" />
+                </mxCell>
+                <mxCell id="e_extraction_ollama" edge="1" parent="1" source="extraction_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#9673a6;fontColor=#9673a6;" target="ollama" value="generate + embed">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="1318" y="355"/>
-                            <mxPoint x="395" y="355"/>
+                            <mxPoint x="902.5" y="760" />
+                            <mxPoint x="1502.5" y="760" />
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e14" edge="1" parent="1" source="batchbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#82b366;fontColor=#82b366;exitX=0.1;exitY=1;entryX=1;entryY=0.3;strokeWidth=1;" target="db" value="reads / writes (migrate, seed, dataquality,&#xa;analytics-seed, embeddings-compute)">
+                <mxCell id="postgres" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="PostgreSQL 16 + pgvector&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;relational schema + vector embeddings (HNSW)&lt;br/&gt;docs/data-model.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="205" x="395" y="800" as="geometry" />
+                </mxCell>
+                <mxCell id="postgres_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="405" y="850" as="geometry" />
+                </mxCell>
+                <mxCell id="redis" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Redis&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;redis — Redis 7 — rate limit · 1h cache · Streams broker&lt;br/&gt;docs/redis-infrastructure.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="205" x="730" y="800" as="geometry" />
+                </mxCell>
+                <mxCell id="redis_icon" parent="1" style="outlineConnect=0;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;shape=mxgraph.aws3.redis;fillColor=#2E73B8;gradientColor=none;" value="" vertex="1">
+                    <mxGeometry height="30" width="36.75" x="739.39" y="800.0" as="geometry" />
+                </mxCell>
+                <mxCell id="neo4j_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="231.61" y="858.94" as="geometry" />
+                </mxCell>
+                <mxCell id="seaweedfs" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="Seaweedfs&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;S3-compatible object storage&lt;br/&gt;candidate CV uploads (PDF, &lt;=2MB)&lt;br/&gt;docs/skill-extraction.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="205" x="1065" y="800" as="geometry" />
+                </mxCell>
+                <mxCell id="seaweedfs_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="1235.0" y="806.9399999999999" as="geometry" />
+                </mxCell>
+                <mxCell id="grafana" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Grafana&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Prometheus + cAdvisor + Grafana&lt;br/&gt;docs/observability.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="205" x="1735" y="800" as="geometry" />
+                </mxCell>
+                <mxCell id="grafana_icon" parent="1" style="image;aspect=fixed;html=1;align=center;fontSize=12;image=img/lib/azure2/other/Grafana.svg;points=[[0.5,0,0],[0.5,1,0],[0,0.5,0],[1,0.5,0],[0.982,0.007,0],[0.985,0.99,0],[0.015,0.99,0],[0.018,0.007,0]];" value="" vertex="1">
+                    <mxGeometry height="31.06" width="31.06" x="1744.67" y="801.06" as="geometry" />
+                </mxCell>
+                <mxCell id="e_matching_pg" edge="1" parent="1" source="matching_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0;entryDx=0;entryDy=0;endArrow=classicThin;endFill=0;" target="postgres" value="SQLAlchemy / psycopg2">
+                    <mxGeometry relative="1" x="-0.0335" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="270" y="679" />
+                            <mxPoint x="278" y="679" />
+                            <mxPoint x="278" y="680" />
+                            <mxPoint x="354.7" y="680" />
+                        </Array>
+                        <mxPoint x="290" y="681" as="sourcePoint" />
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_matching_redis" edge="1" parent="1" source="matching_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=1;exitY=0;exitDx=0;exitDy=0;" target="redis" value="rate limit · cache · XADD">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="1570" y="365"/>
-                            <mxPoint x="400" y="365"/>
+                            <mxPoint x="175" y="760" />
+                            <mxPoint x="832.5" y="760" />
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e15" edge="1" parent="1" source="batchbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#82b366;fontColor=#82b366;exitX=0.3;exitY=1;entryX=0.9;entryY=0;strokeWidth=1;" target="neo4j" value="writes (graph-sync, graph-cluster,&#xa;graph-cluster-entities)">
-                    <mxGeometry relative="1" as="geometry">
+                <mxCell id="e_analytics_pg" edge="1" parent="1" source="analytics_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#6c8ebf;fontColor=#6c8ebf;entryX=0.421;entryY=-0.005;entryDx=0;entryDy=0;entryPerimeter=0;" target="postgres" value="behavioral_events">
+                    <mxGeometry relative="1" x="0.0338" as="geometry">
                         <Array as="points">
-                            <mxPoint x="1650" y="375"/>
-                            <mxPoint x="1088" y="375"/>
+                            <mxPoint x="441" y="710" />
+                            <mxPoint x="441" y="710" />
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e16" edge="1" parent="1" source="batchbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#82b366;fontColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=1;strokeWidth=1;" target="ollama" value="calls (embeddings-compute,&#xa;extraction-eval)">
-                    <mxGeometry relative="1" as="geometry">
+                <mxCell id="e_analytics_redis" edge="1" parent="1" source="analytics_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.75;entryY=1;entryDx=0;entryDy=0;" target="redis" value="rate limit · XREADGROUP">
+                    <mxGeometry relative="1" x="-0.2671" y="14" as="geometry">
+                        <mxPoint as="offset" />
+                        <Array as="points" />
+                        <mxPoint x="650" y="540" as="targetPoint" />
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_extraction_pg" edge="1" parent="1" source="extraction_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#6c8ebf;fontColor=#6c8ebf;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="postgres" value="skill taxonomy">
+                    <mxGeometry relative="1" x="0.0639" as="geometry">
                         <Array as="points">
-                            <mxPoint x="1730" y="385"/>
-                            <mxPoint x="1080" y="385"/>
+                            <mxPoint x="720" y="640" />
+                            <mxPoint x="720" y="710" />
+                            <mxPoint x="508.5" y="710" />
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e17" edge="1" parent="1" source="batchbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#82b366;fontColor=#82b366;exitX=0.7;exitY=1;entryX=0.7;entryY=1;strokeWidth=1;" target="mlflow" value="logs metrics (extraction-eval)">
-                    <mxGeometry relative="1" as="geometry">
+                <mxCell id="e_extraction_seaweedfs" edge="1" parent="1" source="extraction_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.839;exitY=0.013;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.25;entryY=1;entryDx=0;entryDy=0;" target="seaweedfs" value="store / retrieve CV (S3 API)">
+                    <mxGeometry relative="1" x="-0.4138" y="16" as="geometry">
+                        <mxPoint as="offset" />
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_mlflow_pg" edge="1" parent="1" source="mlflow" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0;entryDx=0;entryDy=0;" target="postgres" value="backend store">
+                    <mxGeometry relative="1" x="-0.0142" as="geometry">
                         <Array as="points">
-                            <mxPoint x="1810" y="395"/>
-                            <mxPoint x="1422" y="395"/>
+                            <mxPoint x="1211.3" y="730" />
+                            <mxPoint x="559.7" y="730" />
+                        </Array>
+                        <mxPoint x="520" y="800" as="targetPoint" />
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="pipeline" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Pipeline&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Batch &amp;amp; Automation Jobs&lt;br/&gt;migrate · seed · dataquality · analytics-seed&lt;br/&gt;embeddings-compute · graph-sync · graph-cluster&lt;br/&gt;graph-cluster-entities · extraction-eval · ollama-pull&lt;br/&gt;docs/data-at-scale.md, docs/knowledge-graph.md,&lt;br/&gt;docs/embedding-matching.md, docs/data-quality.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="120" width="240" x="11.61" y="960" as="geometry" />
+                </mxCell>
+                <mxCell id="pipeline_icon" parent="1" style="sketch=0;pointerEvents=1;shadow=0;dashed=0;html=1;strokeColor=none;fillColor=#505050;labelPosition=center;verticalLabelPosition=bottom;verticalAlign=top;outlineConnect=0;align=center;shape=mxgraph.office.concepts.script;" value="" vertex="1">
+                    <mxGeometry height="31.06" width="36.75" x="21.609999999999992" y="970" as="geometry" />
+                </mxCell>
+                <mxCell id="pipeline_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="201.61" y="960" as="geometry" />
+                </mxCell>
+                <mxCell id="e_pipeline_pg" edge="1" parent="1" source="pipeline" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#82b366;fontColor=#82b366;exitX=1;exitY=0.25;exitDx=0;exitDy=0;" target="postgres" value="reads / writes (migrate, seed, dataquality,                 analytics-seed, embeddings-compute)">
+                    <mxGeometry relative="1" x="0.211" y="-10" as="geometry">
+                        <mxPoint as="offset" />
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pipeline_neo4j" edge="1" parent="1" source="pipeline" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#82b366;fontColor=#82b366;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=1;entryDx=0;entryDy=0;" target="neo4j" value="writes (graph-sync, graph-cluster,                 graph-cluster-entities)">
+                    <mxGeometry relative="1" x="0.0148" as="geometry">
+                        <mxPoint as="offset" />
+                        <mxPoint x="200" y="1081.06" as="sourcePoint" />
+                        <mxPoint x="140" y="890" as="targetPoint" />
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pipeline_ollama" edge="1" parent="1" source="pipeline" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#82b366;fontColor=#82b366;" target="ollama" value="calls (embeddings-compute,                 extraction-eval)">
+                    <mxGeometry relative="1" x="0.0196" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1240" y="1020" />
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e18" edge="1" parent="1" source="prometheus" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d6b656;fontColor=#d6b656;exitX=0.5;exitY=0;entryX=0.3;entryY=1;strokeWidth=1;" target="api" value="/metrics scrape">
-                    <mxGeometry relative="1" as="geometry">
+                <mxCell id="e_pipeline_mlflow" edge="1" parent="1" source="pipeline" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;strokeColor=#82b366;fontColor=#82b366;exitX=1;exitY=1;exitDx=0;exitDy=0;" target="mlflow" value="logs metrics (extraction-eval)">
+                    <mxGeometry relative="1" x="0.0383" as="geometry">
                         <Array as="points">
-                            <mxPoint x="1350" y="405"/>
-                            <mxPoint x="158" y="405"/>
+                            <mxPoint x="1360" y="1080" />
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e19" edge="1" parent="1" source="prometheus" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d6b656;fontColor=#d6b656;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=1;" target="cadvisor" value="container metrics">
-                    <mxGeometry relative="1" as="geometry"/>
+                <mxCell id="e_scrape_matching" edge="1" parent="1" source="neo4j" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;entryX=0;entryY=1;entryDx=0;entryDy=0;" target="grafana" value="/metrics + container scrape">
+                    <mxGeometry relative="1" x="-0.0034" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="280" y="940" />
+                            <mxPoint x="680" y="940" />
+                            <mxPoint x="680" y="878.9" />
+                        </Array>
+                        <mxPoint x="920" y="900" as="targetPoint" />
+                    </mxGeometry>
                 </mxCell>
-                <mxCell id="e20" edge="1" parent="1" source="grafana" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d6b656;fontColor=#d6b656;exitX=0;exitY=0.5;entryX=1;entryY=0.5;strokeWidth=1;" target="prometheus" value="queries">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e21" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.3;exitY=1;entryX=0.5;entryY=0;strokeWidth=1;" target="grafana" value="views dashboards">
+                <mxCell id="e_scrape_analytics" edge="1" parent="1" source="analytics_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;" target="grafana" value="/metrics + container scrape">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="2024" y="415"/>
-                            <mxPoint x="1610" y="415"/>
+                            <mxPoint x="538.5" y="760" />
+                            <mxPoint x="1837.5" y="760" />
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e22" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.6;exitY=1;entryX=0.5;entryY=0;strokeWidth=1;" target="neo4j" value="explores graph">
+                <mxCell id="e_scrape_extraction" edge="1" parent="1" source="extraction_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;entryX=0.439;entryY=-0.025;entryDx=0;entryDy=0;entryPerimeter=0;" target="grafana" value="/metrics + container scrape">
+                    <mxGeometry relative="1" x="0.3393" as="geometry">
+                        <mxPoint as="offset" />
+                        <Array as="points">
+                            <mxPoint x="870" y="730" />
+                            <mxPoint x="870" y="730" />
+                        </Array>
+                        <mxPoint x="1160" y="960" as="targetPoint" />
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_scrape_mlflow" edge="1" parent="1" source="mlflow" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;" target="grafana" value="container scrape">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="2078" y="425"/>
-                            <mxPoint x="960" y="425"/>
+                            <mxPoint x="1262.5" y="760" />
+                            <mxPoint x="1837.5" y="760" />
                         </Array>
                     </mxGeometry>
+                </mxCell>
+                <mxCell id="e_scrape_ollama" edge="1" parent="1" source="ollama" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;exitX=0;exitY=0.75;exitDx=0;exitDy=0;" value="container scrape" target="grafana">
+                    <mxGeometry relative="1" x="0.5" as="geometry">
+                        </mxGeometry>
+                </mxCell>
+                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Node fill: FFCC99 outline = app/data service · gray actor icon = client/operator · dashed gray box = documented, not provisioned" vertex="1">
+                    <mxGeometry height="22" width="1900" x="11.61" y="1100" as="geometry" />
+                </mxCell>
+                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · gray dashed = future/not-provisioned path · orange = operator/admin/CI action · blue = app -&gt; data store · purple = AI/ML call · green = batch -&gt; data store · red dashed = async/fail-open" vertex="1">
+                    <mxGeometry height="22" width="1900" x="11.61" y="1122" as="geometry" />
+                </mxCell>
+                <mxCell id="XE2xbM_b2EB1ewLkHZes-1" edge="1" parent="1" source="matching_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=1;dashed=1;strokeColor=#d6b656;fontColor=#d6b656;exitX=0.75;exitY=1;exitDx=0;exitDy=0;" target="neo4j" value="">
+                    <mxGeometry relative="1" x="0.368" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="233.8" y="730" />
+                            <mxPoint x="233.8" y="730" />
+                        </Array>
+                        <mxPoint x="285" y="660" as="sourcePoint" />
+                        <mxPoint x="1290" y="1061" as="targetPoint" />
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="neo4j" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#FFCC99;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="Knowledge-Graph&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;neo4j — Neo4j 5 + GDS — knowledge graph + Louvain clustering&lt;br/&gt;docs/knowledge-graph.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="80" width="205" x="60" y="800" as="geometry" />
+                </mxCell>
+                <mxCell id="XE2xbM_b2EB1ewLkHZes-2" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="1885.0" y="806.06" as="geometry" />
+                </mxCell>
+                <mxCell id="XE2xbM_b2EB1ewLkHZes-7" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="20" width="24.39" x="560.3" y="846.59" as="geometry" />
                 </mxCell>
             </root>
         </mxGraphModel>
