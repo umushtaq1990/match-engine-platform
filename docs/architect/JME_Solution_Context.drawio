@@ -1,161 +1,139 @@
 <mxfile host="65bd71144e">
     <diagram name="Solution Context" id="jme-solution-context">
-        <mxGraphModel dx="1286" dy="1106" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="950" math="0" shadow="0">
+        <mxGraphModel dx="936" dy="1032" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1080" pageHeight="600" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
-                <mxCell id="title" parent="1" style="text;html=1;fontSize=20;fontStyle=1;align=center;verticalAlign=middle;" value="Project JME — Solution Context (C4 Level 1)" vertex="1">
-                    <mxGeometry height="35" width="2000" x="0" y="15" as="geometry"/>
+                <mxCell id="title" parent="1" style="text;html=1;fontSize=16;fontStyle=1;align=center;verticalAlign=middle;" value="Project JME — Solution Context (C4 Level 1)" vertex="1">
+                    <mxGeometry height="26" width="1080" y="8" as="geometry"/>
                 </mxCell>
-                <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=12;fontColor=#666666;align=center;verticalAlign=middle;" value="Actors and external systems (top) -&gt; the platform&#39;s exposed capabilities (inside the boundary) -&gt; the internal engine and data layer they rest on." vertex="1">
-                    <mxGeometry height="25" width="2000" x="0" y="53" as="geometry"/>
+                <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=9;fontColor=#666666;align=center;verticalAlign=middle;" value="Actors and external systems (top) -&gt; the platform&#39;s exposed capabilities (inside the boundary) -&gt; the internal engine and data layer they rest on." vertex="1">
+                    <mxGeometry height="18" width="1080" y="34" as="geometry"/>
                 </mxCell>
-                <mxCell id="boundary" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;align=center;fontStyle=1;fontSize=16;spacingTop=10;strokeWidth=4;" value="" vertex="1">
-                    <mxGeometry height="590" width="1720" x="280" y="190" as="geometry"/>
+                <mxCell id="boundary" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;align=center;fontStyle=1;fontSize=12;spacingTop=6;" value="Project JME Platform" vertex="1">
+                    <mxGeometry height="400" width="1050" x="15" y="128" as="geometry"/>
                 </mxCell>
-                <mxCell id="employer" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="Employer / Recruiter" vertex="1">
-                    <mxGeometry height="80" width="160" x="310" y="90" as="geometry"/>
+                <mxCell id="employer" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;" value="Employer / Recruiter" vertex="1">
+                    <mxGeometry height="55" width="110" x="40" y="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="candidate" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="Candidate" vertex="1">
-                    <mxGeometry height="80" width="160" x="560" y="90" as="geometry"/>
+                <mxCell id="candidate" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;" value="Candidate" vertex="1">
+                    <mxGeometry height="55" width="110" x="170" y="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="mlengineer" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="Data / ML Engineer" vertex="1">
-                    <mxGeometry height="80" width="200" x="1180" y="90" as="geometry"/>
+                <mxCell id="mlengineer" parent="1" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;" value="Data / ML Engineer" vertex="1">
+                    <mxGeometry height="55" width="130" x="700" y="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="hris" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;arcSize=10;fontSize=11;" value="Upstream HRIS / ATS&#xa;(synthetic feed)" vertex="1">
-                    <mxGeometry height="80" width="160" x="1690" y="90" as="geometry"/>
+                <mxCell id="hris" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;arcSize=10;fontSize=8;" value="Upstream HRIS / ATS&#xa;(synthetic feed)" vertex="1">
+                    <mxGeometry height="55" width="100" x="850" y="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="coursecatalog" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;arcSize=10;fontSize=11;" value="Course Catalog Provider&#xa;(synthetic feed)" vertex="1">
-                    <mxGeometry height="80" width="160" x="1870" y="90" as="geometry"/>
+                <mxCell id="coursecatalog" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;arcSize=10;fontSize=8;" value="Course Catalog Provider&#xa;(synthetic feed)" vertex="1">
+                    <mxGeometry height="55" width="100" x="960" y="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="extractapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=12;" value="Skill Extraction API&#xa;&#xa;docs/skill-extraction.md" vertex="1">
-                    <mxGeometry height="100" width="190" x="310" y="240" as="geometry"/>
+                <mxCell id="extractapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=9;" value="Skill Extraction API&#xa;skill-extraction.md" vertex="1">
+                    <mxGeometry height="70" width="130" x="40" y="150" as="geometry"/>
                 </mxCell>
-                <mxCell id="matchapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=12;" value="Matching &amp; Recommendations API&#xa;&#xa;docs/matching-engine.md" vertex="1">
-                    <mxGeometry height="100" width="230" x="540" y="240" as="geometry"/>
+                <mxCell id="matchapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=9;" value="Matching &amp; Recommendations API&#xa;matching-engine.md" vertex="1">
+                    <mxGeometry height="70" width="150" x="190" y="150" as="geometry"/>
                 </mxCell>
-                <mxCell id="analyticsapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=12;" value="Behavioral Analytics API&#xa;&#xa;docs/behavioral-analytics.md" vertex="1">
-                    <mxGeometry height="100" width="190" x="800" y="240" as="geometry"/>
+                <mxCell id="analyticsapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=10;fontSize=9;" value="Behavioral Analytics API&#xa;behavioral-analytics.md" vertex="1">
+                    <mxGeometry height="70" width="130" x="360" y="150" as="geometry"/>
                 </mxCell>
-                <mxCell id="graphexplorer" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;arcSize=10;fontSize=12;" value="Knowledge Graph Explorer&#xa;&#xa;docs/knowledge-graph.md" vertex="1">
-                    <mxGeometry height="100" width="190" x="1020" y="240" as="geometry"/>
+                <mxCell id="graphexplorer" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;arcSize=10;fontSize=9;" value="Knowledge Graph Explorer&#xa;knowledge-graph.md" vertex="1">
+                    <mxGeometry height="70" width="130" x="510" y="150" as="geometry"/>
                 </mxCell>
-                <mxCell id="observability" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=10;fontSize=12;" value="Observability&#xa;&#xa;docs/observability.md" vertex="1">
-                    <mxGeometry height="100" width="190" x="1240" y="240" as="geometry"/>
+                <mxCell id="observability" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=10;fontSize=9;" value="Observability&#xa;observability.md" vertex="1">
+                    <mxGeometry height="70" width="120" x="660" y="235" as="geometry"/>
                 </mxCell>
-                <mxCell id="mlopsbox" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=10;fontSize=12;" value="Experiment Tracking&#xa;&#xa;docs/evaluation-strategy.md" vertex="1">
-                    <mxGeometry height="100" width="190" x="1460" y="240" as="geometry"/>
+                <mxCell id="mlopsbox" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;arcSize=10;fontSize=9;" value="Experiment Tracking&#xa;evaluation-strategy.md" vertex="1">
+                    <mxGeometry height="70" width="130" x="800" y="235" as="geometry"/>
                 </mxCell>
-                <mxCell id="batchbox" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;dashed=1;arcSize=10;fontSize=12;" value="Batch Pipelines&#xa;&#xa;docs/data-at-scale.md, docs/data-quality.md" vertex="1">
-                    <mxGeometry height="100" width="240" x="1680" y="240" as="geometry"/>
+                <mxCell id="batchbox" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;dashed=1;arcSize=10;fontSize=9;" value="Batch Pipelines&#xa;data-at-scale.md" vertex="1">
+                    <mxGeometry height="70" width="110" x="950" y="235" as="geometry"/>
                 </mxCell>
-                <mxCell id="coreengine" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;arcSize=10;fontSize=12;" value="Core Matching &amp; AI/ML Engine&#xa;&#xa;docs/matching-engine.md, docs/embedding-matching.md" vertex="1">
-                    <mxGeometry height="120" width="230" x="540" y="420" as="geometry"/>
+                <mxCell id="coreengine" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;arcSize=10;fontSize=9;" value="Core Matching &amp; AI/ML Engine&#xa;matching-engine.md, embedding-matching.md" vertex="1">
+                    <mxGeometry height="85" width="150" x="190" y="325" as="geometry"/>
                 </mxCell>
-                <mxCell id="dataplatform" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;arcSize=10;fontSize=12;" value="Data &amp; Event Platform  (PostgreSQL + pgvector, Neo4j, Redis)&#xa;&#xa;docs/data-model.md, docs/redis-infrastructure.md" vertex="1">
-                    <mxGeometry height="140" width="1610" x="310" y="600" as="geometry"/>
+                <mxCell id="dataplatform" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;arcSize=10;fontSize=9;" value="Data &amp; Event Platform (PostgreSQL + pgvector, Neo4j, Redis)&#xa;data-model.md, redis-infrastructure.md" vertex="1">
+                    <mxGeometry height="75" width="1020" x="40" y="420" as="geometry"/>
                 </mxCell>
-                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Node fill: blue = client-facing API · purple = AI/ML internal engine · green = data platform · orange = MLOps/observability · dashed border = batch job · gray (box) = external synthetic source" vertex="1">
-                    <mxGeometry height="22" width="1680" x="280" y="800" as="geometry"/>
+                <mxCell id="legend" parent="1" style="text;html=1;fontSize=8;align=left;verticalAlign=middle;fontColor=#666666;" value="Node fill: blue = client-facing API · purple = AI/ML internal engine · green = data platform · orange = MLOps/observability · dashed border = batch job · gray (box) = external synthetic source" vertex="1">
+                    <mxGeometry height="16" width="1040" x="20" y="538" as="geometry"/>
                 </mxCell>
-                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · orange = operator/admin action · blue dashed = external synthetic feed · red dashed = async internal logging · purple = AI/ML internal call · green = data platform read/write" vertex="1">
-                    <mxGeometry height="22" width="1680" x="280" y="824" as="geometry"/>
+                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=8;align=left;verticalAlign=middle;fontColor=#666666;" value="Arrow color: black = direct client call · orange = operator/admin action · blue dashed = external synthetic feed · red dashed = async internal logging · purple = AI/ML internal call · green = data platform read/write" vertex="1">
+                    <mxGeometry height="16" width="1040" x="20" y="556" as="geometry"/>
                 </mxCell>
-                <mxCell id="e1" edge="1" parent="1" source="employer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#333333;fontColor=#333333;exitX=0.5;exitY=1;entryX=0.153;entryY=0.02;entryDx=0;entryDy=0;entryPerimeter=0;strokeWidth=1;" target="extractapi" value="POST job text">
-                    <mxGeometry relative="1" x="0.522" as="geometry">
-                        <Array as="points">
-                            <mxPoint x="390" y="205"/>
-                            <mxPoint x="340" y="205"/>
-                            <mxPoint x="340" y="240"/>
-                        </Array>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e2" edge="1" parent="1" source="employer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#333333;fontColor=#333333;exitX=0.5;exitY=1;entryX=0.25;entryY=0;strokeWidth=1;" target="matchapi" value="GET candidate-matches">
+                <mxCell id="e1" edge="1" parent="1" source="employer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#333333;fontColor=#333333;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="extractapi" value="POST job text">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e17" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#333333;fontColor=#333333;entryX=0.7;entryY=0;strokeWidth=1;" target="extractapi" value="upload CV (PDF)">
-                    <mxGeometry relative="1" x="0.0895" as="geometry">
-                        <Array as="points">
-                            <mxPoint x="608" y="220"/>
-                            <mxPoint x="443" y="220"/>
-                        </Array>
-                        <mxPoint x="680" y="220" as="sourcePoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e3" edge="1" parent="1" source="candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#333333;fontColor=#333333;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.607;entryY=-0.031;entryDx=0;entryDy=0;entryPerimeter=0;strokeWidth=1;" target="matchapi" value="GET job-matches">
-                    <mxGeometry relative="1" x="0.0517" as="geometry">
-                        <mxPoint as="offset"/>
-                        <mxPoint x="681.22" y="220" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e4" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.3;exitY=1;entryX=0.5;entryY=0;strokeWidth=1;" target="graphexplorer" value="explores clusters">
+                <mxCell id="e2" edge="1" parent="1" source="employer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#333333;fontColor=#333333;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.2;entryY=0;" target="matchapi" value="GET candidate-matches">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e5" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=1;" target="observability" value="monitors">
+                <mxCell id="e3" edge="1" parent="1" source="candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#333333;fontColor=#333333;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.6;entryY=0;" target="matchapi" value="GET job-matches">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e6" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=0.7;exitY=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeWidth=1;" target="mlopsbox" value="reviews experiments">
-                    <mxGeometry relative="1" x="0.0033" as="geometry">
-                        <Array as="points">
-                            <mxPoint x="1555" y="170"/>
-                        </Array>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e7" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#d79b00;fontColor=#d79b00;exitX=1;exitY=0.75;entryX=0;entryY=0;exitDx=0;exitDy=0;entryDx=0;entryDy=0;strokeWidth=1;" target="batchbox" value="operates">
-                    <mxGeometry relative="1" x="0.1846" as="geometry"/>
-                </mxCell>
-                <mxCell id="e8" edge="1" parent="1" source="hris" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.5;exitY=1;entryX=0.368;entryY=-0.031;entryDx=0;entryDy=0;entryPerimeter=0;strokeWidth=1;" target="batchbox" value="candidate / job source data&#xa;(synthetic)">
-                    <mxGeometry relative="1" x="0.3324" as="geometry">
-                        <mxPoint as="offset"/>
-                        <Array as="points"/>
-                        <mxPoint x="1769.04" y="220" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e9" edge="1" parent="1" source="coursecatalog" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;strokeColor=#6c8ebf;fontColor=#6c8ebf;exitX=0.5;exitY=1;entryX=1;entryY=0.25;entryDx=0;entryDy=0;strokeWidth=1;" target="batchbox" value="course source data&#xa;(synthetic)">
-                    <mxGeometry relative="1" x="0.184" as="geometry"/>
-                </mxCell>
-                <mxCell id="e10" edge="1" parent="1" source="matchapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=10;strokeColor=#b85450;fontColor=#b85450;exitX=0.75;exitY=1;entryX=0.25;entryY=1;exitDx=0;exitDy=0;entryDx=0;entryDy=0;strokeWidth=1;" target="analyticsapi" value="logs impressions&#xa;(async, Redis Streams)">
-                    <mxGeometry relative="1" x="0.08" as="geometry">
-                        <Array as="points">
-                            <mxPoint x="710" y="340"/>
-                            <mxPoint x="710" y="370"/>
-                            <mxPoint x="847.5" y="370"/>
-                        </Array>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e11" edge="1" parent="1" source="matchapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#9673a6;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeWidth=1;" target="coreengine" value="">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e12" edge="1" parent="1" source="extractapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.06;entryY=0;exitDx=0;exitDy=0;strokeWidth=1;" target="dataplatform" value="">
-                    <mxGeometry relative="1" x="0.0015" as="geometry"/>
-                </mxCell>
-                <mxCell id="e13" edge="1" parent="1" source="analyticsapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.363;entryY=-0.012;entryDx=0;entryDy=0;entryPerimeter=0;strokeWidth=1;" target="dataplatform" value="">
-                    <mxGeometry relative="1" x="0.1092" as="geometry">
-                        <mxPoint x="895" y="590" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e14" edge="1" parent="1" source="graphexplorer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeWidth=1;" target="dataplatform" value="">
-                    <mxGeometry relative="1" as="geometry">
-                        <Array as="points"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="e18" edge="1" parent="1" source="mlopsbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#82b366;fontColor=#82b366;exitX=0.5;exitY=1;entryX=0.8;entryY=0;strokeWidth=1;" target="dataplatform" value="backend store (same Postgres, mlflow db)">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e15" edge="1" parent="1" source="batchbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeColor=#82b366;fontColor=#82b366;exitX=0.3;exitY=1;entryX=0.9;entryY=0;strokeWidth=1;" target="dataplatform" value="loads / transforms">
+                <mxCell id="e17" edge="1" parent="1" source="candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#333333;fontColor=#333333;strokeWidth=1;exitX=0.3;exitY=1;entryX=0.8;entryY=0;" target="extractapi" value="upload CV (PDF)">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="1759" y="340"/>
+                            <mxPoint x="203" y="135"/>
+                            <mxPoint x="144" y="135"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e16" edge="1" parent="1" source="coreengine" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;strokeWidth=1;" value="">
+                <mxCell id="e4" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#d79b00;fontColor=#d79b00;strokeWidth=1;exitX=0.2;exitY=1;entryX=0.5;entryY=0;" target="graphexplorer" value="explores clusters">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="655" y="600"/>
+                            <mxPoint x="726" y="135"/>
+                            <mxPoint x="575" y="135"/>
                         </Array>
-                        <mxPoint x="655" y="600" as="targetPoint"/>
                     </mxGeometry>
+                </mxCell>
+                <mxCell id="e5" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#d79b00;fontColor=#d79b00;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="observability" value="monitors">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#d79b00;fontColor=#d79b00;strokeWidth=1;exitX=0.8;exitY=1;entryX=0.5;entryY=0;" target="mlopsbox" value="reviews experiments">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7" edge="1" parent="1" source="mlengineer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#d79b00;fontColor=#d79b00;strokeWidth=1;exitX=1;exitY=0.7;entryX=0.3;entryY=0;" target="batchbox" value="operates">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="860" y="145"/>
+                            <mxPoint x="983" y="145"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e8" edge="1" parent="1" source="hris" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=8;strokeColor=#6c8ebf;fontColor=#6c8ebf;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.6;entryY=0;" target="batchbox" value="candidate / job data (synthetic)">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="900" y="140"/>
+                            <mxPoint x="1016" y="140"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e9" edge="1" parent="1" source="coursecatalog" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=8;strokeColor=#6c8ebf;fontColor=#6c8ebf;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.9;entryY=0;" target="batchbox" value="course data (synthetic)">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10" edge="1" parent="1" source="matchapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;fontSize=8;strokeColor=#b85450;fontColor=#b85450;strokeWidth=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="analyticsapi" value="logs impressions (async)">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e11" edge="1" parent="1" source="matchapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#9673a6;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="coreengine" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e12" edge="1" parent="1" source="extractapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.06;entryY=0;" target="dataplatform" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e13" edge="1" parent="1" source="analyticsapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.4;entryY=0;" target="dataplatform" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e14" edge="1" parent="1" source="graphexplorer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.58;entryY=0;" target="dataplatform" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e15" edge="1" parent="1" source="batchbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#82b366;fontColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.95;entryY=0;" target="dataplatform" value="loads / transforms">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e16" edge="1" parent="1" source="coreengine" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.26;entryY=0;" target="dataplatform" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e18" edge="1" parent="1" source="mlopsbox" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=8;strokeColor=#82b366;fontColor=#82b366;strokeWidth=1;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" target="dataplatform" value="backend store (same Postgres, mlflow db)">
+                    <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>
