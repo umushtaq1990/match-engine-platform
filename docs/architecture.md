@@ -24,7 +24,7 @@ scoped need existed, not speculatively.
 |---|---|---|
 | A | Candidate → job matching | Built — rule-based + embeddings-blended (default), explained, cached |
 | B | Job → candidate matching | Built — same engine, inverse direction |
-| C | Free-text skill extraction | Built — hybrid LLM extraction + embedding canonicalization |
+| C | Free-text skill extraction | Built — hybrid LLM extraction + embedding canonicalization, plus basic CV upload storage (PDF, 2MB cap) |
 | D | Skill-gap analysis | Built — part of every match result (A/B) |
 | E | Course recommendations | Built — rule-based coverage scoring |
 | F | Similarity / semantic search | Partially built — job similarity via embeddings (A/B); candidate/job clustering via the knowledge graph (Phase 23) |
@@ -75,7 +75,7 @@ See the Technical Architecture diagram for the full picture. By layer:
 |---|---|---|
 | Application services | `api` (matching engine, 4 workers), `analytics` (event ingestion + Streams consumer), `extraction` (skill parsing) | `docs/matching-engine.md`, `docs/behavioral-analytics.md`, `docs/skill-extraction.md` |
 | AI/ML serving | `ollama` (qwen2.5:1.5b generation; nomic-embed-text, all-minilm embeddings) | `docs/model-serving.md` |
-| Data platform | PostgreSQL 16 + pgvector (relational + vector), Neo4j 5 + GDS (knowledge graph), Redis 7 (rate limit/cache/streams) | `docs/data-model.md`, `docs/knowledge-graph.md`, `docs/redis-infrastructure.md` |
+| Data platform | PostgreSQL 16 + pgvector (relational + vector), Neo4j 5 + GDS (knowledge graph), Redis 7 (rate limit/cache/streams), SeaweedFS (S3-compatible object storage for CV uploads) | `docs/data-model.md`, `docs/knowledge-graph.md`, `docs/redis-infrastructure.md`, `docs/skill-extraction.md` |
 | MLOps | MLflow (experiment tracking, its own Postgres-backed store) | `docs/evaluation-strategy.md` |
 | Observability | Prometheus, cAdvisor, Grafana | `docs/observability.md` |
 | Batch/one-off jobs | `migrate`, `seed`, `dataquality`, `analytics-seed`, `embeddings-compute`, `graph-sync`, `graph-cluster`, `graph-cluster-entities`, `extraction-eval`, `ollama-pull` | each phase's own doc |
