@@ -261,7 +261,7 @@
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="&lt;font style=&quot;font-size: 8px;&quot;&gt;Node outline: blue = app/API service · purple = AI/ML serving · green = data store · orange = MLOps / Redis / batch job (Pipeline) · red = observability (Grafana) · gray actor icon = client/operator · dashed gray box = documented, not provisioned&lt;/font&gt;" vertex="1">
+                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="&lt;font style=&quot;font-size: 8px;&quot;&gt;Node outline: blue = app/API service · purple = AI/ML serving · green = data store · orange = MLOps / Redis / batch job (Pipeline) · red = observability (Grafana) · gray actor icon = client/operator&lt;/font&gt;" vertex="1">
                     <mxGeometry height="18" width="920" x="-10" y="750" as="geometry"/>
                 </mxCell>
                 <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="&lt;font style=&quot;font-size: 8px;&quot;&gt;Arrow color: black = direct client call · gray dashed = future/not-provisioned path · orange = operator/admin/CI action / app -&amp;gt; Redis · blue = app -&amp;gt; database · purple = AI/ML call · green = batch -&amp;gt; data store · red dashed = async/fail-open · red dotted = observability scrape&lt;/font&gt;" vertex="1">
@@ -295,10 +295,10 @@
                 <mxCell id="XE2xbM_b2EB1ewLkHZes-7" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="16" width="20" x="90" y="489" as="geometry"/>
                 </mxCell>
-                <mxCell id="QxKkIrYusPhaXlQg6z0E-8" edge="1" parent="1" source="loadbalancer" style="edgeStyle=none;html=1;strokeColor=#999999;dashed=1;strokeWidth=2;" target="Ft2ls5lo251c2oLnpMc2-5" value="">
+                <mxCell id="QxKkIrYusPhaXlQg6z0E-8" edge="1" parent="1" source="loadbalancer" style="edgeStyle=none;html=1;strokeColor=#333333;strokeWidth=2;" target="Ft2ls5lo251c2oLnpMc2-5" value="round-robins (nginx)">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="QxKkIrYusPhaXlQg6z0E-6" edge="1" parent="1" source="Ft2ls5lo251c2oLnpMc2-1" style="edgeStyle=none;html=1;strokeColor=#999999;dashed=1;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="sso" value="authenticates (login)">
+                <mxCell id="QxKkIrYusPhaXlQg6z0E-6" edge="1" parent="1" source="Ft2ls5lo251c2oLnpMc2-1" style="edgeStyle=none;html=1;strokeColor=#333333;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="sso" value="authenticates (login)">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="345" y="237.50393034825873" as="sourcePoint"/>
                     </mxGeometry>
@@ -318,7 +318,7 @@
                 <mxCell id="Ft2ls5lo251c2oLnpMc2-3" parent="1" style="editableCssRules=.*;sketch=0;html=1;verticalAlign=top;labelPosition=center;verticalLabelPosition=bottom;align=center;spacingTop=-6;fontSize=11;fontStyle=1;fontColor=#999999;shape=image;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMzY3LjgxODMyODg1NzQyMTkiIHZpZXdCb3g9IjcuMTA1NDI3MzU3NjAxMDAyZS0xNSAwIDM2Ni40MTAxODY3Njc1NzgxIDM2Ny44MTgzMjg4NTc0MjE5IiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCBtZWV0IiB3aWR0aD0iMzY2LjQxMDE5Njc2NzU3OTEiIHZlcnNpb249IjEuMSIgaWQ9InN2Zzk4NyIgem9vbUFuZFBhbj0ibWFnbmlmeSI+JiN4YTsJPHN0eWxlIHR5cGU9InRleHQvY3NzIj4JLnN0MHtmaWxsOiM0Mjg1ZjQ7fQk8L3N0eWxlPgkmI3hhOyAgPHBhdGggY2xhc3M9InN0MCIgZD0ibSA0OC4yNTE5NiwxMTEuNTM5MDYgYyAtNy42MTg2NCwyZS00IC0xMy43OTQ3Miw2LjE3NjI4IC0xMy43OTQ5MywxMy43OTQ5MiAyLjFlLTQsNy42MTg2NCA2LjE3NjI5LDEzLjc5NDcyIDEzLjc5NDkzLDEzLjc5NDkyIGggMTQ1LjE0NjkyIHYgLTI3LjU4OTg0IHogbSAyMzguNjA4NTksNTcuNDUxMTcgaCA2NS43NTQ2OSBjIDcuNjE4NjQsLTIuMWUtNCAxMy43OTQ3MSwtNi4xNzYyOCAxMy43OTQ5MiwtMTMuNzk0OTIgLTIuMWUtNCwtNy42MTg2NCAtNi4xNzYyOCwtMTMuNzk0NzEgLTEzLjc5NDkyLC0xMy43OTQ5MiBIIDI4NC44NTA2IFogTSAxMy43OTQ5MiwxNzAuOTc0NjEgQyA2LjE3NjI4MDEsMTcwLjk3NDgyIDIuMTAwOTE5ZS00LDE3Ny4xNTA4OSA5LjE4OTkyMWUtOCwxODQuNzY5NTMgLTguNjk5MDgxZS00LDE5Mi4zODg5MyA2LjE3NTUyMDEsMTk4LjU2NjE5IDEzLjc5NDkyLDE5OC41NjY0IEggMTkzLjM5ODg4IFYgMTcwLjk3NDYxIFogTSAyODQuMzA3OCwyMjcuNTY2NCBoIDY4LjMwNzQ0IGMgNy42MTg2NCwtMi4xZS00IDEzLjc5NDcxLC02LjE3NjI4IDEzLjc5NDkyLC0xMy43OTQ5MiAtMi4xZS00LC03LjYxODY0IC02LjE3NjI4LC0xMy43OTQ3MSAtMTMuNzk0OTIsLTEzLjc5NDkyIGggLTY1LjkyMTc4IHogbSAtMjM2LjA1NTg0LDEuNjk3MjcgYyAtNy42MTg2NCwyZS00IC0xMy43OTQ3Miw2LjE3NjI4IC0xMy43OTQ5MywxMy43OTQ5MiAyLjFlLTQsNy42MTg2NCA2LjE3NjI5LDEzLjc5NDcyIDEzLjc5NDkzLDEzLjc5NDkyIEggMTkzLjM5ODg4IFYgMjI5LjI2MzY3IFogTSAxODkuNTIxNDksMCBjIC0yNC41NzQxMSwwIC00OS4xNjczNywyMC4wNTUwNyAtNTkuNDM3NSw3NS4zNzMwNCBoIDMwLjU4MDA3IGMgNC42MTYzMywtMjQuMTYyMDYgMTUuMzQ4OTYsLTQ3LjUyMTQ4IDI3Ljg1MzUyLC00Ny41MjE0OCAxMi4xNTg4LDAgMzkuNDU4OTgsNTcuNDUwNDQgMzkuNDU4OTgsMTYwLjQxNDA2IDAsNjkuOTE1MTMgLTE5LjU3ODA5LDE1Mi4xMTUyNCAtNDEuMTcxODcsMTUyLjExNTIzIC0xNS4yNjg4MSwyZS01IC0yMS4yMTY2OCwtMjguMzMzNTYgLTI1LjQ0MzM2LC00Ni43MTg3NCBsIC0zMC40MTQwNiwtMC4wNjg0IGMgNC4yMjA3NCwyMC41NDA4NyAxNi45MDc2OCw3NC4yMjQ2IDU3LjcxMjg5LDc0LjIyNDYgNTMuNDM2NzIsMCA2OC45MTIxMSwtMTExLjk5MzA1IDY4LjkxMjExLC0xODAuNDYyODkgQyAyNTcuNTcyMjcsOTMuODAwNzYgMjM2LjU4MzQsMCAxODkuNTIxNDksMCBaIi8+JiN4YTs8L3N2Zz4=;" value="" vertex="1">
                     <mxGeometry height="28" width="28" x="425" y="239" as="geometry"/>
                 </mxCell>
-                <mxCell id="Ft2ls5lo251c2oLnpMc2-10" edge="1" parent="1" source="Ft2ls5lo251c2oLnpMc2-5" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#8C8C8C;dashed=1;strokeWidth=2;" target="Ft2ls5lo251c2oLnpMc2-1" value="">
+                <mxCell id="Ft2ls5lo251c2oLnpMc2-10" edge="1" parent="1" source="Ft2ls5lo251c2oLnpMc2-5" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#333333;strokeWidth=2;" target="Ft2ls5lo251c2oLnpMc2-1" value="proxies (websocket-aware, no TLS yet)">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="Ft2ls5lo251c2oLnpMc2-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;div&gt;Reverse Proxy&lt;/div&gt;" vertex="1">
@@ -327,7 +327,7 @@
                 <mxCell id="Ft2ls5lo251c2oLnpMc2-6" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="16" width="20" x="190" y="155" as="geometry"/>
                 </mxCell>
-                <mxCell id="Ft2ls5lo251c2oLnpMc2-9" edge="1" parent="1" source="candidate" style="edgeStyle=none;html=1;strokeColor=#999999;dashed=1;strokeWidth=2;" target="loadbalancer" value="">
+                <mxCell id="Ft2ls5lo251c2oLnpMc2-9" edge="1" parent="1" source="candidate" style="edgeStyle=none;html=1;strokeColor=#333333;strokeWidth=2;" target="loadbalancer" value="browses (:8080)">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="20" y="151.81" as="sourcePoint"/>
                         <mxPoint x="88" y="151.56" as="targetPoint"/>
