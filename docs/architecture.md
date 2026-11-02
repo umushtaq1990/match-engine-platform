@@ -12,7 +12,10 @@ Two diagrams anchor this document, built fresh from the real implemented system 
 
   ![Solution Context diagram](architect/JME_Solution_Context.png)
 - [`docs/architect/JME_Technical_Architecture.drawio`](architect/JME_Technical_Architecture.drawio)
-  — every live service, data store, and AI/ML component, and how they connect.
+  — every live service, data store, and AI/ML component, and how they connect (C4 Level 2:
+  Containers). Rendered below (exported directly from the `.drawio` source).
+
+  ![Technical Architecture diagram](architect/JME_Technical_Architecture.png)
 
 ## 1. Introduction and goals
 
