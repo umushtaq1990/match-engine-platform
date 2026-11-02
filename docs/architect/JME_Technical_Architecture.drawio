@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram name="Technical Architecture" id="jme-technical-architecture">
-        <mxGraphModel dx="1762" dy="560" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="710" background="light-dark(#FFFFFF,#121212)" math="0" shadow="0">
+        <mxGraphModel dx="2035" dy="774" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="870" background="light-dark(#FFFFFF,#121212)" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -8,10 +8,10 @@
                     <mxGeometry height="26" width="1000" y="64" as="geometry"/>
                 </mxCell>
                 <mxCell id="candidate" parent="1" style="html=1;verticalLabelPosition=bottom;align=center;labelBackgroundColor=#ffffff;verticalAlign=top;strokeWidth=2;strokeColor=#666666;shadow=0;dashed=0;shape=mxgraph.ios7.icons.user;fontSize=10;" value="Candidate&amp;nbsp;&lt;div&gt;&amp;nbsp;Employer&amp;nbsp;&lt;/div&gt;&lt;div&gt;&amp;nbsp;Recruiter&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="42.5" width="40" x="-20" y="124.69" as="geometry"/>
+                    <mxGeometry height="42.5" width="40" x="-20" y="127.44" as="geometry"/>
                 </mxCell>
                 <mxCell id="sso" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=12;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.single_sign_on;" value="SSO / ID" vertex="1">
-                    <mxGeometry height="26" width="26" x="630" y="138.49000000000004" as="geometry"/>
+                    <mxGeometry height="26" width="26" x="640" y="137.81000000000003" as="geometry"/>
                 </mxCell>
                 <mxCell id="frontend" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Api Gateway&lt;/font&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="42.5" width="150" x="313" y="230" as="geometry"/>
@@ -261,11 +261,11 @@
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="&lt;font style=&quot;font-size: 8px;&quot;&gt;Node outline: blue = app/API service · purple = AI/ML serving · green = data store · orange = MLOps / Redis / batch job (Pipeline) · red = observability (Grafana) · gray actor icon = client/operator&lt;/font&gt;" vertex="1">
-                    <mxGeometry height="18" width="920" x="-10" y="750" as="geometry"/>
+                <mxCell id="legend" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="&lt;font style=&quot;font-size: 8px;&quot;&gt;Node outline: blue = app/API service · purple = AI/ML serving · green = data store · orange = MLOps / Redis / batch job (Pipeline) · red = observability (Grafana, Loki, Promtail) · gray actor icon = client/operator&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="18" width="920" x="-10" y="835" as="geometry"/>
                 </mxCell>
-                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="&lt;font style=&quot;font-size: 8px;&quot;&gt;Arrow color: black = direct client call · gray dashed = future/not-provisioned path · orange = operator/admin/CI action / app -&amp;gt; Redis · blue = app -&amp;gt; database · purple = AI/ML call · green = batch -&amp;gt; data store · red dashed = async/fail-open · red dotted = observability scrape&lt;/font&gt;" vertex="1">
-                    <mxGeometry height="18" width="920" x="-10" y="760" as="geometry"/>
+                <mxCell id="legend2" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#666666;" value="&lt;font style=&quot;font-size: 8px;&quot;&gt;Arrow color: black = direct client call · gray dashed = future/not-provisioned path · orange = operator/admin/CI action / app -&amp;gt; Redis · blue = app -&amp;gt; database · purple = AI/ML call · green = batch -&amp;gt; data store · red dashed = async/fail-open · red dotted = observability scrape/query&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="18" width="920" x="-10" y="845" as="geometry"/>
                 </mxCell>
                 <mxCell id="neo4j" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#82b366;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="Knowledge-Graph&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;neo4j — Neo4j 5 + GDS — knowledge graph + Louvain clustering&lt;br/&gt;docs/knowledge-graph.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
                     <mxGeometry height="85" width="160" x="40" y="600" as="geometry"/>
@@ -295,43 +295,67 @@
                 <mxCell id="XE2xbM_b2EB1ewLkHZes-7" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
                     <mxGeometry height="16" width="20" x="90" y="489" as="geometry"/>
                 </mxCell>
-                <mxCell id="QxKkIrYusPhaXlQg6z0E-8" edge="1" parent="1" source="loadbalancer" style="edgeStyle=none;html=1;strokeColor=#333333;strokeWidth=2;" target="Ft2ls5lo251c2oLnpMc2-5" value="round-robins (nginx)">
-                    <mxGeometry relative="1" as="geometry"/>
+                <mxCell id="QxKkIrYusPhaXlQg6z0E-8" edge="1" parent="1" source="loadbalancer" style="edgeStyle=none;html=1;strokeColor=#333333;strokeWidth=2;" target="Ft2ls5lo251c2oLnpMc2-5" value="round-robins&lt;div&gt;&amp;nbsp;(nginx)&lt;/div&gt;">
+                    <mxGeometry relative="1" x="-0.1865" y="30" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
                 </mxCell>
                 <mxCell id="QxKkIrYusPhaXlQg6z0E-6" edge="1" parent="1" source="Ft2ls5lo251c2oLnpMc2-1" style="edgeStyle=none;html=1;strokeColor=#333333;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="sso" value="authenticates (login)">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="345" y="237.50393034825873" as="sourcePoint"/>
+                    <mxGeometry relative="1" x="-0.0599" y="21" as="geometry">
+                        <mxPoint x="1" as="offset"/>
+                        <mxPoint x="403.5" y="237.50393034825873" as="sourcePoint"/>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="loadbalancer" parent="1" style="fillColor=#28A8E0;verticalLabelPosition=bottom;sketch=0;html=1;strokeColor=#ffffff;verticalAlign=top;align=center;points=[[0.145,0.145,0],[0.5,0,0],[0.855,0.145,0],[1,0.5,0],[0.855,0.855,0],[0.5,1,0],[0.145,0.855,0],[0,0.5,0]];pointerEvents=1;shape=mxgraph.cisco_safe.compositeIcon;bgIcon=ellipse;resIcon=mxgraph.cisco_safe.capability.load_balancer;" value="&lt;font style=&quot;font-size: 10px;&quot;&gt;Load Balance&lt;/font&gt;" vertex="1">
                     <mxGeometry height="37" width="40" x="60" y="130.19" as="geometry"/>
                 </mxCell>
-                <mxCell id="Ft2ls5lo251c2oLnpMc2-4" edge="1" parent="1" source="Ft2ls5lo251c2oLnpMc2-1" style="edgeStyle=none;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="frontend" value="">
+                <mxCell id="Ft2ls5lo251c2oLnpMc2-4" edge="1" parent="1" source="Ft2ls5lo251c2oLnpMc2-1" style="edgeStyle=none;html=1;entryX=0.86;entryY=-0.024;entryDx=0;entryDy=0;entryPerimeter=0;" target="frontend" value="">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="Ft2ls5lo251c2oLnpMc2-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;App Frontend&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Streamlit UI (separate image)&lt;br/&gt;Candidate: upload CV, view job matches&lt;br/&gt;Employer: view candidate matches&lt;br/&gt;docs/frontend.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="105" width="160" x="303" y="99" as="geometry"/>
+                    <mxGeometry height="105" width="160" x="361.5" y="99" as="geometry"/>
                 </mxCell>
                 <mxCell id="Ft2ls5lo251c2oLnpMc2-2" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
-                    <mxGeometry height="16" width="20" x="315" y="107" as="geometry"/>
+                    <mxGeometry height="16" width="20" x="373.5" y="107" as="geometry"/>
                 </mxCell>
                 <mxCell id="Ft2ls5lo251c2oLnpMc2-3" parent="1" style="editableCssRules=.*;sketch=0;html=1;verticalAlign=top;labelPosition=center;verticalLabelPosition=bottom;align=center;spacingTop=-6;fontSize=11;fontStyle=1;fontColor=#999999;shape=image;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGhlaWdodD0iMzY3LjgxODMyODg1NzQyMTkiIHZpZXdCb3g9IjcuMTA1NDI3MzU3NjAxMDAyZS0xNSAwIDM2Ni40MTAxODY3Njc1NzgxIDM2Ny44MTgzMjg4NTc0MjE5IiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCBtZWV0IiB3aWR0aD0iMzY2LjQxMDE5Njc2NzU3OTEiIHZlcnNpb249IjEuMSIgaWQ9InN2Zzk4NyIgem9vbUFuZFBhbj0ibWFnbmlmeSI+JiN4YTsJPHN0eWxlIHR5cGU9InRleHQvY3NzIj4JLnN0MHtmaWxsOiM0Mjg1ZjQ7fQk8L3N0eWxlPgkmI3hhOyAgPHBhdGggY2xhc3M9InN0MCIgZD0ibSA0OC4yNTE5NiwxMTEuNTM5MDYgYyAtNy42MTg2NCwyZS00IC0xMy43OTQ3Miw2LjE3NjI4IC0xMy43OTQ5MywxMy43OTQ5MiAyLjFlLTQsNy42MTg2NCA2LjE3NjI5LDEzLjc5NDcyIDEzLjc5NDkzLDEzLjc5NDkyIGggMTQ1LjE0NjkyIHYgLTI3LjU4OTg0IHogbSAyMzguNjA4NTksNTcuNDUxMTcgaCA2NS43NTQ2OSBjIDcuNjE4NjQsLTIuMWUtNCAxMy43OTQ3MSwtNi4xNzYyOCAxMy43OTQ5MiwtMTMuNzk0OTIgLTIuMWUtNCwtNy42MTg2NCAtNi4xNzYyOCwtMTMuNzk0NzEgLTEzLjc5NDkyLC0xMy43OTQ5MiBIIDI4NC44NTA2IFogTSAxMy43OTQ5MiwxNzAuOTc0NjEgQyA2LjE3NjI4MDEsMTcwLjk3NDgyIDIuMTAwOTE5ZS00LDE3Ny4xNTA4OSA5LjE4OTkyMWUtOCwxODQuNzY5NTMgLTguNjk5MDgxZS00LDE5Mi4zODg5MyA2LjE3NTUyMDEsMTk4LjU2NjE5IDEzLjc5NDkyLDE5OC41NjY0IEggMTkzLjM5ODg4IFYgMTcwLjk3NDYxIFogTSAyODQuMzA3OCwyMjcuNTY2NCBoIDY4LjMwNzQ0IGMgNy42MTg2NCwtMi4xZS00IDEzLjc5NDcxLC02LjE3NjI4IDEzLjc5NDkyLC0xMy43OTQ5MiAtMi4xZS00LC03LjYxODY0IC02LjE3NjI4LC0xMy43OTQ3MSAtMTMuNzk0OTIsLTEzLjc5NDkyIGggLTY1LjkyMTc4IHogbSAtMjM2LjA1NTg0LDEuNjk3MjcgYyAtNy42MTg2NCwyZS00IC0xMy43OTQ3Miw2LjE3NjI4IC0xMy43OTQ5MywxMy43OTQ5MiAyLjFlLTQsNy42MTg2NCA2LjE3NjI5LDEzLjc5NDcyIDEzLjc5NDkzLDEzLjc5NDkyIEggMTkzLjM5ODg4IFYgMjI5LjI2MzY3IFogTSAxODkuNTIxNDksMCBjIC0yNC41NzQxMSwwIC00OS4xNjczNywyMC4wNTUwNyAtNTkuNDM3NSw3NS4zNzMwNCBoIDMwLjU4MDA3IGMgNC42MTYzMywtMjQuMTYyMDYgMTUuMzQ4OTYsLTQ3LjUyMTQ4IDI3Ljg1MzUyLC00Ny41MjE0OCAxMi4xNTg4LDAgMzkuNDU4OTgsNTcuNDUwNDQgMzkuNDU4OTgsMTYwLjQxNDA2IDAsNjkuOTE1MTMgLTE5LjU3ODA5LDE1Mi4xMTUyNCAtNDEuMTcxODcsMTUyLjExNTIzIC0xNS4yNjg4MSwyZS01IC0yMS4yMTY2OCwtMjguMzMzNTYgLTI1LjQ0MzM2LC00Ni43MTg3NCBsIC0zMC40MTQwNiwtMC4wNjg0IGMgNC4yMjA3NCwyMC41NDA4NyAxNi45MDc2OCw3NC4yMjQ2IDU3LjcxMjg5LDc0LjIyNDYgNTMuNDM2NzIsMCA2OC45MTIxMSwtMTExLjk5MzA1IDY4LjkxMjExLC0xODAuNDYyODkgQyAyNTcuNTcyMjcsOTMuODAwNzYgMjM2LjU4MzQsMCAxODkuNTIxNDksMCBaIi8+JiN4YTs8L3N2Zz4=;" value="" vertex="1">
                     <mxGeometry height="28" width="28" x="425" y="239" as="geometry"/>
                 </mxCell>
-                <mxCell id="Ft2ls5lo251c2oLnpMc2-10" edge="1" parent="1" source="Ft2ls5lo251c2oLnpMc2-5" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#333333;strokeWidth=2;" target="Ft2ls5lo251c2oLnpMc2-1" value="proxies (websocket-aware, no TLS yet)">
-                    <mxGeometry relative="1" as="geometry"/>
+                <mxCell id="Ft2ls5lo251c2oLnpMc2-10" edge="1" parent="1" source="Ft2ls5lo251c2oLnpMc2-5" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#333333;strokeWidth=2;" target="Ft2ls5lo251c2oLnpMc2-1" value="proxies&amp;nbsp;&lt;div&gt;(websocket-aware,&lt;/div&gt;&lt;div&gt;&amp;nbsp;no TLS yet)&lt;/div&gt;">
+                    <mxGeometry relative="1" x="0.132" y="31" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
                 </mxCell>
                 <mxCell id="Ft2ls5lo251c2oLnpMc2-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#6c8ebf;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;div&gt;Reverse Proxy&lt;/div&gt;" vertex="1">
-                    <mxGeometry height="62.87" width="102.55" x="147.45" y="120.06" as="geometry"/>
+                    <mxGeometry height="52.74" width="102.55" x="147.45" y="123" as="geometry"/>
                 </mxCell>
                 <mxCell id="Ft2ls5lo251c2oLnpMc2-6" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
-                    <mxGeometry height="16" width="20" x="190" y="155" as="geometry"/>
+                    <mxGeometry height="16" width="20" x="147.45" y="127.44" as="geometry"/>
                 </mxCell>
                 <mxCell id="Ft2ls5lo251c2oLnpMc2-9" edge="1" parent="1" source="candidate" style="edgeStyle=none;html=1;strokeColor=#333333;strokeWidth=2;" target="loadbalancer" value="browses (:8080)">
-                    <mxGeometry relative="1" as="geometry">
+                    <mxGeometry relative="1" x="-0.0641" y="37" as="geometry">
+                        <mxPoint as="offset"/>
                         <mxPoint x="20" y="151.81" as="sourcePoint"/>
                         <mxPoint x="88" y="151.56" as="targetPoint"/>
                     </mxGeometry>
+                </mxCell>
+                <mxCell id="loki" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#b85450;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Loki&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Log aggregation (filesystem storage)&lt;br/&gt;docs/logging.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="55" width="140" x="700" y="770" as="geometry"/>
+                </mxCell>
+                <mxCell id="loki_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="16" width="20" x="707" y="777" as="geometry"/>
+                </mxCell>
+                <mxCell id="promtail" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#b85450;strokeWidth=4;verticalAlign=top;align=center;spacingLeft=12;spacingTop=6;fontSize=12;fontStyle=1;fontColor=#000000;" value="&lt;font&gt;Promtail&lt;/font&gt;&lt;div&gt;&lt;font style=&quot;font-size: 8px;&quot;&gt;Tails every container's stdout (Docker socket)&lt;br/&gt;docs/logging.md&lt;/font&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="55" width="140" x="860" y="770" as="geometry"/>
+                </mxCell>
+                <mxCell id="promtail_docker" parent="1" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Docker.svg;" value="" vertex="1">
+                    <mxGeometry height="16" width="20" x="867" y="777" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_promtail_loki" edge="1" parent="1" source="promtail" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;strokeColor=#333333;fontColor=#333333;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="loki" value="ships logs">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_grafana_loki" edge="1" parent="1" source="grafana" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;strokeWidth=2;dashed=1;dashPattern=1 2;strokeColor=#b85450;fontColor=#b85450;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="loki" value="queries (Loki datasource)">
+                    <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>
