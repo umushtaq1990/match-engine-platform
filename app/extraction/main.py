@@ -6,10 +6,15 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from app.common.logging import setup_logging
+from app.common.request_logging import add_request_logging
 from app.extraction.rate_limit import limiter
 from app.extraction.routes import router as extraction_router
 
+setup_logging("extraction")
+
 app = FastAPI(title="JME Skill Extraction", version="0.1.0")
+add_request_logging(app, "extraction")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)

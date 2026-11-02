@@ -9,8 +9,13 @@ from starlette.responses import Response
 
 from app.api.rate_limit import limiter
 from app.api.routes import router as matching_router
+from app.common.logging import setup_logging
+from app.common.request_logging import add_request_logging
+
+setup_logging("api")
 
 app = FastAPI(title="JME API", version="0.1.0")
+add_request_logging(app, "api")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)

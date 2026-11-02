@@ -1366,3 +1366,31 @@ only works reliably at the literal hostname `localhost`, not `127.0.0.1` or any 
 Full detail: `docs/sso.md`.
 
 ### Phase 29 — status: COMPLETE (real Keycloak-backed OIDC login gate built and verified end-to-end against a live Keycloak and the real running Frontend container)
+
+## Phase 30 — centralized structured logging + Loki (2026-11-02)
+
+`docs/observability.md` flagged a real gap: this stack was metrics-only, no application logs were
+aggregated or correlated anywhere. This phase closes it: a shared logging package every always-on
+service imports, plus Loki/Promtail so those logs are actually searchable through Grafana.
+
+**Built**: `app/common/logging.py` (`setup_logging` — hand-rolled JSON formatter, stdlib only, no
+new dependency) and `app/common/request_logging.py` (a FastAPI middleware logging one JSON line
+per request with a correlation `request_id`). This is the one deliberate exception to this
+project's per-service-duplication convention (`app/api/rate_limit.py`'s own docstring explains why
+duplication is usually preferred) — logging setup has zero business logic and zero extra
+dependencies, so the coupling argument that justifies duplicating `deps.py`/`rate_limit.py` doesn't
+apply here. Wired into `api`/`analytics`/`extraction`/`frontend`; `docker/Dockerfile.*` for all four
+now also `COPY`s `app/common/`. New `loki` + `promtail` services (official images, no custom
+Dockerfile); Grafana gets Loki as a second provisioned datasource alongside the existing
+Prometheus one.
+
+**Verified live, not assumed from the wiring**: triggered real `/health`/`/metrics` calls against
+`api`, then queried Loki directly and got back the exact real structured JSON lines
+`app/common/request_logging.py` emits (`{"timestamp": ..., "service": "api", "logger": "request",
+"message": "GET /health -> 200 (0.66ms)", "request_id": "..."}`); re-confirmed the identical query
+proxied *through Grafana's own datasource API* (same verification standard `docs/observability.md`
+already used for Prometheus), not just directly against Loki. Full project test suite re-run after
+wiring this in: 192 passing, no regressions (3 pre-existing unrelated local-dev-venv DB failures
+noted but not caused by this change). Full detail: `docs/logging.md`.
+
+### Phase 30 — status: COMPLETE (shared JSON logging package built, wired into all four always-on services, Loki/Promtail verified actually receiving and serving real log lines through Grafana)

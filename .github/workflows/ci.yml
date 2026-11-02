@@ -347,8 +347,8 @@ jobs:
           echo "$counts" | tail -1 | grep -qv "^0$"
       - name: Run skill clustering via Neo4j GDS
         run: docker compose run --rm graph-cluster
-      - name: Start observability stack (prometheus, cadvisor, grafana)
-        run: docker compose up -d prometheus cadvisor grafana
+      - name: Start observability stack (prometheus, cadvisor, grafana, loki, promtail)
+        run: docker compose up -d prometheus cadvisor grafana loki promtail
       - name: Verify prometheus is scraping the api and analytics services
         run: |
           for job in api analytics extraction; do
@@ -360,6 +360,22 @@ jobs:
             done
             [ "$ok" = "1" ] || { echo "prometheus never reported $job target as up"; exit 1; }
           done
+      - name: Smoke-test centralized logging (Phase 30 — structured logs really land in Loki)
+        run: |
+          set -e
+          curl -s -o /dev/null http://localhost:8000/health
+          ok=""
+          for i in $(seq 1 15); do
+            count=$(curl -s -G "http://localhost:3100/loki/api/v1/query_range" \
+              --data-urlencode 'query={compose_service="api"} |= "\"service\": \"api\""' \
+              --data-urlencode "start=$(date -u -d '2 minutes ago' +%s)000000000" \
+              --data-urlencode "end=$(date -u +%s)000000000" \
+              --data-urlencode "limit=5" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d['data']['result']))" 2>/dev/null || echo 0)
+            [ "$count" != "0" ] && ok=1 && break
+            sleep 2
+          done
+          [ "$ok" = "1" ] || { echo "no structured api logs found in Loki"; docker compose logs promtail loki; exit 1; }
+          echo "structured JSON logs confirmed landing in Loki"
       - name: Tear down
         if: always()
         run: docker compose --profile tools down -v

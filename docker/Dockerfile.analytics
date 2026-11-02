@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements-analytics.txt
 
 COPY app/db.py ./app/db.py
 COPY app/__init__.py ./app/__init__.py
+COPY app/common/ ./app/common/
 COPY app/analytics/ ./app/analytics/
 
 EXPOSE 8001

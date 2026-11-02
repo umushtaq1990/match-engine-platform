@@ -9,6 +9,8 @@ WORKDIR /app
 COPY app/requirements-frontend.txt ./
 RUN pip install --no-cache-dir -r requirements-frontend.txt
 
+COPY app/__init__.py ./app/__init__.py
+COPY app/common/ ./app/common/
 COPY app/frontend/ ./app/frontend/
 
 # `streamlit run app/frontend/streamlit_app.py` doesn't put /app on sys.path

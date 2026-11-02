@@ -504,6 +504,40 @@ services:
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
+      - loki
+
+  # Phase 30: log aggregation backend — single-process, filesystem storage,
+  # no clustering (appropriate at this project's scale). Grafana queries it
+  # as a second datasource alongside Prometheus (single pane of glass,
+  # per docs/observability.md's original Roadmap reasoning). See
+  # docs/logging.md.
+  loki:
+    image: grafana/loki:3.2.1
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./docker/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Phase 30: discovers every container via the Docker socket and tails its
+  # stdout (the JSON lines app/common/logging.py now emits), shipping to
+  # Loki. No app-side network call to log anything — stdout is still the
+  # only transport, same convention as before this phase.
+  promtail:
+    image: grafana/promtail:3.2.1
+    volumes:
+      - ./docker/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: ["-config.file=/etc/promtail/config.yml"]
+    depends_on:
+      loki:
+        condition: service_healthy
 
   # Phase 19: knowledge graph linking candidates/skills/occupations/jobs/
   # courses. Official image, GDS plugin auto-installed at container start
@@ -585,3 +619,4 @@ volumes:
   neo4j_data:
   redis_data:
   seaweedfs_data:
+  loki_data:

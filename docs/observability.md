@@ -19,9 +19,11 @@ continuously scraping, not a one-off job):
   (`docker/prometheus/prometheus.yml`).
 - **`cadvisor`** (`gcr.io/cadvisor/cadvisor:v0.49.1`, port 8081) — per-container resource metrics.
 - **`grafana`** (`grafana/grafana:11.3.1`, port 3000) — one provisioned dashboard ("JME Overview"),
-  provisioned datasource pointing at `prometheus:9090` (`docker/grafana/provisioning/`). Anonymous
-  viewer access is enabled for local convenience; the admin password comes from
-  `GRAFANA_ADMIN_PASSWORD` in `.env`.
+  provisioned datasources pointing at `prometheus:9090` and (Phase 30) `loki:3100`
+  (`docker/grafana/provisioning/`). Anonymous viewer access is enabled for local convenience; the
+  admin password comes from `GRAFANA_ADMIN_PASSWORD` in `.env`.
+- **`loki` + `promtail`** (Phase 30) — log aggregation. See `docs/logging.md` for the full detail;
+  this doc stays focused on metrics.
 
 ## Implementation
 
@@ -77,21 +79,15 @@ request-rate panels are unaffected and fully functional everywhere.
   been generated to measure it under (assumption A6 in `docs/assumptions-register.md` still open).
 - Container CPU/RAM panels don't render on Docker Desktop (see above) — expected to work on a
   native Linux host, not yet verified there since this project has no such host available.
-- **No logging pipeline at all** — this stack is metrics-only (Prometheus/cAdvisor/Grafana). No
-  application logs are aggregated, searched, or correlated anywhere; each service's stdout only
-  goes to `docker compose logs`. There is no Loki/ELK/equivalent, and no structured log format
-  shared across services.
 
 ## Roadmap
 
-- **Centralized logging package**: a shared logging module every service (`api`, `analytics`,
-  `extraction`, `frontend`, batch jobs) imports, emitting structured (JSON) logs with a consistent
-  schema (timestamp, service name, request/correlation id, level) instead of each service's current
-  ad-hoc stdout prints. Pairs naturally with a log-aggregation backend (e.g. Loki, since it shares
-  Grafana as a single pane of glass with the existing Prometheus metrics) once there's a real need
-  to search/correlate logs across services rather than just tail one container's output — not built
-  yet, scoped deliberately small until that need is concrete, per this project's "measure before
-  adding complexity" discipline (see `docs/architecture.md` §3).
+- **Centralized logging — done, see `docs/logging.md`** (Phase 30): a shared logging module
+  (`app/common/logging.py`) imported by `api`/`analytics`/`extraction`/`frontend`, emitting
+  structured JSON (timestamp, service name, request/correlation id, level), shipped via
+  Promtail/Loki and queryable through Grafana — the single pane of glass this entry originally
+  proposed. Batch jobs are the one piece not yet wired in; see `docs/logging.md`'s Known
+  Limitations.
 
 ## Related Documents
 

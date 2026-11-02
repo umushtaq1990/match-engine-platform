@@ -128,6 +128,11 @@ update it whenever a doc is added, renamed, or removed.
   Authorization Code flow, verified end-to-end against a live Keycloak (correct/wrong password,
   real token exchange)
 
+## Centralized logging
+- [logging.md](logging.md) — shared structured-JSON logging package (`app/common/`) + Loki/Promtail,
+  closing the "no logging pipeline" gap `observability.md` flagged; real log lines verified landing
+  in Loki, queryable through Grafana
+
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale

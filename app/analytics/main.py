@@ -9,6 +9,10 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.analytics import stream_consumer
 from app.analytics.rate_limit import limiter
 from app.analytics.routes import router as events_router
+from app.common.logging import setup_logging
+from app.common.request_logging import add_request_logging
+
+setup_logging("analytics")
 
 
 @asynccontextmanager
@@ -23,6 +27,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="JME Analytics", version="0.1.0", lifespan=lifespan)
+add_request_logging(app, "analytics")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)

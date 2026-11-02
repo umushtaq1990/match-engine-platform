@@ -16,6 +16,10 @@ import secrets
 import requests
 import streamlit as st
 
+from app.common.logging import setup_logging
+
+setup_logging("frontend")
+
 # Phase 28: routed through the API Gateway (docker/nginx-gateway/nginx.conf),
 # not called directly — api/extraction still see identical paths, the
 # Gateway strips its routing prefix. See docs/ingress-layer.md.
