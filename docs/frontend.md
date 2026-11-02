@@ -50,6 +50,13 @@ healthy, exposes `8501` (Streamlit's default), and is configured via `API_URL`/`
 `JME_API_KEY` env vars — the same `X-API-Key` header every other caller in this project uses,
 attached server-side so it's never exposed to the browser.
 
+**Phase 28 update — access via the ingress layer, not `:8501` directly**: `API_URL`/
+`EXTRACTION_URL` now point at the API Gateway (`http://gateway/matching`,
+`http://gateway/extraction`), and the demo itself is reached at `http://localhost:8080` (the Load
+Balancer), not `http://localhost:8501`. `:8501` is still published for direct debugging, same
+convention as every other service, but the real path is
+`candidate -> Load Balancer -> Reverse Proxy -> frontend`. See `docs/ingress-layer.md`.
+
 ## Verification & Results
 
 **Tested with Streamlit's own official test framework** (`streamlit.testing.v1.AppTest`), not a

@@ -205,16 +205,92 @@ services:
     ports:
       - "8501:8501"
     environment:
-      API_URL: http://api:8000
-      EXTRACTION_URL: http://extraction:8002
+      # Phase 28: routed through the API Gateway, not called directly. See
+      # docker/nginx-gateway/nginx.conf and docs/ingress-layer.md.
+      API_URL: http://gateway/matching
+      EXTRACTION_URL: http://gateway/extraction
       JME_API_KEY: ${JME_API_KEY}
     depends_on:
       api:
         condition: service_healthy
       extraction:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Phase 28: API Gateway — sits between App Frontend and the backend APIs it
+  # calls (path-based routing, prefix stripped). Not public-facing by design
+  # (only loadbalancer is); published anyway for direct debugging, same
+  # convention as every other service here. See docs/ingress-layer.md.
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "8099:80"
+    volumes:
+      - ./docker/nginx-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      extraction:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/matching/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Phase 28: Reverse Proxy — fronts App Frontend only (TLS termination point
+  # in a real deployment; no real cert here, local-only). Two identical
+  # replicas behind the Load Balancer. Not published to the host — only
+  # loadbalancer is the public entry point. See docs/ingress-layer.md.
+  reverseproxy-1:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/nginx-reverse-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  reverseproxy-2:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/nginx-reverse-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Phase 28: Load Balancer — round-robins across the two Reverse Proxy
+  # replicas (nginx default algorithm). The only publicly-reachable ingress
+  # component; this is the new way to reach the demo (was :8501 directly
+  # through Phase 27). See docs/ingress-layer.md.
+  loadbalancer:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./docker/nginx-load-balancer/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      reverseproxy-1:
+        condition: service_healthy
+      reverseproxy-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -271,6 +271,35 @@ jobs:
           assert r.status_code == 200, r.text
           print('frontend -> api internal call ok')
           "
+      - name: Start the ingress layer (Phase 28 — Load Balancer, Reverse Proxy, API Gateway)
+        run: docker compose up -d gateway reverseproxy-1 reverseproxy-2 loadbalancer
+      - name: Wait for ingress layer healthy
+        run: |
+          for svc in jme-gateway-1 jme-reverseproxy-1-1 jme-reverseproxy-2-1 jme-loadbalancer-1; do
+            for i in $(seq 1 30); do
+              status=$(docker inspect -f '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo "starting")
+              [ "$status" = "healthy" ] && break
+              sleep 2
+            done
+            [ "$status" = "healthy" ] || { echo "$svc never became healthy" && docker compose logs "${svc#jme-}" && exit 1; }
+          done
+      - name: Smoke-test the ingress layer (round-robin, transparent gateway routing, websocket passthrough)
+        run: |
+          set -e
+          api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          upstreams=$(for i in 1 2 3 4; do curl -s -D - -o /dev/null http://localhost:8080/ | grep -i '^x-upstream' ; done | sort -u | wc -l)
+          test "$upstreams" -eq 2
+          echo "load balancer round-robin ok: 2 distinct upstreams seen"
+          gw_response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8099/matching/candidates/2/job-matches")
+          direct_response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8000/candidates/2/job-matches")
+          test "$gw_response" = "$direct_response"
+          echo "gateway routing ok: identical response via gateway vs direct"
+          ws_status=$(curl -s -o /dev/null -w '%{http_code}' -i -N \
+            -H "Connection: Upgrade" -H "Upgrade: websocket" \
+            -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+            "http://localhost:8080/_stcore/stream" --max-time 3)
+          test "$ws_status" = "101"
+          echo "websocket passthrough ok: 101 Switching Protocols through loadbalancer -> reverseproxy -> frontend"
       - name: Compute a sample of embeddings (Phase 17 — all-minilm already pulled above)
         run: docker compose run --rm embeddings-compute python -m app.embeddings.compute_embeddings --candidate-limit 10 --job-limit 30
       - name: Confirm embeddings were stored

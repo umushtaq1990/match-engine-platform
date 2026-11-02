@@ -98,14 +98,18 @@ imprecise-but-bounded behavior is gone, not just documented as acceptable.
 **What the API-key model does NOT protect against**:
 - A single leaked key grants full access to every endpoint — no scoping, no per-caller
   differentiation, no revocation short of rotating the one key.
-- No TLS termination at the API itself — assumes a reverse proxy / ingress would add TLS before
-  any non-localhost exposure (not built, since there is no such exposure yet).
+- No TLS termination anywhere — a real nginx reverse proxy now exists (Phase 28,
+  `docs/ingress-layer.md`) but with no real certificate configured; it's still plain HTTP
+  end-to-end. TLS at the proxy is the obvious next step before any non-localhost exposure, not
+  built yet.
 - No audit log of who called what, when.
 
 **Other known gaps**:
-- No OAuth2/JWT, no per-caller identity — acceptable now (assumption A9), revisit before any shared
-  deployment.
-- No TLS (local-only, no reverse proxy yet).
+- No OAuth2/JWT for service-to-service calls, no per-caller identity on the APIs themselves —
+  acceptable now (assumption A9), revisit before any shared deployment. (Separately, Phase 29 added
+  real SSO/OIDC login for the human-facing Frontend — see `docs/sso.md` — but that's a login gate on
+  the UI, not a replacement for the static `JME_API_KEY` the APIs themselves still check.)
+- No TLS (local-only; Phase 28's reverse proxy terminates connections in plaintext, no cert).
 - No secrets manager — env-var placeholders only (assumption A7).
 - Dependency/image scanning (Trivy) currently runs report-only (`exit-code: 0`). No findings have
   been triaged into a known-acceptable baseline yet, so failing the build on every CRITICAL finding

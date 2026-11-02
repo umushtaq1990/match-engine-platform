@@ -1300,3 +1300,35 @@ step in `fresh-volume-smoke-test` starts it after `api`/`extraction` are healthy
 internal-network check inside the container. Full detail: `docs/frontend.md`.
 
 ### Phase 27 — status: COMPLETE (minimal Streamlit frontend built, containerized, and verified live for both Candidate and Employer flows)
+
+## Phase 28 — real ingress layer: Load Balancer, Reverse Proxy, API Gateway (2026-11-02)
+
+The architecture diagram (`docs/architect/JME_Technical_Architecture.drawio`) had drawn a plausible
+ingress layer in front of the Frontend — Load Balancer, Reverse Proxy, API Gateway — deliberately
+styled "documented, not provisioned" to stay honest that none of it was real. This phase builds it
+for real: three nginx containers, wired into the actual request path, not decorative additions next
+to it.
+
+**Built**: `reverseproxy-1`/`reverseproxy-2` (nginx, websocket-aware, front `frontend` only, two
+replicas, not published to the host), `loadbalancer` (nginx, round-robins across the two replicas,
+the only publicly-reachable component, published at `8080` — the demo's new entry point, was
+`:8501` directly in Phase 27), `gateway` (nginx, path-based routing between `frontend` and
+`api`/`extraction`, prefix-stripped so those services see identical paths, published at `8099` for
+debugging). `app/frontend/streamlit_app.py`'s `API_URL`/`EXTRACTION_URL` now point at `gateway`
+instead of calling `api`/`extraction` directly — the change that actually puts these containers in
+the real traffic path.
+
+**Verified live, not assumed from config**: 5 sequential requests to `:8080` showed the
+`X-Upstream` response header alternating between the two reverse-proxy replicas (real round-robin,
+not just a valid upstream block); `curl`ing `api`'s `/candidates/1/job-matches` through the Gateway
+returned identical real ranked-match data to calling `api` directly (transparent routing); a raw
+HTTP/1.1 websocket Upgrade handshake sent to `:8080/_stcore/stream` returned
+`101 Switching Protocols`, confirming Load Balancer → Reverse Proxy → Frontend preserves the
+websocket connection Streamlit's live UI depends on, end-to-end.
+
+**A real bug found and fixed while verifying this**: the new healthchecks initially targeted
+`http://localhost/...`, which failed with "connection refused" — Alpine's `wget` resolves
+`localhost` to `::1` first, but nginx here only binds `0.0.0.0:80` (IPv4). Fixed by healthchecking
+`127.0.0.1` explicitly. Full detail: `docs/ingress-layer.md`, `docs/adr/0002-build-the-ingress-layer.md`.
+
+### Phase 28 — status: COMPLETE (Load Balancer/Reverse Proxy/API Gateway built as real nginx containers, wired into the actual frontend↔API request path, round-robin and websocket passthrough verified end-to-end)

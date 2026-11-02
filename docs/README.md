@@ -25,6 +25,7 @@ update it whenever a doc is added, renamed, or removed.
 - [data-model.md](data-model.md) — schema reference, design rationale, measured dataset scale
 - [adr/](adr/) — architecture decision records (one file per significant decision, numbered)
   - [0001-decouple-ingestion-migrate-api.md](adr/0001-decouple-ingestion-migrate-api.md)
+  - [0002-build-the-ingress-layer.md](adr/0002-build-the-ingress-layer.md)
 
 ## Data governance
 - [data-quality.md](data-quality.md) — data-quality check design, thresholds, verified results
@@ -116,6 +117,11 @@ update it whenever a doc is added, renamed, or removed.
 - [frontend.md](frontend.md) — minimal Streamlit UI over the existing matching/extraction APIs,
   a separate Docker image, built as an end-to-end demo of the Candidate (upload CV → see job
   matches) and Employer (see candidate matches) flows, verified live against the real stack
+
+## Ingress layer
+- [ingress-layer.md](ingress-layer.md) — real Load Balancer/Reverse Proxy/API Gateway (nginx),
+  replacing the diagram-only ingress boxes; round-robin and websocket passthrough verified
+  end-to-end against the running stack
 
 ## Not yet created — written just-in-time, not upfront
 

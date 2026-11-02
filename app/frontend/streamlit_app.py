@@ -13,8 +13,11 @@ import os
 import requests
 import streamlit as st
 
-API_URL = os.environ.get("API_URL", "http://api:8000")
-EXTRACTION_URL = os.environ.get("EXTRACTION_URL", "http://extraction:8002")
+# Phase 28: routed through the API Gateway (docker/nginx-gateway/nginx.conf),
+# not called directly — api/extraction still see identical paths, the
+# Gateway strips its routing prefix. See docs/ingress-layer.md.
+API_URL = os.environ.get("API_URL", "http://gateway/matching")
+EXTRACTION_URL = os.environ.get("EXTRACTION_URL", "http://gateway/extraction")
 API_KEY = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
 HEADERS = {"X-API-Key": API_KEY}
 MAX_CV_SIZE_BYTES = 2 * 1024 * 1024
