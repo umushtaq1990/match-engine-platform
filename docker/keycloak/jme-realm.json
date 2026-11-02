@@ -1,0 +1,44 @@
+{
+  "realm": "jme",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "clients": [
+    {
+      "clientId": "jme-frontend",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://localhost:8080/*", "http://localhost:8501/*"],
+      "webOrigins": ["*"],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "username": "candidate",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "candidate@example.com",
+      "firstName": "Demo",
+      "lastName": "Candidate",
+      "credentials": [
+        {"type": "password", "value": "candidate-dev-pw", "temporary": false}
+      ]
+    },
+    {
+      "username": "employer",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "employer@example.com",
+      "firstName": "Demo",
+      "lastName": "Employer",
+      "credentials": [
+        {"type": "password", "value": "employer-dev-pw", "temporary": false}
+      ]
+    }
+  ]
+}

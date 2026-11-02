@@ -11,6 +11,11 @@ RUN pip install --no-cache-dir -r requirements-frontend.txt
 
 COPY app/frontend/ ./app/frontend/
 
+# `streamlit run app/frontend/streamlit_app.py` doesn't put /app on sys.path
+# the way `uvicorn app.api.main:app` does for the other services (no module
+# import happens) — needed for Phase 30's `app.common` import.
+ENV PYTHONPATH=/app
+
 EXPOSE 8501
 
 CMD ["streamlit", "run", "app/frontend/streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501"]

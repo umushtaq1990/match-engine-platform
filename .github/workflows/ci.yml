@@ -300,6 +300,18 @@ jobs:
             "http://localhost:8080/_stcore/stream" --max-time 3)
           test "$ws_status" = "101"
           echo "websocket passthrough ok: 101 Switching Protocols through loadbalancer -> reverseproxy -> frontend"
+      - name: Smoke-test SSO (Phase 29 — Keycloak rejects wrong password, accepts correct one)
+        run: |
+          set -e
+          wrong=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            "http://localhost:8180/realms/jme/protocol/openid-connect/token" \
+            -d "grant_type=password&client_id=jme-frontend&username=candidate&password=WRONG")
+          test "$wrong" = "401"
+          echo "keycloak correctly rejected a wrong password"
+          correct=$(curl -s -X POST \
+            "http://localhost:8180/realms/jme/protocol/openid-connect/token" \
+            -d "grant_type=password&client_id=jme-frontend&username=candidate&password=candidate-dev-pw")
+          echo "$correct" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'access_token' in d; print('keycloak accepted the correct password, real token issued')"
       - name: Compute a sample of embeddings (Phase 17 — all-minilm already pulled above)
         run: docker compose run --rm embeddings-compute python -m app.embeddings.compute_embeddings --candidate-limit 10 --job-limit 30
       - name: Confirm embeddings were stored

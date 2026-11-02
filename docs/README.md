@@ -123,6 +123,11 @@ update it whenever a doc is added, renamed, or removed.
   replacing the diagram-only ingress boxes; round-robin and websocket passthrough verified
   end-to-end against the running stack
 
+## SSO / Identity
+- [sso.md](sso.md) — real OIDC login gate (Keycloak) in front of the demo Frontend; hand-rolled
+  Authorization Code flow, verified end-to-end against a live Keycloak (correct/wrong password,
+  real token exchange)
+
 ## Not yet created — written just-in-time, not upfront
 
 Per the brief's Section 14 list, but consolidated rather than one file per bullet (see rationale

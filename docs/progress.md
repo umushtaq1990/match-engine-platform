@@ -1332,3 +1332,37 @@ websocket connection Streamlit's live UI depends on, end-to-end.
 `127.0.0.1` explicitly. Full detail: `docs/ingress-layer.md`, `docs/adr/0002-build-the-ingress-layer.md`.
 
 ### Phase 28 — status: COMPLETE (Load Balancer/Reverse Proxy/API Gateway built as real nginx containers, wired into the actual frontend↔API request path, round-robin and websocket passthrough verified end-to-end)
+
+## Phase 29 — real SSO / OIDC login gate (Keycloak) (2026-11-02)
+
+The architecture diagram's `App Frontend -> SSO` hop was "documented, not provisioned" — this
+phase makes it real: a Keycloak container with a pre-seeded realm, and a hand-rolled OIDC
+Authorization Code login gate in front of the demo UI. `JME_API_KEY` (what the APIs themselves
+check) is completely unchanged — this is a human/browser login gate layered on top, not a
+replacement of the existing service-to-service auth.
+
+**Built**: `keycloak` service (official image, dev mode, realm pre-seeded via `--import-realm`
+from `docker/keycloak/jme-realm.json` — one public client, two test users). `_require_login()` in
+`app/frontend/streamlit_app.py`: hand-rolled with `requests` (not `authlib`), matching this
+project's existing `os.environ` + `requests` convention rather than pulling in a framework-shaped
+OIDC client library that assumes routes Streamlit doesn't have. Two issuer URLs
+(`OIDC_PUBLIC_ISSUER`/`OIDC_INTERNAL_ISSUER`) because the browser and the Frontend container's own
+server-side token exchange need different hostnames for the same realm.
+
+**Verified with a real scripted session walking the exact steps a browser would, against the real
+running stack**: a wrong password is rejected by Keycloak's own login form (not app logic); a
+correct password produces a real redirect with a real authorization code, a real token exchange,
+and a real decoded `id_token` (`preferred_username: candidate`); following that real redirect into
+the real running Frontend container (through the full Phase 28 ingress chain) lands on the
+authenticated app, not the login gate. 10 `streamlit.testing.v1.AppTest` tests (3 new, 7 existing
+ones updated to pre-seed a logged-in session so they keep testing the app UI, not the login gate).
+
+**A real, non-obvious finding made while verifying this**: a strictly-RFC-6265 HTTP client refuses
+to send Keycloak's `Secure`-flagged session cookie back over plain HTTP, breaking the flow — but
+real browsers specifically treat `http://localhost` as a secure context and send it anyway (a
+documented browser exception for local dev). Confirmed by re-running the verification with a
+cookie-handling shim matching that real browser behavior. Practical implication: this login flow
+only works reliably at the literal hostname `localhost`, not `127.0.0.1` or any other hostname.
+Full detail: `docs/sso.md`.
+
+### Phase 29 — status: COMPLETE (real Keycloak-backed OIDC login gate built and verified end-to-end against a live Keycloak and the real running Frontend container)
