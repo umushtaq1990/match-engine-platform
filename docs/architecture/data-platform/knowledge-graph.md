@@ -259,4 +259,4 @@ avenue for future work if this capability is pushed further.
 - [`docs/architecture/application-services/behavioral-analytics.md`](../application-services/behavioral-analytics.md) — the event log the `ENGAGED_WITH` edge
   aggregates.
 - [`docs/architecture.md`](../../architecture.md) — system-wide overview.
-- [`docs/progress.md`](../../progress.md) — full build history.
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

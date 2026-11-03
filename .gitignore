@@ -30,3 +30,7 @@ data/seed/*
 dist/
 k8s/base/secret.yaml
 backups/
+
+# Internal-only docs (kept locally, not shared publicly)
+docs/progress.md
+docs/requirements.md

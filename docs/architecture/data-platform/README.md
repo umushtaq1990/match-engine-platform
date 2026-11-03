@@ -65,4 +65,4 @@ where this platform's real concurrency limits sit. Full worked scenario:
 - [../application-services/README.md](../application-services/README.md) — the
   services that read and write this data
 - [../../architecture.md](../../architecture.md) — overall system architecture
-- [../../progress.md](../../progress.md) — full build history
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

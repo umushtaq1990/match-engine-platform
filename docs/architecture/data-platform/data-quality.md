@@ -88,4 +88,4 @@ cosmetic issues.
 - [architecture.md](../../architecture.md) — overall system overview
 - [data-model.md](data-model.md) — the schema these checks run against
 - [observability-and-logging.md](../observability-and-logging.md) — infrastructure-level observability (separate concern)
-- [progress.md](../../progress.md) — full build history
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

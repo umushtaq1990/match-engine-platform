@@ -328,4 +328,4 @@ concurrent-user scenario across every layer.
   Azure subscription), assumption A9 (the separate, unchanged `JME_API_KEY`
   mechanism)
 - [architecture.md](../architecture.md) — overall system architecture
-- [progress.md](../progress.md) — full build history
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

@@ -65,4 +65,4 @@ scenario: [../../operations/capacity-planning.md](../../operations/capacity-plan
 - [../ingress-and-identity.md](../ingress-and-identity.md) — how requests reach
   these services
 - [../../architecture.md](../../architecture.md) — overall system architecture
-- [../../progress.md](../../progress.md) — full build history
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

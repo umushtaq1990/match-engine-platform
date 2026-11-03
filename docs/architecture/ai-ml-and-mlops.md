@@ -315,4 +315,4 @@ scenario and raw numbers: `docs/operations/capacity-planning.md`.
 - [assumptions-register.md](../assumptions-register.md) — assumption A5/A5b, which
   the evaluation work resolves
 - [architecture.md](../architecture.md) — overall system architecture
-- [progress.md](../progress.md) — full build history
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

@@ -193,4 +193,4 @@ far; splitting it (see Roadmap above) is a documented future step, not a current
 - [`docs/security-and-threat-model.md`](../../security-and-threat-model.md) — the rate-limiting fix in
   context of the broader threat model.
 - [`docs/architecture.md`](../../architecture.md) — system-wide overview.
-- [`docs/progress.md`](../../progress.md) — full build history.
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

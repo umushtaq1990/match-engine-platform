@@ -245,4 +245,4 @@ the same group dividing the stream) — not built, since no measured need exists
 - [`docs/adr/0001-decouple-ingestion-migrate-api.md`](../../adr/0001-decouple-ingestion-migrate-api.md) —
   the service-boundary precedent this design follows.
 - [`docs/architecture.md`](../../architecture.md) — system-wide overview.
-- [`docs/progress.md`](../../progress.md) — full build history.
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

@@ -134,4 +134,4 @@ cross-layer scenario — not repeated here to avoid two places drifting out of s
 - [skill-extraction.md](../application-services/skill-extraction.md) — consumes `description_raw`/`skill_synonyms`
 - [matching-engine.md](../application-services/matching-engine.md) — the scoring logic built on this schema
 - [assumptions-register.md](../../assumptions-register.md) — A4 (skill taxonomy scale decision)
-- [progress.md](../../progress.md) — full build history
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

@@ -232,4 +232,4 @@ scale, and not built out further than that.
 - [ingress-and-identity.md](ingress-and-identity.md) — the Gateway/Reverse
   Proxy/Load Balancer and SSO login gate this logging also covers
 - [architecture.md](../architecture.md) — overall system architecture
-- [progress.md](../progress.md) — full build history
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

@@ -78,4 +78,4 @@ checkout/CI run never hits this, since it always creates a new volume.
 
 - [architecture.md](../architecture.md) — overall system overview
 - [production-readiness.md](production-readiness.md) — the gap this closes, and what's still missing
-- [progress.md](../progress.md) — full build history
+- `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository
