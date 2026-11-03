@@ -1,7 +1,7 @@
 # Requirements — JME Portfolio Platform
 
 Status: v0.2 — all 13 phases complete as of 2026-10-29; updated to reflect what's actually built
-vs. still deferred (see `docs/production-readiness.md` for the full honest gap assessment).
+vs. still deferred (see `docs/operations/production-readiness.md` for the full honest gap assessment).
 
 ## Functional requirements
 See `docs/prd.md` Section 5 (Use Cases A–F) for the authoritative list. Summary (✅ built and
@@ -21,7 +21,7 @@ verified, 🟡 explicitly deferred — not forgotten, see `docs/progress.md`):
 
 ## Synthetic dataset size
 **Resolved (Phase 2)**: 2,000 candidates, 1,000 jobs, 150 occupations, 100 courses, 64 curated
-skills — see `docs/data-model.md` for the full measured counts and reproducibility verification.
+skills — see `docs/architecture/data-platform/data-model.md` for the full measured counts and reproducibility verification.
 
 ## Expected recommendation volume
 **Measured (Phase 13)**: see Target latency below — this dataset size ranks ~1,000 jobs per
@@ -34,7 +34,7 @@ number.
 **Measured (Phase 13)**, not just a working target anymore: single-request latency ~0.3s;
 under concurrent load (20 concurrent requests) p50 0.34s / p95 0.57s after fixing a single-
 worker-process bottleneck (was p50 1.33s / p95 1.84s with 1 worker — see
-`docs/production-readiness.md` for the full load test writeup and the fix). This is one
+`docs/operations/production-readiness.md` for the full load test writeup and the fix). This is one
 measurement at one point in time against one endpoint, not a full capacity plan — see that
 doc's "what's still missing" section for what a production latency SLA would still need
 (sustained load, multiple endpoints, production-scale concurrency).
@@ -56,7 +56,7 @@ to base it on.
 - Local: Docker Compose on this dev machine, and a local Kubernetes (`kind`) cluster (Phase 12)
 - Offline/disconnected deployment: validated with zero network access, Phase 10
 - Cloud (Azure): **resolved (Phase 11)** — no real Azure subscription used; an Azure-shaped
-  Kubernetes overlay exists (`k8s/overlays/azure`, `docs/kubernetes.md`) but was never applied to
+  Kubernetes overlay exists (`k8s/overlays/azure`, `docs/operations/kubernetes.md`) but was never applied to
   real infrastructure (see assumption A1)
 
 ## Budget constraints
@@ -71,9 +71,9 @@ security, and architecture checklists, to be revisited and checked off per phase
 ## Known / unknown / assumed
 | Item | Status |
 |---|---|
-| Hardware specs | Known (measured) — `docs/hardware-inventory.md` |
+| Hardware specs | Known (measured) — `docs/operations/infrastructure-sizing.md` |
 | Use cases A–F | Known — defined in PRD; A/B/D/E built and verified, C/F deferred (see `docs/progress.md`) |
-| Dataset scale | Known (measured) — Phase 2, `docs/data-model.md` |
-| Target latency numbers | Known (measured, one scenario) — Phase 13, `docs/production-readiness.md` |
-| Azure availability | Known — resolved Phase 11: no real Azure subscription used, local-only + Azure-shaped K8s overlay (`docs/kubernetes.md`) |
+| Dataset scale | Known (measured) — Phase 2, `docs/architecture/data-platform/data-model.md` |
+| Target latency numbers | Known (measured, one scenario) — Phase 13, `docs/operations/production-readiness.md` |
+| Azure availability | Known — resolved Phase 11: no real Azure subscription used, local-only + Azure-shaped K8s overlay (`docs/operations/kubernetes.md`) |
 | Batch refresh cadence | Still unknown — `jme-dataquality`'s CronJob schedule (`k8s/base/cronjob-dataquality.yaml`) is a placeholder (daily), not a decided real-world cadence; no upstream data source exists to derive one from |

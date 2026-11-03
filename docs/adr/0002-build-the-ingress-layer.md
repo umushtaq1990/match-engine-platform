@@ -19,14 +19,14 @@ diagram claims" and "what runs."
    measured, not assumed") argues against this once the flow is this well-specified.
 2. **Kong or Traefik for the API Gateway.** Real API gateways with plugin ecosystems (rate
    limiting, auth plugins). Rejected for now: this project's existing rate limiting
-   (`app/api/rate_limit.py`, Redis-backed, documented in `docs/redis-infrastructure.md`) and
+   (`app/api/rate_limit.py`, Redis-backed, documented in `docs/architecture/data-platform/redis-infrastructure.md`) and
    auth (`JME_API_KEY`) already live in each service; a gateway-level plugin system would
    duplicate enforcement that already exists elsewhere, for no verified gain at this project's
    scale. Revisit only if JWT validation actually needs to move to the edge (see
-   `docs/ingress-layer.md`'s Roadmap).
+   `docs/architecture/ingress-and-identity.md`'s Roadmap).
 3. **Cloud-managed Load Balancer (Azure Load Balancer / Application Gateway).** The realistic
    production shape (and what `k8s/overlays/azure`'s Ingress already assumes, per
-   `docs/kubernetes.md`) — but this project has an explicit, standing decision never to use a real
+   `docs/operations/kubernetes.md`) — but this project has an explicit, standing decision never to use a real
    Azure subscription (assumption A1, `docs/assumptions-register.md`). An nginx container
    round-robining across Reverse Proxy replicas is the honest local equivalent: it demonstrates
    the *pattern* (a single public entry point load-balancing across backend replicas) without
@@ -51,7 +51,7 @@ diagram claims" and "what runs."
   directly at `api`/`extraction` — this is what makes it a real request path, not decorative
   containers sitting unused next to the real traffic.
 - No JWT/auth logic added at the Gateway in this phase — out of scope, see
-  `docs/ingress-layer.md`'s Known Limitations/Roadmap.
+  `docs/architecture/ingress-and-identity.md`'s Known Limitations/Roadmap.
 
 ## Consequences
 
@@ -59,9 +59,9 @@ diagram claims" and "what runs."
   real requests), transparent Gateway routing (identical responses via the Gateway vs. calling
   `api` directly), and a full websocket upgrade handshake succeeding end-to-end through
   `Load Balancer -> Reverse Proxy -> Frontend` (`101 Switching Protocols`) — see
-  `docs/ingress-layer.md`'s Verification & Results.
+  `docs/architecture/ingress-and-identity.md`'s Verification & Results.
 - The demo's public entry point changes from `http://localhost:8501` (Phase 27) to
-  `http://localhost:8080` (this phase) — `docs/frontend.md` updated accordingly; `:8501` stays
+  `http://localhost:8080` (this phase) — `docs/architecture/frontend.md` updated accordingly; `:8501` stays
   published for direct debugging only.
 - `docs/security-and-threat-model.md` updated: a real reverse proxy exists now, but with no TLS
   certificate — don't overclaim that TLS is solved.
@@ -75,14 +75,14 @@ diagram claims" and "what runs."
   Phase 29's SSO exists), revisit whether plain nginx is still sufficient or whether an
   auth-aware gateway (Kong/Traefik/OpenResty+Lua) becomes worth the added complexity.
 - If this project ever needs a real cloud deployment story beyond the already-stale/documented-only
-  `k8s/overlays/azure` (see `docs/kubernetes.md`'s Known Limitations), Load Balancer should become
+  `k8s/overlays/azure` (see `docs/operations/kubernetes.md`'s Known Limitations), Load Balancer should become
   a real Azure Load Balancer / Application Gateway, not nginx — this ADR's choice is a local-demo
   stand-in, not a recommendation for production.
 
 ## Related Documents
 
-- `docs/ingress-layer.md` — full implementation and verification detail
+- `docs/architecture/ingress-and-identity.md` — full implementation and verification detail
 - `docs/adr/0001-decouple-ingestion-migrate-api.md` — this project's general service-boundary
   pattern (small, purpose-built images over heavier general-purpose tools)
 - `docs/assumptions-register.md` — assumption A1 (no real Azure subscription)
-- `docs/kubernetes.md` — the Azure overlay's own (untested) Ingress/Application Gateway story
+- `docs/operations/kubernetes.md` — the Azure overlay's own (untested) Ingress/Application Gateway story

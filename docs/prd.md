@@ -89,7 +89,7 @@ of known limitations.
 | Observability | CPU/RAM/latency/error-rate/batch-time measurable via Prometheus+Grafana | Phase 9 |
 | Reproducibility | Synthetic dataset and scoring results reproducible from a fixed seed | Re-run and diff, Phase 2+ |
 | Portability | Runs identically from a clean checkout via Docker Compose; disconnected deployment validated | Phase 7, Phase 10 |
-| Resource constraints | Must run within measured dev-machine limits: 16GB RAM, 8GB VRAM, 8c/16t CPU (see `docs/hardware-inventory.md`) | Ongoing, Phase 9 sizing |
+| Resource constraints | Must run within measured dev-machine limits: 16GB RAM, 8GB VRAM, 8c/16t CPU (see `docs/operations/infrastructure-sizing.md`) | Ongoing, Phase 9 sizing |
 
 ## 8. Data Approach
 
@@ -97,12 +97,12 @@ of known limitations.
   taxonomy, courses, certifications, course-to-skill mappings, optional synthetic interactions.
 - Generation is deterministic (fixed seed), with intentional data-quality issues so the matching
   system has real signal to work with (not a trivial dataset).
-- Full schema and generation methodology documented separately in `docs/data-model.md` (Phase 2
+- Full schema and generation methodology documented separately in `docs/architecture/data-platform/data-model.md` (Phase 2
   deliverable).
 
 ## 9. Success Criteria / Definition of Done (v1)
 
-Status as of Phase 13 — see `docs/production-readiness.md` for the full honest assessment behind
+Status as of Phase 13 — see `docs/operations/production-readiness.md` for the full honest assessment behind
 each line (✅ done, 🟡 partial/gap documented, not a silent checkbox):
 
 Functional:
@@ -118,9 +118,9 @@ Engineering:
 
 Operational:
 - [~] CPU/RAM/latency/error-rate are observable (latency/error-rate: yes; CPU/RAM: wired but not
-  rendering on this dev host — see `docs/observability.md`)
+  rendering on this dev host — see `docs/architecture/observability-and-logging.md`)
 - [x] At least one load test has been run and bottlenecks identified (Phase 13 — found and fixed a
-  real single-worker-process bottleneck, see `docs/production-readiness.md`)
+  real single-worker-process bottleneck, see `docs/operations/production-readiness.md`)
 
 Security:
 - [x] No secrets in source control (Phase 7 — `.env`-based, see
@@ -138,8 +138,8 @@ Architecture:
   Real gap: every architecture doc that exists is the per-phase narrative in `docs/progress.md`
   plus module-specific docs, not one consolidated arc42-style view)
 - [~] Infrastructure sizing is backed by measurements, with estimates clearly labeled as such
-  (measurements exist and are real — `docs/hardware-inventory.md`, image sizes throughout
-  `docs/progress.md`, load test numbers in `docs/production-readiness.md` — but scattered across
+  (measurements exist and are real — `docs/operations/infrastructure-sizing.md`, image sizes throughout
+  `docs/progress.md`, load test numbers in `docs/operations/production-readiness.md` — but scattered across
   docs, not consolidated into one `infrastructure-sizing.md` as originally planned)
 
 ## 10. Open Questions / Assumptions Needing Validation
@@ -153,5 +153,5 @@ remain genuinely open (LLM/embedding use for Use Case C: still deferred per A5b,
 
 - This PRD does not describe, reproduce, or depend on any confidential employer system,
   dataset, or architecture document (see Section 2).
-- This is not a claim of production readiness — see `docs/production-readiness.md` (future,
+- This is not a claim of production readiness — see `docs/operations/production-readiness.md` (future,
   Phase 13) for an honest gap assessment before any such claim is made.

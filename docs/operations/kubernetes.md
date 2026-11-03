@@ -150,7 +150,7 @@ Verified end-to-end on a local `kind` cluster, not assumed:
 
 - `docs/architecture.md` — overview and deployment view
 - `docs/progress.md` — full build history
-- `docs/infrastructure-sizing.md` — resource allocation for the `api` Deployment and the Azure cost
+- `docs/operations/infrastructure-sizing.md` — resource allocation for the `api` Deployment and the Azure cost
   estimate derived from this overlay
 - `docs/assumptions-register.md` — assumption A1 (no real Azure subscription)
 - `docs/adr/0001-decouple-ingestion-migrate-api.md` — the service-decoupling decision this

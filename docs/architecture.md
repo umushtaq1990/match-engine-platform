@@ -41,7 +41,7 @@ See the Solution Context diagram. Three human actor types (candidate, employer/r
 engineer) interact with the platform's exposed capabilities; two upstream sources (an HRIS/ATS feed
 and a course catalog, both synthetic) represent what a real integration would look like. The
 platform itself is a single Docker Compose stack locally, with a documented (not provisioned)
-Kubernetes/AKS-shaped deployment target (`docs/kubernetes.md`).
+Kubernetes/AKS-shaped deployment target (`docs/operations/kubernetes.md`).
 
 **Explicitly out of scope** (`docs/prd.md` §6): a public self-service portal, real candidate PII,
 multi-agent orchestration frameworks, and any confidential prior-employer material — a standing
@@ -53,11 +53,11 @@ constraint maintained by discipline throughout (assumption A8).
   recommendations all shipped as deterministic, explainable baselines first. Embeddings (Phase 17)
   and the knowledge graph (Phase 19) were added only once each had a measured case, and Phase 22
   only promoted embeddings-blended ranking to the default after re-verification showed it winning
-  (NDCG 0.878 vs. 0.645) — see `docs/embedding-matching.md`.
+  (NDCG 0.878 vs. 0.645) — see `docs/architecture/data-platform/embedding-matching.md`.
 - **Two-stage retrieve-then-score for anything at scale** (Phase 17): pgvector's ANN index narrows
   thousands-to-millions of candidates/jobs to a few hundred plausible ones before any expensive
   scoring runs — the architectural pattern that makes 1M-candidate/50K-job scale tractable at all
-  (`docs/data-at-scale.md`).
+  (`docs/architecture/data-platform/data-at-scale.md`).
 - **Service boundaries follow bounded contexts, not convenience**: `api` (matching), `analytics`
   (behavioral events), and `extraction` (skill parsing) are independently deployable images with
   their own requirements files and, where it matters, their own database schema — not one monolith
@@ -67,7 +67,7 @@ constraint maintained by discipline throughout (assumption A8).
   capability: a rate-limiting store fixing a measured multi-worker bug, a 1-hour result cache with
   active invalidation on the one real mutation path, and a Streams-based decoupling of an
   instrumentation hook, with retry/dead-letter handling verified against a deliberately simulated
-  consumer crash — `docs/redis-infrastructure.md`.
+  consumer crash — `docs/architecture/data-platform/redis-infrastructure.md`.
 - **Every claim is measured, not assumed** — the single discipline that recurs most across
   `docs/progress.md`: real stress tests (1M candidates/50K jobs), real before/after latency numbers,
   real bugs found by running code rather than reading it (the Phase 20 N+1, the Phase 24 naive-
@@ -79,12 +79,13 @@ See the Technical Architecture diagram for the full picture. By layer:
 
 | Layer | Components | Doc |
 |---|---|---|
-| Demo frontend | `frontend` (Streamlit, separate image — Candidate upload-CV/view-matches and Employer view-matches flows over `api`/`extraction`) | `docs/frontend.md` |
-| Application services | `api` (matching engine, 4 workers), `analytics` (event ingestion + Streams consumer), `extraction` (skill parsing) | `docs/matching-engine.md`, `docs/behavioral-analytics.md`, `docs/skill-extraction.md` |
-| AI/ML serving | `ollama` (qwen2.5:1.5b generation; nomic-embed-text, all-minilm embeddings) | `docs/model-serving.md` |
-| Data platform | PostgreSQL 16 + pgvector (relational + vector), Neo4j 5 + GDS (knowledge graph), Redis 7 (rate limit/cache/streams), SeaweedFS (S3-compatible object storage for CV uploads) | `docs/data-model.md`, `docs/knowledge-graph.md`, `docs/redis-infrastructure.md`, `docs/skill-extraction.md` |
-| MLOps | MLflow (experiment tracking, its own Postgres-backed store) | `docs/evaluation-strategy.md` |
-| Observability | Prometheus, cAdvisor, Grafana | `docs/observability.md` |
+| Ingress / identity | `loadbalancer`/`reverseproxy-1`/`reverseproxy-2`/`gateway` (nginx), `keycloak` (OIDC SSO) | `docs/architecture/ingress-and-identity.md` |
+| Demo frontend | `frontend` (Streamlit, separate image — Candidate upload-CV/view-matches and Employer view-matches flows over `api`/`extraction`) | `docs/architecture/frontend.md` |
+| Application services | `api` (matching engine, 4 workers), `analytics` (event ingestion + Streams consumer), `extraction` (skill parsing) | `docs/architecture/application-services/matching-engine.md`, `docs/architecture/application-services/behavioral-analytics.md`, `docs/architecture/application-services/skill-extraction.md` |
+| AI/ML serving | `ollama` (qwen2.5:1.5b generation; nomic-embed-text, all-minilm embeddings) | `docs/architecture/ai-ml-and-mlops.md` |
+| Data platform | PostgreSQL 16 + pgvector (relational + vector), Neo4j 5 + GDS (knowledge graph), Redis 7 (rate limit/cache/streams), SeaweedFS (S3-compatible object storage for CV uploads) | `docs/architecture/data-platform/data-model.md`, `docs/architecture/data-platform/knowledge-graph.md`, `docs/architecture/data-platform/redis-infrastructure.md`, `docs/architecture/application-services/skill-extraction.md` |
+| MLOps | MLflow (experiment tracking, its own Postgres-backed store) | `docs/architecture/ai-ml-and-mlops.md` |
+| Observability | Prometheus, cAdvisor, Grafana | `docs/architecture/observability-and-logging.md` |
 | Batch/one-off jobs | `migrate`, `seed`, `dataquality`, `analytics-seed`, `embeddings-compute`, `graph-sync`, `graph-cluster`, `graph-cluster-entities`, `extraction-eval`, `ollama-pull` | each phase's own doc |
 
 ## 5. Runtime view — three representative flows
@@ -107,7 +108,7 @@ waiting out the TTL.
 `candidate_id`, uploads a CV (`POST /candidates/{id}/cv` on `extraction`), then requests their job
 matches, which hits the same `GET /candidates/{id}/job-matches` endpoint and cache/ranking path as
 flow A above — the UI is a thin client over the existing APIs, not a new path. An employer picks a
-`job_id` and gets the inverse (`GET /jobs/{id}/candidate-matches`). See `docs/frontend.md`.
+`job_id` and gets the inverse (`GET /jobs/{id}/candidate-matches`). See `docs/architecture/frontend.md`.
 
 **D. The knowledge graph gets rebuilt** (`graph-sync` then `graph-cluster`/`graph-cluster-entities`):
 an idempotent batch ETL mirrors every relational entity/junction table into Neo4j, then native-GDS
@@ -119,7 +120,7 @@ browsable in Neo4j Browser.
 
 Local: Docker Compose, one `name: jme` project, always-on services plus profiled one-off jobs — see
 `docker-compose.yml` directly, it's the authoritative deployment manifest for local dev.
-Kubernetes: verified end-to-end on a local `kind` cluster (`docs/kubernetes.md`), with a
+Kubernetes: verified end-to-end on a local `kind` cluster (`docs/operations/kubernetes.md`), with a
 `kustomize` overlay that produces valid Azure-shaped manifests (AKS pods, Azure Database for
 PostgreSQL, Azure Cache for Redis, ACR, AGIC ingress) — generated and reviewed, never `kubectl
 apply`'d against a real Azure subscription (assumption A1), an honest "designed, not provisioned"
@@ -132,9 +133,9 @@ line this project has held since Phase 11.
 - **Rate limiting**: `slowapi`/`limits`, Redis-backed for `api`/`analytics` (fixing a real measured
   multi-worker bug), in-memory for single-worker `extraction`.
 - **Observability**: Prometheus scrapes every service's `/metrics` plus cAdvisor's container-level
-  CPU/RAM; Grafana visualizes it — `docs/observability.md`.
+  CPU/RAM; Grafana visualizes it — `docs/architecture/observability-and-logging.md`.
 - **Data quality**: an automated report (orphaned FKs, duplicate near-misses, missing fields) run
-  after every seed — `docs/data-quality.md`.
+  after every seed — `docs/architecture/data-platform/data-quality.md`.
 - **Testing discipline**: pure-logic unit tests plus real-transaction-wrapped DB tests (rolled back,
   never touching the real seeded dataset) for anything that queries Postgres; `docker compose`
   smoke tests in CI for anything that needs the full running stack.
@@ -149,13 +150,13 @@ the running decision log for this project. Larger, discrete decisions get their 
 
 | Quality attribute | Target | Measured | Source |
 |---|---|---|---|
-| Single-request latency | Fast enough for interactive use | ~0.3s | `docs/production-readiness.md` |
-| p95 latency under load (20 concurrent) | Bounded, not degrading linearly | 0.57s (after fixing a single-worker bottleneck; was 1.84s) | `docs/production-readiness.md` |
-| Throughput under load | Scale with workers, not plateau | 56.1 req/s (4 workers, up from 14.2 req/s at 1) | `docs/production-readiness.md` |
-| Sustained load (soak) | No degradation over time | Stable p50 ~0.17-0.18s across a 6-minute soak | `docs/production-readiness.md` |
-| Scale target | 1M candidates / 50K jobs | Generated and stress-tested for real: Postgres load 11m40s, Neo4j graph sync 15m50s | `docs/data-at-scale.md` |
-| Rate-limit accuracy under multi-worker load | A true global limit | Fixed from ~122-through to a clean 100/50 split | `docs/redis-infrastructure.md` |
-| Matching quality (NDCG@10) | Beat a naive baseline | Rule-based 0.645, blended 0.878 (now default) | `docs/embedding-matching.md` |
+| Single-request latency | Fast enough for interactive use | ~0.3s | `docs/operations/production-readiness.md` |
+| p95 latency under load (20 concurrent) | Bounded, not degrading linearly | 0.57s (after fixing a single-worker bottleneck; was 1.84s) | `docs/operations/production-readiness.md` |
+| Throughput under load | Scale with workers, not plateau | 56.1 req/s (4 workers, up from 14.2 req/s at 1) | `docs/operations/production-readiness.md` |
+| Sustained load (soak) | No degradation over time | Stable p50 ~0.17-0.18s across a 6-minute soak | `docs/operations/production-readiness.md` |
+| Scale target | 1M candidates / 50K jobs | Generated and stress-tested for real: Postgres load 11m40s, Neo4j graph sync 15m50s | `docs/architecture/data-platform/data-at-scale.md` |
+| Rate-limit accuracy under multi-worker load | A true global limit | Fixed from ~122-through to a clean 100/50 split | `docs/architecture/data-platform/redis-infrastructure.md` |
+| Matching quality (NDCG@10) | Beat a naive baseline | Rule-based 0.645, blended 0.878 (now default) | `docs/architecture/data-platform/embedding-matching.md` |
 
 ## 10. Risks and technical debt (summarized, not hidden)
 
@@ -166,14 +167,14 @@ the running decision log for this project. Larger, discrete decisions get their 
 - No kubelet-cadvisor RBAC scraping in the Kubernetes deployment; HPA is visible but inert without
   `metrics-server`.
 - Candidate/job embeddings and extraction are computed at a sampled scale, not the full 1M/50K
-  population, by design (`docs/data-at-scale.md`).
-- No logging pipeline — observability is metrics-only (Prometheus/cAdvisor/Grafana); a shared,
-  structured logging package across services is planned but not built (`docs/observability.md`).
+  population, by design (`docs/architecture/data-platform/data-at-scale.md`).
+- Centralized logging (Loki/Promtail) covers the always-on services but not yet the batch jobs,
+  which remain print-based (`docs/architecture/observability-and-logging.md`).
 - Kubernetes manifests only cover `api`/`postgres`/`mlflow`/`prometheus`/`grafana` — everything
   added since Phase 11 (`redis`, `extraction`, `ollama`, `neo4j`, `seaweedfs`, `frontend`) has no
-  k8s manifest and no scaling path outside the single Docker Compose container (`docs/kubernetes.md`).
+  k8s manifest and no scaling path outside the single Docker Compose container (`docs/operations/kubernetes.md`).
 
-Full "what's still missing for real production use" accounting: `docs/production-readiness.md`.
+Full "what's still missing for real production use" accounting: `docs/operations/production-readiness.md`.
 
 ## 11. Glossary
 

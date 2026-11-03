@@ -55,7 +55,7 @@ attached server-side so it's never exposed to the browser.
 `http://gateway/extraction`), and the demo itself is reached at `http://localhost:8080` (the Load
 Balancer), not `http://localhost:8501`. `:8501` is still published for direct debugging, same
 convention as every other service, but the real path is
-`candidate -> Load Balancer -> Reverse Proxy -> frontend`. See `docs/ingress-layer.md`.
+`candidate -> Load Balancer -> Reverse Proxy -> frontend`. See `docs/architecture/ingress-and-identity.md`.
 
 ## Verification & Results
 
@@ -71,7 +71,7 @@ POST), and the employer flow calls the correct candidate-matches endpoint.
 image, started it alongside real `api`/`extraction`/`db`/`redis`/`seaweedfs` containers, and
 replicated the exact three HTTP calls the app makes:
 - `POST /candidates/3/cv` (CV upload) → `201`, file landed in both Postgres metadata and object
-  storage (same verification as `docs/skill-extraction.md`'s own CV upload check).
+  storage (same verification as `docs/architecture/application-services/skill-extraction.md`'s own CV upload check).
 - `GET /candidates/3/job-matches` → `200`, 10 ranked results, `X-Ranking-Mode: rule_based_no_embeddings`.
 - `GET /jobs/5/candidate-matches` → `200`, 10 ranked results.
 
@@ -92,7 +92,7 @@ runs the same internal-network check inside the container.
 - No candidate/job creation or editing — only the two read-heavy flows (upload CV, view matches)
   exist. A real portal would need profile management; deliberately out of scope for v1.
 - CV upload and skill extraction are still two separate, un-chained steps (see
-  `docs/skill-extraction.md`'s own Known Limitations) — uploading a CV here does not automatically
+  `docs/architecture/application-services/skill-extraction.md`'s own Known Limitations) — uploading a CV here does not automatically
   extract skills from it or affect the candidate's match scores.
 - `streamlit.testing.v1.AppTest` has no built-in way to simulate an actual file upload, so the
   "upload succeeds and shows a success message" path is verified only against the live stack, not
@@ -101,7 +101,7 @@ runs the same internal-network check inside the container.
 ## Roadmap
 
 - **v2, only if actually useful for the portfolio demo**: parse the uploaded CV's text and run it
-  through `extract_skills` automatically (the same gap `docs/skill-extraction.md` already flags),
+  through `extract_skills` automatically (the same gap `docs/architecture/application-services/skill-extraction.md` already flags),
   surfacing extracted skills in the UI.
 - Simple registration (create a new candidate/job from the UI instead of picking an existing
   `candidate_id`/`job_id`) — would need a real write-path into `app/ingestion/source_models.py`'s
@@ -109,7 +109,7 @@ runs the same internal-network check inside the container.
 
 ## Related Documents
 
-- `docs/skill-extraction.md` — the CV upload endpoint this UI calls
-- `docs/matching-engine.md` — the job-matches/candidate-matches endpoints this UI calls
+- `docs/architecture/application-services/skill-extraction.md` — the CV upload endpoint this UI calls
+- `docs/architecture/application-services/matching-engine.md` — the job-matches/candidate-matches endpoints this UI calls
 - `docs/architecture.md` — overall system architecture
 - `docs/progress.md` — full build history

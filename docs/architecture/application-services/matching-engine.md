@@ -3,7 +3,7 @@
 Status: v1, implemented and verified against real seeded data. Covers Use Cases A, B, D (rule-based
 matching, inverse direction, skill-gap analysis) and E (course recommendations). Use Case F
 (similarity search) is partially covered by the embeddings-blended ranking path — see
-`docs/embedding-matching.md`; Use Case C (free-text extraction) lives in `docs/skill-extraction.md`.
+`docs/architecture/data-platform/embedding-matching.md`; Use Case C (free-text extraction) lives in `docs/architecture/application-services/skill-extraction.md`.
 
 ## Purpose & Scope
 
@@ -11,7 +11,7 @@ The deterministic, explainable rule-based matching baseline this whole project's
 before ML" discipline (assumption A5) is built on: candidate↔job ranking, skill-gap analysis, and
 course recommendations. In scope: scoring, eligibility, skill-gap, course recommendations, and the
 HTTP API exposing them. Out of scope here: the embeddings-blended re-ranking layered on top (its
-own doc, `docs/embedding-matching.md`) and free-text skill extraction (`docs/skill-extraction.md`).
+own doc, `docs/architecture/data-platform/embedding-matching.md`) and free-text skill extraction (`docs/architecture/application-services/skill-extraction.md`).
 
 ## Architecture & Design
 
@@ -31,7 +31,7 @@ total = 0.55 * skill + 0.15 * location + 0.15 * salary + 0.15 * occupation
 ```
 
 **Qualification compatibility is omitted entirely**, not faked — there is no candidate
-qualifications/certifications table yet (see `docs/data-model.md` known limitations). The other
+qualifications/certifications table yet (see `docs/architecture/data-platform/data-model.md` known limitations). The other
 four weights are not re-normalized to compensate; this is itself a documented limitation of the
 formula.
 
@@ -67,7 +67,7 @@ a single job posting. A candidate's `primary_occupation_id` is treated as their 
   `OccupationSkill.importance`, summed over covered skills, normalized by total gap weight).
 - `recommend_courses_for_candidate()` — DB-aware entry point. Raises explicitly (not a silent
   empty result) if the candidate has no `primary_occupation_id` — about 5% of the synthetic
-  dataset by design (see `docs/data-model.md`), so this use case doesn't apply to every candidate.
+  dataset by design (see `docs/architecture/data-platform/data-model.md`), so this use case doesn't apply to every candidate.
 
 **MVP scope, documented**: course recommendations rank individual courses independently. Does not
 solve "minimal set of courses to close the whole gap" (a set-cover problem) — a reasonable future
@@ -82,7 +82,7 @@ internal dataclasses and the wire-format Pydantic schemas (`app/api/schemas.py`)
 
 | Endpoint | Use Case |
 |---|---|
-| `GET /candidates/{id}/job-matches?top_k=&include_ineligible=&mode=` | A (rule-based, or the default embeddings-blended re-ranking — see `docs/embedding-matching.md`) |
+| `GET /candidates/{id}/job-matches?top_k=&include_ineligible=&mode=` | A (rule-based, or the default embeddings-blended re-ranking — see `docs/architecture/data-platform/embedding-matching.md`) |
 | `GET /jobs/{id}/candidate-matches?top_k=&include_ineligible=` | B |
 | `GET /candidates/{id}/course-recommendations?top_k=` | E |
 
@@ -130,26 +130,26 @@ by batch-loading, verified against the original single-entity loaders (`load_job
 `load_candidate_profile`, left unchanged) with zero output mismatches across a 25-row sample of
 each. `rank_jobs_for_candidate` dropped from ~1.95s/candidate (the measurement that originally
 forced a 50-candidate evaluation sample) to ~0.06s/candidate — a ~33x speedup. This is what
-unblocked full-population evaluation (see `docs/evaluation-strategy.md`).
+unblocked full-population evaluation (see `docs/architecture/ai-ml-and-mlops.md`).
 
 ## Known Limitations
 
 - **No qualification compatibility** (see above).
 - **Occupation similarity is exact-match-only** (1.0/0.0) in the rule-based score, not "related
   occupations" — **resolved separately** by the embeddings-blended ranking path, now the default
-  for Use Case A (`docs/embedding-matching.md`); the rule-based score itself is unchanged.
+  for Use Case A (`docs/architecture/data-platform/embedding-matching.md`); the rule-based score itself is unchanged.
 - **Eligibility rule is a conservative placeholder**, not a real legal/licensing constraint model.
 - Ranking currently loads *all* jobs/candidates into memory per call — fine at this scale (verified
   up to the real 1M-candidate/50K-job target via the two-stage retrieve-then-score path for
-  embeddings, see `docs/data-at-scale.md`), but the pure rule-based path itself would need
+  embeddings, see `docs/architecture/data-platform/data-at-scale.md`), but the pure rule-based path itself would need
   pagination/batching at that volume without the ANN narrowing step.
 
 ## Related Documents
 
 - `docs/architecture.md` — overview and runtime views
 - `docs/progress.md` — full build history
-- `docs/embedding-matching.md` — the embeddings-blended ranking path layered on top of this engine
-- `docs/data-model.md` — schema this engine reads from, including the qualifications-table gap
-- `docs/evaluation-strategy.md` — how matching quality is measured
+- `docs/architecture/data-platform/embedding-matching.md` — the embeddings-blended ranking path layered on top of this engine
+- `docs/architecture/data-platform/data-model.md` — schema this engine reads from, including the qualifications-table gap
+- `docs/architecture/ai-ml-and-mlops.md` — how matching quality is measured
 - `docs/security-and-threat-model.md` — the `X-API-Key` auth these endpoints require
 - `docs/assumptions-register.md` — assumption A5 (rule-based before ML)

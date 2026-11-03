@@ -103,12 +103,12 @@ matching system becomes trivial."
 
 - ~~No duplicate-candidate or duplicate-job detection logic yet~~ **RESOLVED (Phase 2 follow-up)**:
   `data_quality.py`'s `duplicate_candidate_emails`/`duplicate_candidate_identity` checks cover
-  this — see `docs/data-quality.md`.
+  this — see `docs/architecture/data-platform/data-quality.md`.
 - No explicit candidate qualifications/certifications table — **not a pending gap, a permanent
   design choice**: `app/matching/scoring.py` deliberately omits qualification compatibility from
   the scoring formula entirely (weights renormalized over the four components that do exist)
   rather than faking it with a placeholder, documented explicitly in that module and in
-  `docs/matching-engine.md`. Would only change if a real qualifications data source existed to
+  `docs/architecture/application-services/matching-engine.md`. Would only change if a real qualifications data source existed to
   model.
 - No interaction/application history table (optional, only relevant if collaborative-filtering
   course recommendations are ever pursued — not scheduled in any phase).
@@ -116,15 +116,15 @@ matching system becomes trivial."
   `description_raw`. As of Phase 16, `description_raw` is generated *from* those same `job_skills`
   rows (weaving each job's real required/preferred skills into its description text, by canonical
   name or synonym — see `app/ingestion/generate_synthetic_data.py`), specifically so free-text
-  skill extraction (Use Case C, `docs/skill-extraction.md`) has real ground truth to extract
+  skill extraction (Use Case C, `docs/architecture/application-services/skill-extraction.md`) has real ground truth to extract
   against. Extraction output is not yet wired back into `job_skills` itself — that's Use Case C's
   own v3, not built yet.
 
 ## Related Documents
 
-- [architecture.md](architecture.md) — overall system overview
+- [architecture.md](../../architecture.md) — overall system overview
 - [data-quality.md](data-quality.md) — automated checks run against this schema
-- [skill-extraction.md](skill-extraction.md) — consumes `description_raw`/`skill_synonyms`
-- [matching-engine.md](matching-engine.md) — the scoring logic built on this schema
-- [assumptions-register.md](assumptions-register.md) — A4 (skill taxonomy scale decision)
-- [progress.md](progress.md) — full build history
+- [skill-extraction.md](../application-services/skill-extraction.md) — consumes `description_raw`/`skill_synonyms`
+- [matching-engine.md](../application-services/matching-engine.md) — the scoring logic built on this schema
+- [assumptions-register.md](../../assumptions-register.md) — A4 (skill taxonomy scale decision)
+- [progress.md](../../progress.md) — full build history

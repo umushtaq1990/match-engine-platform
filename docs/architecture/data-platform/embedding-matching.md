@@ -32,7 +32,7 @@ candidate. Stage 1 is not an optimization trick bolted on later — it's the rea
 is needed at all.
 
 **Out of scope**: an Education dimension (no education/certification table exists in the domain
-model — fabricating one would repeat a mistake `docs/matching-engine.md` already documented
+model — fabricating one would repeat a mistake `docs/architecture/application-services/matching-engine.md` already documented
 avoiding: qualification compatibility, omitted entirely rather than faked). A courses dimension
 (candidate skill-gap → course matching) is deferred as a separate topic (see Roadmap).
 
@@ -44,7 +44,7 @@ build of the same Postgres 16 with the `pgvector` extension pre-installed, not a
 container, no new client library beyond the thin `pgvector` Python package (v0.5.1, a SQLAlchemy
 type adapter), no new backup/security surface. This is the same "prove the simple thing first"
 discipline already applied elsewhere in this project — not a default choice made out of inertia.
-`docs/hardware-inventory.md` already anticipated Qdrant as the "someday, if ever" answer for vector
+`docs/operations/infrastructure-sizing.md` already anticipated Qdrant as the "someday, if ever" answer for vector
 search; it stays the **documented v2 upgrade path**, adopted only if pgvector's HNSW index is
 measured insufficient at a real target scale, not assumed insufficient in advance.
 
@@ -57,7 +57,7 @@ different output sizes" unless the production/experimentation split below is mad
   **one active default model per dimension** at a time. This is what stage 1's ANN retrieval
   actually queries.
 - **Evaluation harness** (mirrors the extraction evaluation pattern exactly, see
-  `docs/skill-extraction.md`): computes embeddings from *alternate* models against the golden
+  `docs/architecture/application-services/skill-extraction.md`): computes embeddings from *alternate* models against the golden
   dataset, stored as plain JSONB (not indexed, not production-served — a small golden set doesn't
   need ANN speed, brute-force cosine comparison is fine), scored, logged to MLflow. Promoting a
   different model to production is an explicit migration (new column width) plus a full re-embed
@@ -84,7 +84,7 @@ duplicate dependencies for no isolation benefit, since this capability's whole p
 the existing matching code, not stand alone. `pgvector` (the Python package) is added only to the
 specific `requirements-*.txt` files that need it (`migrate`, `api`, `extraction`) — not
 `requirements-base.txt` — keeping every other image's size unaffected by a dependency it doesn't
-use, the same per-image-narrow-dependency discipline `docs/data-quality.md` documents for the
+use, the same per-image-narrow-dependency discipline `docs/architecture/data-platform/data-quality.md` documents for the
 `dataquality` image.
 
 **Model progression**: starts at **`all-minilm`** (384-dim, ~45MB — confirmed by directly pulling
@@ -226,7 +226,7 @@ near-miss result was a strong enough signal not to invest further time switching
 
 **Round 3 — re-verification after the synthetic generator changed, and the finding reversed.** The
 synthetic generator later changed (domain-anchored skill sampling instead of uniform-random, to
-give the knowledge graph real clustering signal — see `docs/data-at-scale.md`). Re-ran the exact
+give the knowledge graph real clustering signal — see `docs/architecture/data-platform/data-at-scale.md`). Re-ran the exact
 same three-way comparison against the new data:
 
 | Mode | Precision@10 | Recall@10 | NDCG@10 | MRR |
@@ -259,7 +259,7 @@ compared to `mode=rule_based` against the same candidate.
 - The two-stage architecture was originally **designed for** 100,000-job scale and verified only
   against the project's small dataset (1,000 jobs) at the time this document was first written; it
   has since been verified live at the real 50,000-job target scale with a real N+1 bug found and
-  fixed along the way — see `docs/data-at-scale.md` for that full stress test.
+  fixed along the way — see `docs/architecture/data-platform/data-at-scale.md` for that full stress test.
 - No raw CV-text field exists for candidates — the Overall dimension's candidate-side input is a
   synthesized summary sentence, not real free text, until that gap is addressed.
 - Promoting a new production model requires a migration + full re-embed batch — there's no
@@ -274,11 +274,11 @@ compared to `mode=rule_based` against the same candidate.
 
 ## Related Documents
 
-- `docs/data-at-scale.md` — the domain-anchored data fix that reversed the Round 3 finding, and the
+- `docs/architecture/data-platform/data-at-scale.md` — the domain-anchored data fix that reversed the Round 3 finding, and the
   full 50,000-job stress test
-- `docs/skill-extraction.md` — the skill-embedding cache this reuses, and the evaluation-harness
+- `docs/architecture/application-services/skill-extraction.md` — the skill-embedding cache this reuses, and the evaluation-harness
   pattern this mirrors
-- `docs/matching-engine.md` — the rule-based engine this complements
-- `docs/knowledge-graph.md` — a documented future signal source for this blend (v3+)
+- `docs/architecture/application-services/matching-engine.md` — the rule-based engine this complements
+- `docs/architecture/data-platform/knowledge-graph.md` — a documented future signal source for this blend (v3+)
 - `docs/architecture.md` — overall system architecture
 - `docs/progress.md` — full build history

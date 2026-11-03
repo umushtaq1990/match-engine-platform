@@ -36,7 +36,7 @@ A few decisions shaped most of the work:
 - Matching at scale works in two steps. A pgvector index first narrows thousands or millions of candidates and jobs down to a few hundred plausible ones, and only then does the more expensive scoring run. This was stress-tested for real at 1 million candidates and 50,000 jobs, not just assumed to work.
 - Services are split by business area, not by convenience. The matching API, the behavioral analytics service, and the skill-extraction service are each independently deployable, with their own dependencies, instead of one shared monolith split into folders. The reasoning is written down in [docs/adr/](docs/adr/).
 - Every claim here is backed by a real test. Real stress tests, real before/after latency numbers, and real bugs found by running the code, including a rate-limiting bug, a slow database query, and a timezone bug, are documented rather than just claimed.
-- The ingress and identity layer is real, not just a diagram. A Load Balancer, a Reverse Proxy, and an API Gateway (all nginx) plus a Keycloak-based SSO login sit in front of the app as real containers handling real traffic. Round-robin load balancing, routing, and the full login flow were all verified against the running stack. See [docs/ingress-layer.md](docs/ingress-layer.md) and [docs/sso.md](docs/sso.md).
+- The ingress and identity layer is real, not just a diagram. A Load Balancer, a Reverse Proxy, and an API Gateway (all nginx) plus a Keycloak-based SSO login sit in front of the app as real containers handling real traffic. Round-robin load balancing, routing, and the full login flow were all verified against the running stack. See [docs/architecture/ingress-and-identity.md](docs/architecture/ingress-and-identity.md).
 
 ### Building blocks
 
@@ -64,7 +64,7 @@ These numbers come from real tests, not estimates.
 | Scale target | 1 million candidates and 50,000 jobs, generated and stress-tested for real |
 | Matching quality (NDCG@10) | rule-based 0.645, embeddings-blended 0.878 (now the default) |
 
-Full methodology and raw numbers are in [docs/production-readiness.md](docs/production-readiness.md) and [docs/data-at-scale.md](docs/data-at-scale.md).
+Full methodology and raw numbers are in [docs/operations/production-readiness.md](docs/operations/production-readiness.md) and [docs/architecture/data-platform/data-at-scale.md](docs/architecture/data-platform/data-at-scale.md).
 
 ## Getting started
 
@@ -75,14 +75,15 @@ docker compose run --rm migrate
 docker compose run --rm seed
 ```
 
-Then open `http://localhost:8080`. That is the Load Balancer, the real public entry point (see [docs/ingress-layer.md](docs/ingress-layer.md)). Log in with one of the seeded Keycloak test users (see [docs/sso.md](docs/sso.md)). Grafana, for metrics and logs, is at `http://localhost:3000`. MLflow is at `http://localhost:5000`. For full setup, including the batch jobs and the Kubernetes and offline deployment paths, see [docs/README.md](docs/README.md).
+Then open `http://localhost:8080`. That is the Load Balancer, the real public entry point, and it will prompt for a Keycloak login (see [docs/architecture/ingress-and-identity.md](docs/architecture/ingress-and-identity.md) for both, including the seeded test users). Grafana, for metrics and logs, is at `http://localhost:3000`. MLflow is at `http://localhost:5000`. For full setup, including the batch jobs and the Kubernetes and offline deployment paths, see [docs/README.md](docs/README.md).
 
 ## Repository layout
 
 ```
 app/            FastAPI services, Streamlit frontend, batch jobs, shared logging package
 docker/         Dockerfiles and per-service config (nginx, Keycloak, Loki/Promtail, Grafana, Prometheus)
-docs/           Every design and verification doc, ADRs, architecture diagrams
+docs/           Design/verification docs by architecture layer (docs/architecture/), ops docs
+                (docs/operations/), ADRs (docs/adr/), architecture diagrams (docs/architect/)
 k8s/            Kustomize base and local/Azure-shaped overlays (verified on a local kind cluster)
 alembic/        Database migrations
 tests/          Unit and real-transaction database tests
@@ -97,7 +98,7 @@ This README is the top-level summary. Every subsystem has its own doc under [doc
 - [docs/architecture.md](docs/architecture.md): the consolidated system view
 - [docs/progress.md](docs/progress.md): the full, honest, phase-by-phase build log
 - [docs/assumptions-register.md](docs/assumptions-register.md): every assumption made, why, and what would prove it wrong
-- [docs/production-readiness.md](docs/production-readiness.md): what is genuinely production-ready today, and what is an explicit, documented gap
+- [docs/operations/production-readiness.md](docs/operations/production-readiness.md): what is genuinely production-ready today, and what is an explicit, documented gap
 
 ## Status
 

@@ -40,12 +40,12 @@ snapshot.
 - [x] **Use cases A–F work end-to-end against synthetic data** — A (candidate→job ranking), B
   (job→candidate ranking), D (skill-gap analysis), E (course recommendations) built early. **C
   (free-text skill extraction) and F (embedding-based semantic matching)** were built later — see
-  `docs/skill-extraction.md` and `docs/embedding-matching.md`. Both have a measured baseline
+  `docs/architecture/application-services/skill-extraction.md` and `docs/architecture/data-platform/embedding-matching.md`. Both have a measured baseline
   (extraction F1 0.664 after tuning; embeddings-blended ranking beats rule-based-only on NDCG/MRR
   and was promoted to the default ranking path) rather than a claim of being "solved from day one"
   — see those docs' own Known Limitations.
 - [x] **Ranking quality is evaluated (Precision@K, NDCG@K, MRR), not just "it runs"** — full-
-  population evaluation, results in `docs/evaluation-strategy.md`.
+  population evaluation, results in `docs/architecture/ai-ml-and-mlops.md`.
 
 **Engineering**
 - [x] **Automated tests cover matching logic and API endpoints** — pure matching logic (scoring,
@@ -57,7 +57,7 @@ snapshot.
   these aren't locally-only.
 - [x] **Application runs fully containerized from a clean checkout** — verified via fresh-volume
   teardown/rebuild, and separately verified to run with zero network access
-  (`docs/offline-deployment.md`).
+  (`docs/operations/offline-deployment.md`).
 - [x] **CI pipeline runs lint + tests + build on every change** — verified green end-to-end
   including a fresh-volume smoke test (catches exactly the kind of "works on my machine" gap a
   weaker CI setup would miss — and did, more than once, during early CI setup).
@@ -66,9 +66,9 @@ snapshot.
 - [~] **CPU/RAM/latency/error-rate are observable** — latency and error-rate: yes, fully verified
   (Prometheus + Grafana, multiprocess-aggregated metrics — see Load test below). CPU/RAM: wired
   (cAdvisor in Compose) but **doesn't render data on this Docker Desktop (Windows) dev machine** —
-  a documented environment limitation (`docs/observability.md`), expected to work on a native Linux
+  a documented environment limitation (`docs/architecture/observability-and-logging.md`), expected to work on a native Linux
   host. In Kubernetes, no CPU/RAM metrics path exists yet (kubelet's built-in cAdvisor endpoint
-  needs RBAC wiring not yet done — `docs/kubernetes.md`).
+  needs RBAC wiring not yet done — `docs/operations/kubernetes.md`).
 - [x] **At least one load test has been run and bottlenecks identified** — see below.
 
 ### Load test: a real bottleneck found and fixed
@@ -132,13 +132,13 @@ soak test would run this for hours against a realistic endpoint mix, not one end
 
 - **Security**: static API key (not OAuth2/JWT — an explicit, documented MVP choice for this
   single-tenant project, not an oversight), Redis-backed rate limiting (fixed a real measured
-  multi-worker counter-inflation bug — see `docs/redis-infrastructure.md`), no TLS termination at
+  multi-worker counter-inflation bug — see `docs/architecture/data-platform/redis-infrastructure.md`), no TLS termination at
   the API itself, image/dependency scanning wired (Trivy + Dependabot) but report-only (no
   accepted-baseline triage has happened, so nothing fails the build on a CRITICAL finding yet). Full
   detail: `docs/security-and-threat-model.md`.
-- **Data**: synthetic, reproducible, documented imperfections (`docs/data-model.md`). No real PII
+- **Data**: synthetic, reproducible, documented imperfections (`docs/architecture/data-platform/data-model.md`). No real PII
   ever involved. A `pg_dump`/`pg_restore` backup/restore procedure exists and has been verified
-  end-to-end (`docs/backup-and-recovery.md`) — not automated/scheduled, a real gap for anything
+  end-to-end (`docs/operations/backup-and-recovery.md`) — not automated/scheduled, a real gap for anything
   beyond a disposable dev/demo environment.
 - **Scope and confidentiality**: no confidential prior-employer material was used in design, data,
   or code at any point — maintained by discipline (never opening files outside this project's own
@@ -154,7 +154,7 @@ What "production ready" would still require, beyond this project's scope:
 - TLS and a real authN/authZ model (OAuth2/JWT + roles) if ever multi-tenant.
 - Making the extraction endpoint's own Ollama-calling path non-blocking under real concurrent load
   — the analytics instrumentation hook was already decoupled via Redis Streams
-  (`docs/redis-infrastructure.md`), extraction's own path has not been.
+  (`docs/architecture/data-platform/redis-infrastructure.md`), extraction's own path has not been.
 - kubelet-cadvisor RBAC scraping (or an equivalent) for container CPU/RAM in Kubernetes.
 - A real, hours-long soak test and a real capacity plan — the 3-minute soak above ruled out an
   immediate leak/degradation, not a slow one, and only exercised one endpoint.
@@ -162,7 +162,7 @@ What "production ready" would still require, beyond this project's scope:
   by design, zero cloud cost, but that means zero cloud-specific verification too).
 - Single Redis instance, no HA; cache invalidation only covers the one real mutation trigger that
   exists today (embeddings recompute) — there is still no candidate/job profile mutation API to
-  invalidate a wider set of changes against (`docs/redis-infrastructure.md`).
+  invalidate a wider set of changes against (`docs/architecture/data-platform/redis-infrastructure.md`).
 
 None of this is hidden or assumed away — that's the point of this document existing.
 
@@ -171,9 +171,9 @@ None of this is hidden or assumed away — that's the point of this document exi
 - `docs/architecture.md` — overview and quality requirements summary
 - `docs/progress.md` — full build history
 - `docs/prd.md` — the Definition of Done this assessment scores against
-- `docs/security-and-threat-model.md`, `docs/redis-infrastructure.md` — security/rate-limiting detail
-- `docs/observability.md` — the Prometheus/Grafana/cAdvisor stack referenced above
-- `docs/backup-and-recovery.md` — the backup/restore procedure referenced above
-- `docs/kubernetes.md` — the Kubernetes-specific gaps referenced above
-- `docs/infrastructure-sizing.md` — resource sizing this assessment's load test informed
+- `docs/security-and-threat-model.md`, `docs/architecture/data-platform/redis-infrastructure.md` — security/rate-limiting detail
+- `docs/architecture/observability-and-logging.md` — the Prometheus/Grafana/cAdvisor stack referenced above
+- `docs/operations/backup-and-recovery.md` — the backup/restore procedure referenced above
+- `docs/operations/kubernetes.md` — the Kubernetes-specific gaps referenced above
+- `docs/operations/infrastructure-sizing.md` — resource sizing this assessment's load test informed
 - `docs/assumptions-register.md` — assumption A1 (no real Azure subscription), A6 (latency figures)

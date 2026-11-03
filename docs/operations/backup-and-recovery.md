@@ -1,6 +1,6 @@
 # Backup & Recovery
 
-Status: v1 — implemented and verified end-to-end, closing the gap `docs/production-readiness.md`
+Status: v1 — implemented and verified end-to-end, closing the gap `docs/operations/production-readiness.md`
 flagged: *"No backup/restore procedure has been built or tested for the Postgres volume."*
 
 ## Purpose & Scope

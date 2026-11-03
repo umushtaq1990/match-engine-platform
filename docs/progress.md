@@ -55,7 +55,7 @@ are in place.
   run against a freshly reset schema — identical MD5 both times.
 - **Verified intentional imperfections** match target rates: missing occupation 5.05% (target
   ~5%), missing candidate salary 15.25% (target ~15%), missing job salary 8.9% (target ~10%).
-- `docs/data-model.md` written: full schema reference, the "not recorded vs. assessed absent"
+- `docs/architecture/data-platform/data-model.md` written: full schema reference, the "not recorded vs. assessed absent"
   design rationale, measured dataset counts, known limitations.
 - Assumption A4 resolved and updated in `docs/assumptions-register.md` (deviated from "~300
   skills" placeholder in favor of 64 curated, meaningful skill names — documented reasoning).
@@ -107,7 +107,7 @@ are in place.
 - **Bug caught and fixed during build**: `CheckStatus.pass_` was being stored as the literal
   string `"pass_"` (Python enum member name) instead of `"pass"` (its value) — would have shown
   wrong on a future dashboard. Fixed via `values_callable`; caught by querying actual stored rows,
-  not just trusting the printed output. Full writeup: `docs/data-quality.md`.
+  not just trusting the printed output. Full writeup: `docs/architecture/data-platform/data-quality.md`.
 - 6 new unit tests for the pass/warn/fail threshold logic (8 total tests now passing).
 
 ## Test layout — mirror source packages, not Docker images (2026-10-29)
@@ -141,7 +141,7 @@ tests run less often).
 - **Verified against the real seeded database**, not just unit tests: ran
   `rank_jobs_for_candidate` and `rank_candidates_for_job` against live Postgres, inspected actual
   scores/explanations/skill-gap output for real candidates and jobs.
-- `docs/matching-engine.md` written: formula, eligibility rule, skill-gap logic, verified
+- `docs/architecture/application-services/matching-engine.md` written: formula, eligibility rule, skill-gap logic, verified
   example output, known limitations (N+1 queries, no qualification compatibility yet, no
   semantic matching yet, eligibility rule is a placeholder).
 
@@ -167,7 +167,7 @@ tests run less often).
   course recommendations; top result (Java Bootcamp) correctly outranked a course where the same
   skill was only a minor tangential match (React Fundamentals) — a real demonstration of the
   scoring discounting weak matches on intentionally noisy synthetic course data.
-- `docs/matching-engine.md` updated with full design + verified example output.
+- `docs/architecture/application-services/matching-engine.md` updated with full design + verified example output.
 - Candidates without a `primary_occupation_id` (~5% by design) explicitly cannot use this use
   case yet — raises rather than silently returning an empty/misleading result.
 
@@ -189,7 +189,7 @@ see assumption A5b in `docs/assumptions-register.md`.
 - `app/evaluation/metrics.py`: Precision@K, Recall@K, NDCG@K, MRR — pure functions, 14 unit tests.
 - `app/evaluation/ground_truth.py`: occupation-alignment ground truth, deliberately independent
   of the scoring formula being evaluated (avoids circular evaluation — see
-  `docs/evaluation-strategy.md` for the reasoning). 1,899/2,000 candidates have usable ground
+  `docs/architecture/ai-ml-and-mlops.md` for the reasoning). 1,899/2,000 candidates have usable ground
   truth (101 excluded, matching the known ~5% missing-occupation rate almost exactly).
 - `app/evaluation/eval_models.py` + migration: `evaluation_runs`/`evaluation_candidate_results`,
   same two-level historization pattern as data quality.
@@ -201,7 +201,7 @@ see assumption A5b in `docs/assumptions-register.md`.
 - **Baseline established, run #1**: Precision@10=0.47, Recall@10=0.7458, NDCG@10=0.7283,
   MRR=0.8029, against current weights (skill=0.55, location=0.15, salary=0.15, occupation=0.15).
   Verified persisted correctly in both tables.
-- `docs/evaluation-strategy.md` written: full methodology, honest reading of the baseline
+- `docs/architecture/ai-ml-and-mlops.md` written: full methodology, honest reading of the baseline
   numbers, known limitations.
 
 ### Explicitly not done in this phase
@@ -275,7 +275,7 @@ see assumption A5b in `docs/assumptions-register.md`.
   401 with no key, 401 with a wrong key, real ranked job matches (with correct skill-gap/
   explanation output) for a real candidate, real candidate matches for a real job, real course
   recommendations, and a 404 for a nonexistent candidate id.
-- `docs/matching-engine.md` updated with the new "Exposed via API" section and endpoint table.
+- `docs/architecture/application-services/matching-engine.md` updated with the new "Exposed via API" section and endpoint table.
 
 ### Explicitly deferred
 - OAuth2/JWT, per-caller identity, rate limiting, TLS — not needed for a local single-tenant
@@ -432,7 +432,7 @@ runner.
   below) and MLflow (`eval-run-1`, status `FINISHED`).
 - `app/evaluation/run_evaluation.py`'s `DEFAULT_SAMPLE_SIZE` changed from 50 to 2000 (full
   population) — the Phase 4 cap is no longer a necessary compromise.
-- `docs/matching-engine.md`, `docs/evaluation-strategy.md`, `app/matching/rank.py` all updated to
+- `docs/architecture/application-services/matching-engine.md`, `docs/architecture/ai-ml-and-mlops.md`, `app/matching/rank.py` all updated to
   reflect the fix and the new measured numbers, replacing the old N+1/sample-of-50 caveats.
 
 ### Note on MLflow/Postgres run numbering
@@ -461,7 +461,7 @@ bug. Noted here only so the run numbering in this log doesn't look inconsistent 
 - `.github/workflows/ci.yml`'s `fresh-volume-smoke-test` extended to also start
   prometheus/cadvisor/grafana and verify Prometheus actually scrapes the api target — so a broken
   `prometheus.yml` or Grafana provisioning file would fail CI, not just go unnoticed.
-- `docs/observability.md` written.
+- `docs/architecture/observability-and-logging.md` written.
 
 ### Known limitation found and documented, not hidden
 cAdvisor's own health and Prometheus's scrape of it both report fine, but per-container metric
@@ -506,7 +506,7 @@ honest deliverable. Recorded as the resolution to assumption A1 in `docs/assumpt
   anything's missing) — db → migrate (3/3 migrations) → seed (2000/1000 rows) → dataquality
   (10/10 checks) → api/mlflow/prometheus/cadvisor/grafana (all healthy, authenticated API call
   returned 200, Prometheus scrape targets `up`). Nothing reached the network.
-- `docs/offline-deployment.md` written, including the honest limitation: this proves Compose's
+- `docs/operations/offline-deployment.md` written, including the honest limitation: this proves Compose's
   pull logic never fires, not literal NIC-disconnected hardware (none available), and Docker
   Engine/Compose itself is the one assumed prerequisite that can't be bundled.
 - Not automated in CI — a 756MB artifact plus double image handling (delete + reload) isn't worth
@@ -561,7 +561,7 @@ decision gate (assumption A1), not a build phase, and it's now resolved and reco
     (10/10 checks passed), api Deployment 2/2 running with a real authenticated call through the
     Service returning identical output to the Compose version, Prometheus scrape target `up`,
     Grafana dashboard provisioned correctly (same verification method as Phase 9).
-- `docs/kubernetes.md` written: full layout, secrets generation, the Azure-shaped overlay diff
+- `docs/operations/kubernetes.md` written: full layout, secrets generation, the Azure-shaped overlay diff
   table, why there's no separate cAdvisor workload in K8s (kubelet already exposes it — documented
   as a known gap that the RBAC-based scrape wiring wasn't built, not silently omitted), known gaps
   (HPA is a no-op without `metrics-server`, confirmed via `kubectl get hpa` showing `<unknown>`).
@@ -570,7 +570,7 @@ decision gate (assumption A1), not a build phase, and it's now resolved and reco
 - Azure overlay never applied to a real AKS cluster (per the resolved A1 decision) — `kubectl
   kustomize` output verified valid, deployment itself not verified.
 - `metrics-server` not installed — HPA is demonstrated, not functionally verified.
-- kubelet-cadvisor RBAC scraping not wired (documented reasoning in `docs/kubernetes.md`).
+- kubelet-cadvisor RBAC scraping not wired (documented reasoning in `docs/operations/kubernetes.md`).
 
 ### Phase 12 — status: COMPLETE
 
@@ -597,7 +597,7 @@ decision gate (assumption A1), not a build phase, and it's now resolved and reco
   restart of the `jme-api` Deployment — zero-downtime, confirmed by a real authenticated call
   succeeding immediately after, demonstrating the actual payoff of running 2 replicas behind a
   Service (not just a theoretical benefit).
-- `docs/production-readiness.md` written: the full, honest Definition-of-Done scorecard (✅/🟡 per
+- `docs/operations/production-readiness.md` written: the full, honest Definition-of-Done scorecard (✅/🟡 per
   item, not silently checked), load test results and the two bugs found/fixed, a summary of every
   other phase's documented gaps in one place, and what's still missing before any real
   "production ready" claim. `docs/prd.md`'s own DoD checklist updated to match — no item marked
@@ -628,7 +628,7 @@ A deliberate post-v1 addition, not part of the original 13-phase plan: tracks ca
 engagement (impressions, clicks, applies) so a future phase can cluster active vs. passive job
 seekers/employers — the same rule-based-before-ML discipline already governing the matching
 engine itself (`docs/assumptions-register.md` A5). Full design written and reviewed *before* any
-code (`docs/behavioral-analytics.md`), then built to match it exactly — no design changes were
+code (`docs/architecture/application-services/behavioral-analytics.md`), then built to match it exactly — no design changes were
 needed once real execution started.
 
 **Built and verified, not assumed**:
@@ -664,7 +664,7 @@ needed once real execution started.
   67 total passing. No bugs found during this build — the design doc's review-before-build
   discipline paid off directly here.
 
-**Explicitly not done in this phase** (see `docs/behavioral-analytics.md`'s phased roadmap): no
+**Explicitly not done in this phase** (see `docs/architecture/application-services/behavioral-analytics.md`'s phased roadmap): no
 rule-based segmentation (v2), no ML clustering (v3), no streaming ingestion, no real privacy/
 consent/retention mechanism (acceptable only because all data is synthetic — assumption A10).
 
@@ -675,7 +675,7 @@ consent/retention mechanism (acceptable only because all data is synthetic — a
 Another deliberate post-v1 addition: a shared Ollama service so future work (the long-deferred Use
 Case C free-text extraction, Use Case F similarity search) has a model-serving layer to call,
 without every consumer loading its own copy of a model into memory. Design written and reviewed
-first (`docs/model-serving.md`), built to match it exactly.
+first (`docs/architecture/ai-ml-and-mlops.md`), built to match it exactly.
 
 **Built and verified, not assumed**:
 - `ollama` service added to `docker-compose.yml` — official `ollama/ollama:0.40.13` image (pinned
@@ -690,7 +690,7 @@ first (`docs/model-serving.md`), built to match it exactly.
   vector (cold ~11s, warm ~1.2s).
 - **Memory footprint measured against real hardware**, not estimated: `docker stats` showed
   ~2.56GiB for the `ollama` container with both models loaded — comfortably inside the ~7.41GiB
-  Docker VM allocation already running 7 other services (`docs/hardware-inventory.md`).
+  Docker VM allocation already running 7 other services (`docs/operations/infrastructure-sizing.md`).
   CPU-only, as designed — no GPU passthrough attempted or needed at this scale.
 - Wired into CI (`fresh-volume-smoke-test`): starts `ollama` from nothing, runs the real pull job,
   confirms both models present, makes one real generate call and one real embeddings call — same
@@ -708,7 +708,7 @@ there's real consumer traffic worth measuring).
 
 The first real consumer of Phase 15's model-serving layer, and the long-deferred Use Case C
 (assumption A5b: skip the rule-based baseline, go straight to NLP/embedding-based extraction).
-Design written and reviewed first (`docs/skill-extraction.md`), built to match it — with one real
+Design written and reviewed first (`docs/architecture/application-services/skill-extraction.md`), built to match it — with one real
 bug found and fixed along the way, not silently papered over.
 
 **Built and verified, not assumed**:
@@ -773,7 +773,7 @@ ANN index, not brute-force, is what makes that affordable at all.
   new LLM calls), Experience and Overall (synthesized text from real structured fields, one
   embedding call each). Education dimension explicitly not built — no real data source, same
   discipline as the qualification-compatibility omission already documented in
-  `docs/matching-engine.md`.
+  `docs/architecture/application-services/matching-engine.md`.
 - Computed real embeddings for all 1,000 jobs and 80 candidates with `all-minilm` (384-dim).
   Invalidation verified, not assumed: a second run against the same data correctly skipped all 240
   already-computed rows via `source_hash`, recomputing zero.
@@ -805,7 +805,7 @@ Qdrant migration (not triggered — no measured pgvector limitation exists).
 
 ## Phase 18 — Closing the practically closeable production-readiness gaps (2026-10-30)
 
-In response to "anything missing, do we need Redis?" — audited `docs/production-readiness.md`'s
+In response to "anything missing, do we need Redis?" — audited `docs/operations/production-readiness.md`'s
 gap list, separated genuine engineering gaps from deliberate scope boundaries (real secrets
 manager, TLS, OAuth2/JWT, real Azure deployment — none of which this project needs to fake or pay
 for), and closed every practically closeable one: automated DB-touching tests, backup/restore,
@@ -832,7 +832,7 @@ verified only manually):
 
 **2. Backup/restore for Postgres** (previously nonexistent):
 - `scripts/backup_db.sh` / `scripts/restore_db.sh` (`pg_dump -Fc` / `pg_restore`, both databases:
-  `jme` and `mlflow`). `docs/backup-and-recovery.md` written with a real verified cycle: backed up
+  `jme` and `mlflow`). `docs/operations/backup-and-recovery.md` written with a real verified cycle: backed up
   the real dev database, restored into a disposable target (never risking the real one), and
   confirmed exact row-count matches across core, derived, and cross-schema tables, plus the
   pgvector extension and its HNSW index surviving the restore intact.
@@ -853,7 +853,7 @@ verified only manually):
   actually *overlapped* (best achievable 92%, no single threshold separates all 12). `all-minilm`
   stays the production default by measurement, confirming rather than overturning the original
   choice — itself a real result worth documenting, not a null one. A full ranking-level multi-model
-  comparison was scoped out (would need the ad-hoc brute-force path `docs/embedding-matching.md`
+  comparison was scoped out (would need the ad-hoc brute-force path `docs/architecture/data-platform/embedding-matching.md`
   already anticipated, since different-width vectors can't share the production column) — not
   built this pass, the near-miss result was decisive enough on its own.
 
@@ -1008,7 +1008,7 @@ remain open, documented next steps.
 
 Second half of the user's own two-part request ("then i need redis as well ... redis will be
 required to handle asynchronous calls etc and storing active user session results for atleast 1
-hour"). Design doc written and reviewed first (`docs/redis-infrastructure.md`), same discipline as
+hour"). Design doc written and reviewed first (`docs/architecture/data-platform/redis-infrastructure.md`), same discipline as
 every prior phase — three independently-scoped use cases, not "add Redis" as a vague capability.
 
 **Built and verified against real running containers, not assumed from the design**:
@@ -1056,14 +1056,14 @@ every prior phase — three independently-scoped use cases, not "add Redis" as a
 in v1, a documented staleness bound), consumer-group failure handling for a crashed consumer
 (`XPENDING`/claim logic — basic ack-after-write only), and splitting cache/broker onto separate
 Redis instances — all deferred to a v2, only if actually needed (see
-`docs/redis-infrastructure.md` "Known limitations").
+`docs/architecture/data-platform/redis-infrastructure.md` "Known limitations").
 
 ### Phase 21 — status: v1 COMPLETE (all three use cases built and independently verified against real containers)
 
 ## Phase 22 — promote blended ranking to the default path (2026-10-31)
 
 First of four user-selected deferred items to complete in this round. Phase 20's re-verification
-(docs/embedding-matching.md) measured blended NDCG 0.878 vs. rule-based's 0.645 — the exact case
+(docs/architecture/data-platform/embedding-matching.md) measured blended NDCG 0.878 vs. rule-based's 0.645 — the exact case
 the v2 roadmap entry had been waiting for. This phase makes the promotion decision explicit rather
 than leaving a stronger-measured option undeployed.
 
@@ -1117,7 +1117,7 @@ this scale, pruning it both shrinks and sharpens the graph.
 
 **The real finding**: clustering candidates and clustering jobs — two independent runs over two
 different graphs — both converged on exactly 4 communities, the same 4 domains Phase 20's generator
-anchors skill assignment to (`docs/data-at-scale.md`), recovered purely from co-skill patterns with
+anchors skill assignment to (`docs/architecture/data-platform/data-at-scale.md`), recovered purely from co-skill patterns with
 no domain label ever written to the database. The clearest demonstration yet that the domain-
 anchoring fix produces structure a graph algorithm can actually discover.
 
@@ -1171,7 +1171,7 @@ real HTTP endpoint.
 
 ## Phase 25 — Redis v2 hardening: cache invalidation + consumer dead-letter (2026-10-31)
 
-Last of four user-selected deferred items, closing both gaps `docs/redis-infrastructure.md`
+Last of four user-selected deferred items, closing both gaps `docs/architecture/data-platform/redis-infrastructure.md`
 explicitly flagged as "Known limitations (v1)".
 
 **Active cache invalidation, scoped honestly**: there is still no candidate/job profile mutation
@@ -1214,7 +1214,7 @@ that every phase has produced something real to consolidate.
   requirements measured against targets, risks, glossary) anchored by the two draw.io diagrams
   built earlier this session (`docs/architect/`). Links out to every deep-dive doc rather than
   duplicating content, consistent with this project's own "consolidate, don't fragment" philosophy.
-- **`docs/infrastructure-sizing.md`**: absorbs `hardware-inventory.md` as its measured baseline,
+- **`docs/operations/infrastructure-sizing.md`**: absorbs `hardware-inventory.md` as its measured baseline,
   adds a fresh real measurement (`docker stats --no-stream` against the entire stack running
   simultaneously — 11 services, ~3.93 GiB idle / ~6.4 GiB with Ollama's two models loaded, against
   a ~7.41 GiB WSL2 ceiling), the Phase 20 scale-test numbers, Kubernetes resource allocation (only
@@ -1297,7 +1297,7 @@ Docker network from inside the running container itself, not just via the host-m
 (role switching, button clicks, mocked HTTP responses, error paths, disabled-upload-with-no-file),
 192 total passing. CI's `build-and-scan` matrix extended with the `frontend` image; a new smoke-test
 step in `fresh-volume-smoke-test` starts it after `api`/`extraction` are healthy and runs the same
-internal-network check inside the container. Full detail: `docs/frontend.md`.
+internal-network check inside the container. Full detail: `docs/architecture/frontend.md`.
 
 ### Phase 27 — status: COMPLETE (minimal Streamlit frontend built, containerized, and verified live for both Candidate and Employer flows)
 
@@ -1329,7 +1329,7 @@ websocket connection Streamlit's live UI depends on, end-to-end.
 **A real bug found and fixed while verifying this**: the new healthchecks initially targeted
 `http://localhost/...`, which failed with "connection refused" — Alpine's `wget` resolves
 `localhost` to `::1` first, but nginx here only binds `0.0.0.0:80` (IPv4). Fixed by healthchecking
-`127.0.0.1` explicitly. Full detail: `docs/ingress-layer.md`, `docs/adr/0002-build-the-ingress-layer.md`.
+`127.0.0.1` explicitly. Full detail: `docs/architecture/ingress-and-identity.md`, `docs/adr/0002-build-the-ingress-layer.md`.
 
 ### Phase 28 — status: COMPLETE (Load Balancer/Reverse Proxy/API Gateway built as real nginx containers, wired into the actual frontend↔API request path, round-robin and websocket passthrough verified end-to-end)
 
@@ -1363,13 +1363,13 @@ real browsers specifically treat `http://localhost` as a secure context and send
 documented browser exception for local dev). Confirmed by re-running the verification with a
 cookie-handling shim matching that real browser behavior. Practical implication: this login flow
 only works reliably at the literal hostname `localhost`, not `127.0.0.1` or any other hostname.
-Full detail: `docs/sso.md`.
+Full detail: `docs/architecture/ingress-and-identity.md`.
 
 ### Phase 29 — status: COMPLETE (real Keycloak-backed OIDC login gate built and verified end-to-end against a live Keycloak and the real running Frontend container)
 
 ## Phase 30 — centralized structured logging + Loki (2026-11-02)
 
-`docs/observability.md` flagged a real gap: this stack was metrics-only, no application logs were
+`docs/architecture/observability-and-logging.md` flagged a real gap: this stack was metrics-only, no application logs were
 aggregated or correlated anywhere. This phase closes it: a shared logging package every always-on
 service imports, plus Loki/Promtail so those logs are actually searchable through Grafana.
 
@@ -1388,9 +1388,46 @@ Prometheus one.
 `api`, then queried Loki directly and got back the exact real structured JSON lines
 `app/common/request_logging.py` emits (`{"timestamp": ..., "service": "api", "logger": "request",
 "message": "GET /health -> 200 (0.66ms)", "request_id": "..."}`); re-confirmed the identical query
-proxied *through Grafana's own datasource API* (same verification standard `docs/observability.md`
+proxied *through Grafana's own datasource API* (same verification standard `docs/architecture/observability-and-logging.md`
 already used for Prometheus), not just directly against Loki. Full project test suite re-run after
 wiring this in: 192 passing, no regressions (3 pre-existing unrelated local-dev-venv DB failures
-noted but not caused by this change). Full detail: `docs/logging.md`.
+noted but not caused by this change). Full detail: `docs/architecture/observability-and-logging.md`.
 
 ### Phase 30 — status: COMPLETE (shared JSON logging package built, wired into all four always-on services, Loki/Promtail verified actually receiving and serving real log lines through Grafana)
+
+## Phase 31 — documentation restructured into architecture layers (2026-11-03)
+
+Through Phase 30, every doc lived flat under `docs/`, grouped only informally by a table in
+`architecture.md`. That worked up to about 20 files; past that, finding "how does rate limiting
+work" meant scanning a long alphabetical list with no sense of which layer it belonged to. This
+phase is pure reorganization: no application code changed.
+
+**Restructured** `docs/` into: `docs/architecture/` (one Level-3 doc per architecture layer —
+Ingress & Identity, Frontend, Application Services, AI/ML & MLOps, Data Platform, Observability &
+Logging — each with its own diagram cropped from the master Technical Architecture diagram, and
+Level-4 per-container docs nested underneath where a layer has real internal complexity:
+`application-services/` holds `matching-engine.md`/`behavioral-analytics.md`/`skill-extraction.md`;
+`data-platform/` holds `data-model.md`/`knowledge-graph.md`/`redis-infrastructure.md`/
+`embedding-matching.md`/`data-quality.md`/`data-at-scale.md`), `docs/operations/` (deployment/ops
+concerns: `kubernetes.md`, `offline-deployment.md`, `backup-and-recovery.md`,
+`infrastructure-sizing.md`, `production-readiness.md`), and project-wide docs kept at the top level
+(`prd.md`, `requirements.md`, `assumptions-register.md`, `security-and-threat-model.md`,
+`architecture.md`, `progress.md`, `README.md`, `adr/`).
+
+**Merged outright** where two docs were really one story split across two files:
+`ingress-layer.md` + `sso.md` into `ingress-and-identity.md`; `observability.md` + `logging.md` into
+`observability-and-logging.md`; `model-serving.md` + `evaluation-strategy.md` into
+`ai-ml-and-mlops.md`. `hardware-inventory.md`'s raw capture was folded into
+`infrastructure-sizing.md` as an appendix and the standalone file deleted (it was already marked
+superseded). Net effect: flat `docs/` top level dropped from ~29 files to 7 files plus 3 subfolders.
+
+**Verified**: every cross-reference to a moved/merged/deleted doc path was found via `grep -rn`
+across `docs/` and root `README.md` and updated; a final sweep confirmed zero remaining references
+to any old path. No file under `app/`, `docker/`, `.github/`, `k8s/`, or `scripts/` was touched.
+
+**Known gap**: the master `docs/architect/JME_Technical_Architecture.drawio` diagram's per-box text
+labels (e.g. the Loki box still says "docs/logging.md") were not updated in this phase — editing
+that file's layout-sensitive XML was out of scope here given how much hand-editing it's had this
+project; flagged as a follow-up, not silently left inconsistent.
+
+### Phase 31 — status: COMPLETE (docs/ reorganized into a layer hierarchy, cross-references verified with zero stale links, no code touched)

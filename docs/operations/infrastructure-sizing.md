@@ -1,9 +1,9 @@
 # Infrastructure Sizing
 
-Absorbs the earlier `hardware-inventory.md` measurement as its baseline input, plus a cost section
-derived directly from the sizing below (no separate `cost-model.md` — cost without sizing is a
-guess). Same discipline as everywhere else in this project: measured against the real running
-stack, not estimated from first principles.
+Absorbs the original hardware-inventory measurement as its baseline input (see the appendix at the
+bottom of this doc for the full raw capture), plus a cost section derived directly from the sizing
+below (no separate `cost-model.md` — cost without sizing is a guess). Same discipline as everywhere
+else in this project: measured against the real running stack, not estimated from first principles.
 
 ## Dev-machine baseline (measured)
 
@@ -11,12 +11,11 @@ stack, not estimated from first principles.
 |---|---|
 | CPU | AMD Ryzen 7 250 (8 cores / 16 logical processors) |
 | RAM | ~16 GB total; Docker Desktop's WSL2 VM allocates 16 CPUs / ~7.41 GiB to containers |
-| GPU | NVIDIA RTX 5060 Laptop, 8151 MiB VRAM (unused — Ollama runs CPU inference; see `docs/model-serving.md`) |
+| GPU | NVIDIA RTX 5060 Laptop, 8151 MiB VRAM (unused — Ollama runs CPU inference; see `docs/architecture/ai-ml-and-mlops.md`) |
 | Disk | ~593 GB free |
 
-Captured 2026-10-28 via PowerShell/WMI/`nvidia-smi` — see git history for the original
-`hardware-inventory.md` if the raw capture is needed; this document is now the authoritative sizing
-reference.
+Captured 2026-10-28 via PowerShell/WMI/`nvidia-smi`; this document is the authoritative sizing
+reference (see the appendix below for the original raw capture this was built from).
 
 ## Per-service memory footprint — measured, full stack running
 
@@ -27,7 +26,7 @@ idle (no model loaded mid-inference at capture time):
 |---|---|---|
 | `mlflow` | 1.79% | 2.17 GiB |
 | `neo4j` | 1.07% | 1.05 GiB |
-| `ollama` | 0.00% | 110 MiB (idle; **~2.56 GiB measured with two models loaded mid-inference**, see `docs/model-serving.md`) |
+| `ollama` | 0.00% | 110 MiB (idle; **~2.56 GiB measured with two models loaded mid-inference**, see `docs/architecture/ai-ml-and-mlops.md`) |
 | `api` | 0.74% | 286 MiB |
 | `analytics` | 0.70% | 63 MiB |
 | `extraction` | 0.14% | 61 MiB |
@@ -52,12 +51,12 @@ candidate for profiling if MLflow were ever memory-constrained in practice).
 | Default (dev/CI) | 2,000 | 1,000 | Full pipeline (seed → embeddings → graph sync → clustering) runs in seconds-to-low-minutes; this is what every test suite and CI run exercises |
 | Target scale (Phase 20 stress test) | 1,000,000 | 50,000 | Postgres bulk-insert generation: **11m40s** for ~7.4M total rows. Neo4j graph sync: **15m50s** for ~1.06M nodes / ~6.4M edges. Semantic matching endpoint (after fixing a real N+1): **1.2s** at full 50K-job scale, vs. rule-based's **10.7s** — the concrete case for Phase 17's two-stage retrieve-then-score architecture |
 
-Full methodology and every number: `docs/data-at-scale.md`.
+Full methodology and every number: `docs/architecture/data-platform/data-at-scale.md`.
 
 ## Kubernetes resource allocation (local `kind`, verified; Azure overlay documented, not deployed)
 
 Only `api`'s Deployment has explicit CPU/memory requests and limits set — the one component load-
-tested enough to size with any confidence (`docs/production-readiness.md`). Other components rely
+tested enough to size with any confidence (`docs/operations/production-readiness.md`). Other components rely
 on cluster/namespace defaults, a real, documented gap, not an oversight:
 
 | Resource | Requests | Limits |
@@ -70,7 +69,7 @@ from 14.2 → 56.1 req/s moving from 1 to 4 uvicorn workers on this dev machine'
 500m CPU per pod with 2–5 replicas via HPA approximates spreading that same worker-level
 parallelism across pods instead of within one, a reasonable starting point, not a number derived
 from a Kubernetes-specific load test (none was run against the `kind` cluster — see
-`docs/kubernetes.md` "Known gaps").
+`docs/operations/kubernetes.md` "Known gaps").
 
 ## Cost — illustrative, derived from the sizing above, not a quote
 
@@ -98,7 +97,32 @@ request volume, redundancy requirements, and committed-use pricing.
 ## What would change this sizing
 
 - Running `embeddings-compute`/`extraction-eval` against the full 1M/50K population (currently
-  sampled by design, `docs/data-at-scale.md`) would meaningfully increase Ollama CPU time and
-  wall-clock duration — not yet measured, since the current approach deliberately doesn't need it.
+  sampled by design, `docs/architecture/data-platform/data-at-scale.md`) would meaningfully increase
+  Ollama CPU time and wall-clock duration — not yet measured, since the current approach deliberately
+  doesn't need it.
 - Real production traffic volume (unmeasured — this project has no real users) would be the actual
   driver of `api`'s replica count and `db`'s instance size, not this synthetic dataset's load test.
+
+## Appendix — original hardware inventory (raw capture)
+
+Captured 2026-10-28 via PowerShell/WMI/`nvidia-smi` — measured, not estimated. This is the original
+raw capture this document's baseline was built from; kept here rather than only in git history.
+Predates Phase 15+ (Ollama, pgvector, Neo4j, Redis), so the "Implications" notes below are historical
+context, not current guidance — the sections above are current.
+
+| Item | Value |
+|---|---|
+| OS | Windows 11 Home, build 26200, 64-bit |
+| CPU | AMD Ryzen 7 250 (8 cores / 16 logical processors) |
+| RAM | ~16 GB total |
+| GPU (dedicated) | NVIDIA GeForce RTX 5060 Laptop GPU, 8151 MiB VRAM, driver 595.95 |
+| GPU (integrated) | AMD Radeon 780M |
+| Disk (C:) | ~593 GB free |
+| WSL2 | Installed, running (`docker-desktop` distro, WSL version 2) |
+| Docker Desktop | v29.4.2, Linux containers, engine reports 16 CPUs / ~7.41 GiB RAM allocated to the VM |
+| Azure access | Undecided as of project start — resolved Phase 11: no real Azure subscription used (see `docs/assumptions-register.md` A1) |
+
+Implications noted at the time: 16 GB host RAM was expected to be the binding constraint, not GPU
+VRAM; 8 GB VRAM would support small quantized local LLMs comfortably; plenty of free disk for
+container images. All three held up in practice once Ollama/pgvector/Neo4j/Redis were actually
+added — see the sections above for the real, current numbers.

@@ -55,7 +55,7 @@ candidate/job *profile* mutation endpoint anywhere in this API (extraction's `/e
 read-only; data only changes via the seed generator or `embeddings-compute`) — so "invalidate on
 profile change" can't be built against a trigger that doesn't exist, honestly, not papered over.
 What *does* change a candidate's job-matches ranking today is `embeddings-compute` recomputing
-their embeddings (the default ranking mode depends on them — see `docs/embedding-matching.md`).
+their embeddings (the default ranking mode depends on them — see `docs/architecture/data-platform/embedding-matching.md`).
 `app/embeddings/cache_invalidation.py` implements a **version-counter** scheme rather than a
 `SCAN`/pattern-delete sweep: each candidate's cache key is stamped with a version (`GET
 jme:cache:version:candidate:{id}`, default 0); invalidation is a single `INCR` — O(1), no blocking
@@ -178,11 +178,11 @@ project.
 
 ## Related Documents
 
-- [`docs/embedding-matching.md`](embedding-matching.md) — the blended ranking path whose cache this
+- [`docs/architecture/data-platform/embedding-matching.md`](embedding-matching.md) — the blended ranking path whose cache this
   subsystem invalidates on embeddings recompute.
-- [`docs/behavioral-analytics.md`](behavioral-analytics.md) — the instrumentation hook this
+- [`docs/architecture/application-services/behavioral-analytics.md`](../application-services/behavioral-analytics.md) — the instrumentation hook this
   subsystem's Streams use case decouples.
-- [`docs/security-and-threat-model.md`](security-and-threat-model.md) — the rate-limiting fix in
+- [`docs/security-and-threat-model.md`](../../security-and-threat-model.md) — the rate-limiting fix in
   context of the broader threat model.
-- [`docs/architecture.md`](architecture.md) — system-wide overview.
-- [`docs/progress.md`](progress.md) — full build history.
+- [`docs/architecture.md`](../../architecture.md) — system-wide overview.
+- [`docs/progress.md`](../../progress.md) — full build history.

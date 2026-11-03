@@ -50,7 +50,7 @@ already derive their candidate pools from `OccupationSkill` (`occ_skill_ids` in 
 rather than sampling the full taxonomy independently. Fixing occupation-level sampling alone fixes
 candidate- and job-level skill coherence too.
 
-Validation stays non-circular: the knowledge-graph clustering check (`docs/knowledge-graph.md`)
+Validation stays non-circular: the knowledge-graph clustering check (`docs/architecture/data-platform/knowledge-graph.md`)
 compares discovered communities against the existing `category` field, which is still never used
 directly as a sampling weight — `domain` is the new code-level construct, built *from* categories,
 but the validation checks at category granularity, a genuinely independent signal.
@@ -96,9 +96,9 @@ or a GPU cluster for the embedding workload, not a single local Ollama instance.
 
 **Re-verification discipline**: because the domain-anchoring fix changes the *default*-scale skill
 distribution, every measured number that depends on it goes stale the moment this ships, and gets
-re-run, not left outdated — matching evaluation (`docs/evaluation-strategy.md`), extraction
-evaluation (`docs/skill-extraction.md`), embedding evaluation (`docs/embedding-matching.md`), and
-knowledge-graph clustering (`docs/knowledge-graph.md`) were all re-measured as part of this change.
+re-run, not left outdated — matching evaluation (`docs/architecture/ai-ml-and-mlops.md`), extraction
+evaluation (`docs/architecture/application-services/skill-extraction.md`), embedding evaluation (`docs/architecture/data-platform/embedding-matching.md`), and
+knowledge-graph clustering (`docs/architecture/data-platform/knowledge-graph.md`) were all re-measured as part of this change.
 
 ## Verification & Results
 
@@ -141,15 +141,15 @@ over HTTP, including network overhead).
 endpoint took **1.2s** — not because embeddings are inherently faster per comparison, but because
 ANN retrieval narrows the candidate set before scoring, while the rule-based path scores every job
 on every request. This is the concrete, measured case for the two-stage retrieve-then-score
-architecture (`docs/embedding-matching.md`), not a theoretical argument.
+architecture (`docs/architecture/data-platform/embedding-matching.md`), not a theoretical argument.
 
 **Every downstream baseline re-verified, not left stale**:
 
 | Harness | Before (uniform-random data) | After (domain-anchored data) |
 |---|---|---|
-| Matching evaluation (`docs/evaluation-strategy.md`) | P@10 0.4878, NDCG 0.7461 | P@10 0.4964, NDCG 0.7352 — stable, as expected (occupation-alignment ground truth is unchanged) |
-| Extraction evaluation (`docs/skill-extraction.md`) | F1 0.504–0.664 | **F1 0.6766** — consistent with the earlier `qwen2.5:1.5b` improvement |
-| Embedding evaluation (`docs/embedding-matching.md`) | embeddings-only *underperformed* rule-based (NDCG 0.776 vs 0.849) | **embeddings-only now *beats* rule-based** (NDCG 0.798 vs 0.645) — a direct, measured consequence of skills finally carrying real domain signal; blended is better still (NDCG 0.878) |
+| Matching evaluation (`docs/architecture/ai-ml-and-mlops.md`) | P@10 0.4878, NDCG 0.7461 | P@10 0.4964, NDCG 0.7352 — stable, as expected (occupation-alignment ground truth is unchanged) |
+| Extraction evaluation (`docs/architecture/application-services/skill-extraction.md`) | F1 0.504–0.664 | **F1 0.6766** — consistent with the earlier `qwen2.5:1.5b` improvement |
+| Embedding evaluation (`docs/architecture/data-platform/embedding-matching.md`) | embeddings-only *underperformed* rule-based (NDCG 0.776 vs 0.849) | **embeddings-only now *beats* rule-based** (NDCG 0.798 vs 0.645) — a direct, measured consequence of skills finally carrying real domain signal; blended is better still (NDCG 0.878) |
 
 The embedding-matching reversal is the most interesting result from this work: embeddings-based
 matching was never weaker *in principle* — it was only ever as good as the skill data it had to
@@ -166,10 +166,10 @@ work with.
 
 ## Related Documents
 
-- `docs/evaluation-strategy.md` — matching quality evaluation, re-verified against this data
-- `docs/skill-extraction.md` — extraction evaluation, re-verified against this data
-- `docs/embedding-matching.md` — the two-stage retrieve-then-score architecture and the reversed
+- `docs/architecture/ai-ml-and-mlops.md` — matching quality evaluation, re-verified against this data
+- `docs/architecture/application-services/skill-extraction.md` — extraction evaluation, re-verified against this data
+- `docs/architecture/data-platform/embedding-matching.md` — the two-stage retrieve-then-score architecture and the reversed
   embeddings-vs-rule-based finding
-- `docs/knowledge-graph.md` — the clustering this data-generation fix was built to enable
+- `docs/architecture/data-platform/knowledge-graph.md` — the clustering this data-generation fix was built to enable
 - `docs/architecture.md` — overall system architecture
 - `docs/progress.md` — full build history

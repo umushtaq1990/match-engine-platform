@@ -197,7 +197,7 @@ exactly this change later (see below).
 ### The generator was changed, deliberately and with full re-verification
 
 Category-coherent skill sampling was introduced as part of a broader scale/realism pass (see
-`docs/data-at-scale.md`): occupation skill profiles are now anchored to one of four coarser
+`docs/architecture/data-platform/data-at-scale.md`): occupation skill profiles are now anchored to one of four coarser
 "domains" instead of sampled uniformly at random. Re-running the clustering job afterward: **mean
 category purity 0.1585 → 0.3222**, and more strikingly, **all 4 discovered communities now map 1:1
 onto the 4 designed domains with zero cross-contamination** — not an approximate improvement, a
@@ -205,7 +205,7 @@ clean recovery. The co-occurrence graph is still topologically complete (every s
 co-occurs at least once), but its *weight* distribution is now sharply differentiated (min 42/max
 335 vs. the old min 3/max 83) — enough for weighted Louvain to find real structure without needing
 a sparse graph. Every downstream baseline this change could have invalidated was re-run and
-republished, not left stale — see `docs/data-at-scale.md`'s verification section for the full
+republished, not left stale — see `docs/architecture/data-platform/data-at-scale.md`'s verification section for the full
 before/after.
 
 ### Candidate/job clustering — the real finding
@@ -252,11 +252,11 @@ avenue for future work if this capability is pushed further.
 
 ## Related Documents
 
-- [`docs/data-at-scale.md`](data-at-scale.md) — the domain-anchored synthetic data generator this
+- [`docs/architecture/data-platform/data-at-scale.md`](data-at-scale.md) — the domain-anchored synthetic data generator this
   subsystem's clustering signal depends on.
-- [`docs/embedding-matching.md`](embedding-matching.md) — the multi-dimensional blend a future
+- [`docs/architecture/data-platform/embedding-matching.md`](embedding-matching.md) — the multi-dimensional blend a future
   graph-based relatedness signal would feed into.
-- [`docs/behavioral-analytics.md`](behavioral-analytics.md) — the event log the `ENGAGED_WITH` edge
+- [`docs/architecture/application-services/behavioral-analytics.md`](../application-services/behavioral-analytics.md) — the event log the `ENGAGED_WITH` edge
   aggregates.
-- [`docs/architecture.md`](architecture.md) — system-wide overview.
-- [`docs/progress.md`](progress.md) — full build history.
+- [`docs/architecture.md`](../../architecture.md) — system-wide overview.
+- [`docs/progress.md`](../../progress.md) — full build history.

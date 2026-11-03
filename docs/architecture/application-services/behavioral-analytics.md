@@ -61,7 +61,7 @@ N).
 **Decoupling, from synchronous to asynchronous**: the matching API originally called the analytics
 API in-line, logging and swallowing a failure (never letting an analytics outage break a real
 matching response) but with no retry. It now publishes via Redis Streams instead
-(`app/api/stream_client.py`, `app/analytics/stream_consumer.py` — see `docs/redis-infrastructure.md`
+(`app/api/stream_client.py`, `app/analytics/stream_consumer.py` — see `docs/architecture/data-platform/redis-infrastructure.md`
 "Streams" for the broker-level design): an `XADD` instead of a direct HTTP call, durable across an
 analytics outage (the stream persists events up to a configured `MAXLEN` even while the consumer is
 down — strictly better than the old "down means dropped"), falling back to the original synchronous
@@ -201,7 +201,7 @@ data has real signal rather than being trivially clean:
   engine's `candidates`/`jobs` tables — a deliberate decoupling choice, checked by a data-quality
   report instead of a constraint.
 - Instrumentation delivery is durable via Redis Streams, but there's still no retry/dead-letter
-  handling for a consumer that crashes mid-batch — see `docs/redis-infrastructure.md` "Known
+  handling for a consumer that crashes mid-batch — see `docs/architecture/data-platform/redis-infrastructure.md` "Known
   Limitations".
 - No real clustering yet — segmentation is rule-based only (see "Roadmap").
 - No real privacy/consent/retention mechanism (see assumption A10 in
@@ -214,22 +214,22 @@ data has real signal rather than being trivially clean:
 
 - **ML clustering, only if rule-based segmentation is shown insufficient**: real clustering
   (k-means/HDBSCAN) over engagement feature vectors, evaluated against the current rule-based
-  labels the same way `docs/evaluation-strategy.md` evaluates matching quality — a measured
+  labels the same way `docs/architecture/ai-ml-and-mlops.md` evaluates matching quality — a measured
   comparison, not an assumed improvement.
 - A Grafana panel reusing the existing observability stack, an analytics-specific data-quality
   `CronJob` mirroring the matching engine's pattern, and consumer-group failure handling
   (`XPENDING`/claim logic for a crashed consumer) remain open — see
-  `docs/redis-infrastructure.md` "Known Limitations" for the Streams-specific gap.
+  `docs/architecture/data-platform/redis-infrastructure.md` "Known Limitations" for the Streams-specific gap.
 
 ## Related Documents
 
-- [`docs/redis-infrastructure.md`](redis-infrastructure.md) — the Streams broker this service's
+- [`docs/architecture/data-platform/redis-infrastructure.md`](../data-platform/redis-infrastructure.md) — the Streams broker this service's
   instrumentation hook and consumer depend on.
-- [`docs/data-quality.md`](data-quality.md) — the orphan-reference check pattern reused here.
-- [`docs/evaluation-strategy.md`](evaluation-strategy.md) — the evaluation methodology any future
+- [`docs/architecture/data-platform/data-quality.md`](../data-platform/data-quality.md) — the orphan-reference check pattern reused here.
+- [`docs/architecture/ai-ml-and-mlops.md`](../ai-ml-and-mlops.md) — the evaluation methodology any future
   ML clustering comparison would follow.
-- [`docs/assumptions-register.md`](assumptions-register.md) — assumption A10 (privacy/consent).
+- [`docs/assumptions-register.md`](../../assumptions-register.md) — assumption A10 (privacy/consent).
 - [`docs/adr/0001-decouple-ingestion-migrate-api.md`](adr/0001-decouple-ingestion-migrate-api.md) —
   the service-boundary precedent this design follows.
-- [`docs/architecture.md`](architecture.md) — system-wide overview.
-- [`docs/progress.md`](progress.md) — full build history.
+- [`docs/architecture.md`](../../architecture.md) — system-wide overview.
+- [`docs/progress.md`](../../progress.md) — full build history.

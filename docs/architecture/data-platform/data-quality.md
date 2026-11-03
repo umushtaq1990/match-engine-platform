@@ -47,7 +47,7 @@ Run manually: `docker compose run --rm dataquality`
 | `unused_skills_coverage` | taxonomy_coverage | % canonical skills never referenced anywhere | warn if >10% |
 
 Thresholds are initial, documented judgment calls (set to sit comfortably outside the generator's
-known target imperfection rates — see `docs/data-model.md`), not objectively correct — revisit
+known target imperfection rates — see `docs/architecture/data-platform/data-model.md`), not objectively correct — revisit
 once real usage/evaluation data exists (Phase 4).
 
 ## Verification & Results
@@ -75,7 +75,7 @@ cosmetic issues.
 
 - Thresholds are not yet calibrated against any ground truth — they're reasonable starting points.
 - No alerting/notification on fail status — Phase 9 added Prometheus/Grafana, but only for API
-  latency/error-rate/CPU/RAM (`docs/observability.md`), not data-quality results, and Alertmanager
+  latency/error-rate/CPU/RAM (`docs/architecture/observability-and-logging.md`), not data-quality results, and Alertmanager
   was never wired up for any signal. Still an open gap, not just a future-phase placeholder.
 - No dashboard for data-quality results specifically — results are queryable in Postgres
   (`data_quality_runs`/`data_quality_check_results`); Phase 9's Grafana dashboard covers API
@@ -85,7 +85,7 @@ cosmetic issues.
 
 ## Related Documents
 
-- [architecture.md](architecture.md) — overall system overview
+- [architecture.md](../../architecture.md) — overall system overview
 - [data-model.md](data-model.md) — the schema these checks run against
-- [observability.md](observability.md) — infrastructure-level observability (separate concern)
-- [progress.md](progress.md) — full build history
+- [observability-and-logging.md](../observability-and-logging.md) — infrastructure-level observability (separate concern)
+- [progress.md](../../progress.md) — full build history

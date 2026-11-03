@@ -19,7 +19,7 @@ afterthought.
 
 Per assumption A5b, this use case specifically skips a rule-based baseline and goes straight to an
 NLP/embedding-based approach — the opposite of every other use case in this project, and the reason
-the shared LLM/embedding serving layer (`docs/model-serving.md`) was stood up before this work could
+the shared LLM/embedding serving layer (`docs/architecture/ai-ml-and-mlops.md`) was stood up before this work could
 start.
 
 Out of scope (v1/v2): negation handling, raw-CV-text ingestion, and wiring extraction into a real
@@ -51,7 +51,7 @@ reference text that improves embedding-based canonicalization.
 | Service | New `extraction` service, own image (`docker/Dockerfile.extraction`) | Separately testable/evaluable, same bounded-context pattern as `analytics` |
 | Model access | Calls the existing `ollama` service over HTTP — no model weights in this image | Reuses the shared serving layer; this service is pure orchestration logic |
 | DB schema | **Public schema** (not an isolated schema like `analytics`) | Unlike behavioral analytics (a genuinely separate concern), this service's eventual purpose (v3) is to populate the *same* `job_skills`/`candidate_skills` tables the matching engine already owns — it's part of the core domain, not an adjacent one. Its eval tables join the same migration history as `evaluation_runs`/`data_quality_runs` |
-| Error handling | Failures surface as real errors to the caller, **not** swallowed like the analytics instrumentation hook | Analytics impressions are optional side-effects; here, the caller usually has nothing useful without a result (same distinction flagged in `docs/model-serving.md`'s consumer-pattern section) |
+| Error handling | Failures surface as real errors to the caller, **not** swallowed like the analytics instrumentation hook | Analytics impressions are optional side-effects; here, the caller usually has nothing useful without a result (same distinction flagged in `docs/architecture/ai-ml-and-mlops.md`'s consumer-pattern section) |
 
 **Golden dataset (ground truth)**, two complementary parts, not one:
 
@@ -61,7 +61,7 @@ reference text that improves embedding-based canonicalization.
   description prose, **sometimes by canonical name, sometimes by a synonym**, so it isn't trivially
   easy. Ground truth = the `JobSkill` rows already generated for that job — cheap, deterministic,
   scales to all 1,000 jobs for free. This is *not* a repeat of the matching-evaluation circularity
-  mistake (`docs/evaluation-strategy.md`): there, the risk was grading the ranking formula against
+  mistake (`docs/architecture/ai-ml-and-mlops.md`): there, the risk was grading the ranking formula against
   labels derived from that same formula. Here, the task is literally "parse this text and recover
   the structured facts it contains" — the text is *constructed from* the ground truth by design,
   which is the correct way to test a parser, not a methodological error. It proves mechanical
@@ -190,7 +190,7 @@ not a bug.
   with confidence scores all above 0.77 and zero unmatched phrases.
 
 **Re-verification after the synthetic generator changed**: the generator later changed
-(domain-anchored skill sampling, see `docs/data-at-scale.md`). Re-ran the exact same eval
+(domain-anchored skill sampling, see `docs/architecture/data-platform/data-at-scale.md`). Re-ran the exact same eval
 (`qwen2.5:1.5b`, threshold 0.55) against the new data: **F1 0.6766** — consistent with the 0.60–0.66
 range measured above, confirming the tuned configuration still holds against the regenerated
 dataset.
@@ -241,11 +241,11 @@ correctly returned `404` before ever touching object storage.
 
 ## Related Documents
 
-- `docs/model-serving.md` — the shared Ollama serving layer this depends on
-- `docs/embedding-matching.md` — reuses this pipeline's skill-embedding cache for the Skills
+- `docs/architecture/ai-ml-and-mlops.md` — the shared Ollama serving layer this depends on
+- `docs/architecture/data-platform/embedding-matching.md` — reuses this pipeline's skill-embedding cache for the Skills
   dimension
-- `docs/evaluation-strategy.md` — the matching-evaluation harness this extraction evaluation mirrors
-- `docs/data-at-scale.md` — the domain-anchored data change this was re-verified against
+- `docs/architecture/ai-ml-and-mlops.md` — the matching-evaluation harness this extraction evaluation mirrors
+- `docs/architecture/data-platform/data-at-scale.md` — the domain-anchored data change this was re-verified against
 - `docs/assumptions-register.md` — assumption A5b, the exception this use case follows
 - `docs/architecture.md` — overall system architecture
 - `docs/progress.md` — full build history
