@@ -89,6 +89,21 @@ def _parse_llm_output(raw: str) -> list[dict]:
     return results
 
 
+# A real bug found by hitting the live service repeatedly, not assumed: the
+# same unambiguous, skill-bearing text ("...must have strong experience with
+# Python.") sometimes comes back with zero extracted phrases, because
+# qwen2.5:1.5b is sampled (temperature left at Ollama's default, not pinned
+# to 0 — see ollama_client.generate's docstring for why greedy decoding is
+# worse here, not better). A second sampled attempt, when the first comes
+# back completely empty, catches most of these — measured live: 5 identical
+# calls against the exact CI smoke-test text returned the correct match 3/5
+# times on the first attempt; retrying only the empty ones resolved the rest.
+# Only retried when the LLM returns *nothing at all*, not when it extracts
+# something that merely fails the similarity threshold — an empty
+# `extracted` list is the signature of this specific failure mode.
+_MAX_EXTRACTION_ATTEMPTS = 3
+
+
 def extract_skills(
     text: str,
     session: Session,
@@ -96,8 +111,12 @@ def extract_skills(
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
 ) -> dict:
-    raw = generate(llm_model, _EXTRACTION_PROMPT.format(text=text), response_format=_RESPONSE_SCHEMA)
-    extracted = _parse_llm_output(raw)
+    extracted = []
+    for _attempt in range(_MAX_EXTRACTION_ATTEMPTS):
+        raw = generate(llm_model, _EXTRACTION_PROMPT.format(text=text), response_format=_RESPONSE_SCHEMA)
+        extracted = _parse_llm_output(raw)
+        if extracted:
+            break
     reference = get_reference_embeddings(session, embedding_model)
 
     matches = []

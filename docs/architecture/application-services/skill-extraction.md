@@ -204,6 +204,22 @@ hook's best-effort design actually holds in practice.
 is healthy and models are pulled, and makes one real (not mocked) extraction call, asserting a real
 skill was matched with the correct requirement level.
 
+**A real bug this CI check actually caught**: this exact smoke test failed in CI with
+`{"matches":[],"unmatched":[]}` against the unambiguous input "...must have strong experience with
+Python." Reproduced live, not assumed: 5 identical calls against the running service returned the
+correct match 3 times, an empty extraction once, and once took long enough to approach the client
+timeout — `qwen2.5:1.5b`'s sampled output for this prompt/schema combination is genuinely
+inconsistent, not a fluke of the test harness. Tried the obvious fix — pinning `temperature=0`
+(greedy decoding) to remove the sampling variance — and it made things *worse*, not better: tested
+against 5 similarly-phrased skill-bearing sentences, greedy decoding returned the correct extraction
+for only 1 of them, an empty `[ ]` for the rest. The model's single most-likely completion for this
+task is often the degenerate empty answer; sampling actually escapes that local optimum some of the
+time. Fixed by retrying the LLM call (up to 3 attempts, `app/extraction/pipeline.py`'s
+`_MAX_EXTRACTION_ATTEMPTS`) only when the first attempt returns nothing at all extracted — verified
+live afterward: 8/8 repeated calls against the same input returned a match. This is a real resilience
+improvement for actual users, not just a CI patch — an empty extraction from obviously skill-bearing
+text was a real, previously undetected failure mode.
+
 **CV upload, verified live against the real stack, not just unit tests**: uploaded a real PDF to
 `/candidates/1/cv`, confirmed the row landed in `candidate_documents` (correct filename/size), the
 object itself landed in SeaweedFS (`client.list_objects` showed `candidates/1/cv.pdf`, matching
@@ -225,6 +241,11 @@ correctly returned `404` before ever touching object storage.
   the prompt to close the remaining gap further. Not yet attempted.
 - Canonicalization threshold (0.55) was confirmed by a real sweep, not left as an unexamined first
   guess — but only five values were tried; a finer sweep could still find something better.
+- The retry-on-empty-extraction fix (above) reduces, but does not eliminate, the chance of a real
+  skill mention being missed — measured 8/8 successful on one specific input, not a guarantee across
+  all inputs or a proof the underlying sampling inconsistency is actually resolved. A text that
+  genuinely has no skills in it and one the model simply fails all 3 attempts on are indistinguishable
+  to this fix; both return `{"matches": [], "unmatched": []}`.
 
 ## Roadmap
 
