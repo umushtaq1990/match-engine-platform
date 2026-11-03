@@ -61,7 +61,7 @@ masking a pull if anything had been missing from the loaded tar.
 
 ## Related Documents
 
-- [architecture.md](architecture.md) — overall system overview
+- [architecture.md](../architecture.md) — overall system overview
 - [kubernetes.md](kubernetes.md) — the other deployment target this project supports
 - [production-readiness.md](production-readiness.md) — broader deployment readiness context
-- [progress.md](progress.md) — full build history
+- [progress.md](../progress.md) — full build history

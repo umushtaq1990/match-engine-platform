@@ -242,7 +242,7 @@ the same group dividing the stream) — not built, since no measured need exists
 - [`docs/architecture/ai-ml-and-mlops.md`](../ai-ml-and-mlops.md) — the evaluation methodology any future
   ML clustering comparison would follow.
 - [`docs/assumptions-register.md`](../../assumptions-register.md) — assumption A10 (privacy/consent).
-- [`docs/adr/0001-decouple-ingestion-migrate-api.md`](adr/0001-decouple-ingestion-migrate-api.md) —
+- [`docs/adr/0001-decouple-ingestion-migrate-api.md`](../../adr/0001-decouple-ingestion-migrate-api.md) —
   the service-boundary precedent this design follows.
 - [`docs/architecture.md`](../../architecture.md) — system-wide overview.
 - [`docs/progress.md`](../../progress.md) — full build history.
