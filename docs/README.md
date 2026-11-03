@@ -81,6 +81,10 @@ master Technical Architecture diagram, and — where the layer has enough real i
   methodology and scenarios: measured per-service memory footprint against the real full stack,
   the 1M/50K scale-test numbers, Kubernetes resource allocation, an illustrative Azure cost
   estimate, and the original raw hardware-inventory capture (kept as an appendix)
+- [operations/capacity-planning.md](operations/capacity-planning.md) — the concurrent-user scaling
+  story: a worked scenario across the full request chain, the real bottleneck at each hop, and a
+  real measured concurrent-load test of the LLM-backed extraction endpoint (the one load test this
+  project hadn't run yet)
 - [operations/offline-deployment.md](operations/offline-deployment.md) — air-gapped deployment
   bundle, verified end-to-end with zero network access
 - [operations/backup-and-recovery.md](operations/backup-and-recovery.md) — `pg_dump`/`pg_restore`

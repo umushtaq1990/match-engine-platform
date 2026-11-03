@@ -42,6 +42,22 @@ this page is only the index and the reasoning for why each store exists.
 | Data quality | Automated post-seed checks (orphaned FKs, duplicates, missing fields) | [data-quality.md](data-quality.md) |
 | Data at scale | 1M-candidate/50K-job generation and stress testing | [data-at-scale.md](data-at-scale.md) |
 
+## Resource Footprint and Scaling
+
+Every store here is a single instance with no HA/replica story — a deliberate, documented local
+scope (see `docs/assumptions-register.md`), not an oversight. Postgres is the one with the
+clearest numeric ceiling today: default `max_connections=100` (confirmed on the live container,
+not assumed from the image's documented default), against up to ~90 possible connections from
+`api`/`analytics`/`extraction` alone at their current worker counts (SQLAlchemy's default
+`pool_size=5, max_overflow=10` per worker process, `app/db.py` — no override configured). Real
+headroom exists, but a fourth heavy Postgres consumer or a jump in `api`'s worker count would need
+either a connection pooler (PgBouncer) or raising `max_connections`, neither built here. Redis has
+no measured connection ceiling issue at this scale (rate limiting, caching, and Streams all share
+one lightweight instance — see `redis-infrastructure.md`). Neo4j and SeaweedFS are read-heavy
+batch/upload paths, not in the hot request path for concurrent matching traffic, so they're not
+where this platform's real concurrency limits sit. Full worked scenario:
+`docs/operations/capacity-planning.md`.
+
 ## Related Documents
 
 - [../ai-ml-and-mlops.md](../ai-ml-and-mlops.md) — the model-serving layer that

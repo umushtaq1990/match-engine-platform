@@ -38,6 +38,24 @@ they're split the way they are.
 | `analytics` | Behavioral event ingestion, Redis Streams consumer, RFM engagement segmentation | [behavioral-analytics.md](behavioral-analytics.md) |
 | `extraction` | Free-text skill extraction (hybrid LLM + embedding canonicalization), CV upload storage | [skill-extraction.md](skill-extraction.md) |
 
+## Resource Footprint and Scaling
+
+The three services have very different concurrency models today, confirmed from their actual
+Dockerfiles, not assumed:
+
+| Service | Workers | Real measured/known ceiling | Scaling path |
+|---|---|---|---|
+| `api` | 4 uvicorn workers | 56.1 req/s at concurrency 20 (was 14.2 req/s at 1 worker) — [matching-engine.md](matching-engine.md) | Already horizontally scalable: k8s HPA defined (2-5 pods, `k8s/base/api.yaml`), though inert locally without `metrics-server` |
+| `analytics` | 1 uvicorn worker | Not load-tested directly; decoupled from `api`'s request path via Redis Streams, so it doesn't block matching responses under load — [behavioral-analytics.md](behavioral-analytics.md) | No k8s manifest yet; same `--workers N` fix `api` already got would be the first step |
+| `extraction` | 1 uvicorn worker, synchronous route | See [skill-extraction.md](skill-extraction.md) for the real measured LLM-backed concurrency numbers | No k8s manifest yet; needs both more workers and the AI/ML layer's own scaling (see [../ai-ml-and-mlops.md](../ai-ml-and-mlops.md)) |
+
+All three share one Postgres instance with SQLAlchemy's default pool (`pool_size=5,
+max_overflow=10` per worker process, `app/db.py` — no override configured anywhere). At today's
+worker counts that's up to 90 possible connections from these three services alone against
+Postgres's own default `max_connections=100` (confirmed on the live container) — real headroom,
+but not a lot if a fourth heavy consumer were added without raising either number. Full worked
+scenario: [../../operations/capacity-planning.md](../../operations/capacity-planning.md).
+
 ## Related Documents
 
 - [../ai-ml-and-mlops.md](../ai-ml-and-mlops.md) — the shared model-serving layer

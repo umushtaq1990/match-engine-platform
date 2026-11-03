@@ -63,8 +63,9 @@ These numbers come from real tests, not estimates.
 | Sustained load (6-minute soak test) | steady p50 of about 0.17 to 0.18s, no slowdown over time |
 | Scale target | 1 million candidates and 50,000 jobs, generated and stress-tested for real |
 | Matching quality (NDCG@10) | rule-based 0.645, embeddings-blended 0.878 (now the default) |
+| LLM/embedding path under concurrency | Throughput 0.28 to 0.16 requests/sec, p95 latency ~18s to ~58s, as concurrent requests rose from 3 to 6 against the single Ollama instance |
 
-Full methodology and raw numbers are in [docs/operations/production-readiness.md](docs/operations/production-readiness.md) and [docs/architecture/data-platform/data-at-scale.md](docs/architecture/data-platform/data-at-scale.md).
+Full methodology and raw numbers are in [docs/operations/production-readiness.md](docs/operations/production-readiness.md), [docs/architecture/data-platform/data-at-scale.md](docs/architecture/data-platform/data-at-scale.md), and [docs/operations/capacity-planning.md](docs/operations/capacity-planning.md) (the concurrent-user scaling story end to end, including the real bottleneck found at the LLM/embedding layer).
 
 ## Getting started
 

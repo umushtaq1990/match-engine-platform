@@ -176,6 +176,14 @@ project.
 - Alerting/automated replay for the dead-letter stream.
 - Invalidating a job's cache impact on candidates once a traceable index exists.
 
+## Resource Footprint and Scaling
+
+See [README.md](README.md) for this layer's overall connection/capacity picture and
+[../../operations/capacity-planning.md](../../operations/capacity-planning.md) for the full
+cross-layer scenario. Redis itself has no measured capacity issue at this project's scale — rate
+limiting, caching, and Streams all share one lightweight instance without contention observed so
+far; splitting it (see Roadmap above) is a documented future step, not a current need.
+
 ## Related Documents
 
 - [`docs/architecture/data-platform/embedding-matching.md`](embedding-matching.md) — the blended ranking path whose cache this

@@ -212,6 +212,15 @@ metrics.
   [operations/production-readiness.md](../operations/production-readiness.md) for
   the load generated so far.
 
+## Resource Footprint and Scaling
+
+This layer observes load, it doesn't generate or gate it — Prometheus/Grafana/cAdvisor/Loki/
+Promtail all idle at single-digit-MB to low-GB footprints (Grafana and Prometheus especially
+light; see [operations/infrastructure-sizing.md](../operations/infrastructure-sizing.md)) and none
+of them sit in a user-facing request's hot path. The one real capacity question here is scrape/log
+volume at a much larger deployment than this project's — not a concern at this project's measured
+scale, and not built out further than that.
+
 ## Related Documents
 
 - [data-platform/data-quality.md](data-platform/data-quality.md) — content-level

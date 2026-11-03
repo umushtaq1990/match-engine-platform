@@ -239,6 +239,28 @@ correctly returned `404` before ever touching object storage.
   requirement-level output stops being only an eval metric and starts being operational data. Not
   scheduled yet.
 
+## Resource Footprint and Scaling
+
+**The one concurrent load test this project hadn't run before Phase 32**: `POST /extract` is the
+only live endpoint in the platform that calls Ollama synchronously (embeddings have no live
+endpoint at all — only the batch `embeddings-compute` job, `docs/architecture/ai-ml-and-mlops.md`),
+and it runs on a single uvicorn worker (`docker/Dockerfile.extraction` has no `--workers` flag)
+with a synchronous route, so concurrent requests share one process's threadpool before even
+reaching Ollama. Each call makes 1 LLM `generate()` call plus 1 embedding call per extracted skill
+phrase, sequentially (`app/extraction/pipeline.py`) — real measured latency is both much higher and
+far more variable than the matching API's, dominated by how many phrases the LLM decides to extract
+per call, not primarily by concurrency.
+
+Real `scripts/load_test_llm.py` results (concurrency 3 vs. 6, comparable mean skill counts per
+request): **throughput 0.28 -> 0.16 req/s, p95 latency ~18s -> ~58s** — the same queuing signature
+the matching API showed before its multi-worker fix, just at LLM-inference timescales. At
+concurrency 6 the tail latency (58.23s) sits right at the edge of `ollama_client.py`'s 60s per-call
+timeout. The two honest next steps, neither built here: give `extraction` multiple uvicorn workers
+(the same fix `api` already got), and address Ollama's own single-instance serialization (see
+`docs/architecture/ai-ml-and-mlops.md`) — the first without the second would only move the queue
+from the process's threadpool to Ollama itself. Full numbers and methodology:
+`docs/operations/capacity-planning.md`.
+
 ## Related Documents
 
 - `docs/architecture/ai-ml-and-mlops.md` — the shared Ollama serving layer this depends on

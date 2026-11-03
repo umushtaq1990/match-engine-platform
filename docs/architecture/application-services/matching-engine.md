@@ -144,6 +144,17 @@ unblocked full-population evaluation (see `docs/architecture/ai-ml-and-mlops.md`
   embeddings, see `docs/architecture/data-platform/data-at-scale.md`), but the pure rule-based path itself would need
   pagination/batching at that volume without the ANN narrowing step.
 
+## Resource Footprint and Scaling
+
+Real measured concurrency numbers (not a single-request estimate): at 1 uvicorn worker, throughput
+plateaued at ~14-16 req/s regardless of concurrency while latency scaled linearly (a serialized
+CPU-bound bottleneck, confirmed via `docker/Dockerfile.api`'s single worker process). Adding
+`--workers 4` fixed it: throughput 14.2 -> 56.1 req/s at concurrency 20, p95 1.84s -> 0.57s — see
+`docs/operations/production-readiness.md` for the full load-test table. This is the one service in
+the platform with a working k8s scaling path today: 2 replicas + an HPA to 5 (`k8s/base/api.yaml`),
+inert locally without `metrics-server` but architecturally real. Full cross-layer scenario:
+`docs/operations/capacity-planning.md`.
+
 ## Related Documents
 
 - `docs/architecture.md` — overview and runtime views

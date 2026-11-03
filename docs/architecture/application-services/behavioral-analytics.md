@@ -221,6 +221,19 @@ data has real signal rather than being trivially clean:
   (`XPENDING`/claim logic for a crashed consumer) remain open — see
   `docs/architecture/data-platform/redis-infrastructure.md` "Known Limitations" for the Streams-specific gap.
 
+## Resource Footprint and Scaling
+
+Runs 1 uvicorn worker (`docker/Dockerfile.analytics` has no `--workers` flag) and has not been
+load-tested directly — but the design choice that matters most for concurrency is the Redis
+Streams decoupling itself: a `recommendation_shown` event is `XADD`-ed by `api` and consumed
+asynchronously, so analytics ingestion volume never blocks a matching response, and a slow or
+backed-up analytics consumer degrades only analytics' own freshness, not the matching API's
+latency (fail-open by design, same discipline as the embeddings cache). If sustained event volume
+ever became the bottleneck, the fix is the same one `api` already got: more uvicorn workers plus,
+for the Streams consumer specifically, horizontal consumer-group scaling (multiple consumers in
+the same group dividing the stream) — not built, since no measured need exists yet. See
+`docs/operations/capacity-planning.md`.
+
 ## Related Documents
 
 - [`docs/architecture/data-platform/redis-infrastructure.md`](../data-platform/redis-infrastructure.md) — the Streams broker this service's

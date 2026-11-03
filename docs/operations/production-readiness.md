@@ -102,8 +102,10 @@ would have shipped with silently broken observability if the metrics hadn't been
 making a change that was supposed to only affect throughput.
 
 **What this load test does NOT cover** (explicitly, not silently): no multi-endpoint mix (only
-`job-matches` was tested), no test against the Kubernetes deployment under load (only Compose), no
-chaos/failure-injection testing (pod kills, network partitions).
+`job-matches` was tested — see `docs/operations/capacity-planning.md` for a separate real
+concurrent-load measurement of the LLM-backed `/extract` endpoint), no test against the Kubernetes
+deployment under load (only Compose), no chaos/failure-injection testing (pod kills, network
+partitions).
 
 ### Soak test: no degradation found over a sustained run
 

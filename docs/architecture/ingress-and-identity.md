@@ -258,6 +258,25 @@ hitting real endpoints:
 - JWT validation at the API Gateway, once there's a reason the Gateway itself needs
   to enforce authentication rather than just route.
 
+## Resource Footprint and Scaling
+
+All three nginx containers and Keycloak are lightweight relative to everything behind them —
+`docker stats` shows nginx idling at single-digit MB each (see
+[operations/infrastructure-sizing.md](../operations/infrastructure-sizing.md) for the full
+per-service table). nginx is also stateless request routing with no per-request compute of its
+own, so this layer is not where concurrent-user capacity is actually won or lost: the real ceiling
+is whatever sits behind the Gateway (see
+[application-services/README.md](application-services/README.md) and
+[ai-ml-and-mlops.md](ai-ml-and-mlops.md)). Scaling this layer, if it were ever needed, is the
+standard nginx pattern: add more Reverse Proxy replicas behind the Load Balancer (already 2 today)
+and/or more Gateway instances behind a second small load balancer — nothing architecturally new,
+unlike the application/AI layers below. Keycloak in dev mode is single-instance with no HA story;
+a real deployment would run it clustered against a shared database, not built here (local-only
+scope, same as every other single-instance service in this project).
+
+See [operations/capacity-planning.md](../operations/capacity-planning.md) for the full worked
+concurrent-user scenario across every layer.
+
 ## Related Documents
 
 - [adr/0002-build-the-ingress-layer.md](../adr/0002-build-the-ingress-layer.md) — why

@@ -280,6 +280,24 @@ not resolved here, since no comparison has been run yet (see Known Limitations).
 - A real scoring-weight comparison run, once prioritized.
 - Test coverage for `ground_truth.py`/`run_evaluation.py`.
 
+## Resource Footprint and Scaling
+
+**Ollama is the real concurrency bottleneck in this platform today — measured, not assumed.** A
+real concurrent load test against the one endpoint that calls it synchronously
+(`POST /extract` — see `docs/architecture/application-services/skill-extraction.md` for the full
+numbers) found throughput dropping from 0.28 to 0.16 req/s and p95 latency rising from ~18s to
+~58s as concurrency went from 3 to 6 — the same queuing signature the matching API showed before
+its multi-worker fix (`docs/operations/production-readiness.md`), except here each unit of work is
+seconds of real CPU-bound inference, not a database query, and there is no equivalent fix already
+applied. `ollama` runs as a single instance with no `OLLAMA_NUM_PARALLEL` set (confirmed absent
+from `docker-compose.yml`) and no GPU attached (CPU-only inference on this dev machine — the
+RTX 5060 Laptop GPU measured in `docs/operations/infrastructure-sizing.md` sits unused). The real
+scaling path — not built here, consistent with this project's no-real-cloud-provisioning
+discipline (assumption A1) — would be a GPU node plus either multiple Ollama replicas behind a
+small round-robin or a request queue in front of a single instance; `OLLAMA_NUM_PARALLEL` tuned
+against measured VRAM would be the next cheap experiment before reaching for either. Full worked
+scenario and raw numbers: `docs/operations/capacity-planning.md`.
+
 ## Related Documents
 
 - [application-services/matching-engine.md](application-services/matching-engine.md)

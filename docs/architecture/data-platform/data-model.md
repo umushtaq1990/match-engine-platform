@@ -120,6 +120,13 @@ matching system becomes trivial."
   against. Extraction output is not yet wired back into `job_skills` itself — that's Use Case C's
   own v3, not built yet.
 
+## Resource Footprint and Scaling
+
+See [README.md](README.md) for the data platform's connection-pool numbers (Postgres's measured
+`max_connections=100` against the app services' combined SQLAlchemy pools) and
+[../../operations/capacity-planning.md](../../operations/capacity-planning.md) for the full
+cross-layer scenario — not repeated here to avoid two places drifting out of sync.
+
 ## Related Documents
 
 - [architecture.md](../../architecture.md) — overall system overview

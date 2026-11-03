@@ -1431,3 +1431,45 @@ that file's layout-sensitive XML was out of scope here given how much hand-editi
 project; flagged as a follow-up, not silently left inconsistent.
 
 ### Phase 31 — status: COMPLETE (docs/ reorganized into a layer hierarchy, cross-references verified with zero stale links, no code touched)
+
+## Phase 32 — capacity planning: the concurrent-user scaling story, measured top to bottom (2026-11-03)
+
+Every prior resource doc measured static footprint (`docs/operations/infrastructure-sizing.md`) or
+one endpoint's concurrency (`docs/operations/production-readiness.md`'s matching-API load test).
+Nothing had ever load-tested the LLM/embedding path under concurrency — only single-request
+latency existed for it. This phase closes that gap with a real measurement, not a projection, and
+threads a "Resource Footprint and Scaling" story through every architecture layer doc plus the root
+README, not just one operations file.
+
+**New `scripts/load_test_llm.py`** (same shape as the existing `scripts/load_test.py`): real
+concurrent `httpx` requests against `POST /extract`, the one live endpoint that calls Ollama
+synchronously — confirmed via exploration that embeddings have **no live endpoint at all**, only
+the batch `embeddings-compute` job, a real finding in itself.
+
+**The measurement**: at concurrency 3 vs. 6 (comparable mean extracted-skill counts per request, to
+control for the LLM's own output-length variance), throughput dropped from 0.28 to 0.16 req/s and
+p95 latency rose from ~18s to ~58s — the same queuing signature the matching API showed before its
+Phase 13 multi-worker fix, except here Ollama (single instance, no `OLLAMA_NUM_PARALLEL` set, CPU-only)
+is the bottleneck, and at concurrency 6 the tail latency sits right at the edge of the 60s per-call
+timeout. `extraction` itself also runs a single uvicorn worker with a synchronous route — the same
+`--workers N` fix `api` already got would only move the queue to Ollama without also addressing
+Ollama's own serialization.
+
+**A real operational problem found and fixed along the way**: the `ollama_data` Docker volume that
+should have cached the models from an earlier phase's pull was empty — wiped at some point outside
+this session (not by anything run in this conversation). Re-pulling ~1.2GB took over an hour on a
+slow connection. Built `scripts/backup_ollama_models.sh`/`restore_ollama_models.sh` (mirroring the
+existing `backup_db.sh`/`restore_db.sh` pattern) and ran a real backup immediately after the pull
+completed, so this wait doesn't have to happen again even if the volume is wiped a second time.
+
+**Documentation**: new `docs/operations/capacity-planning.md` (standard template) — a worked
+concurrent-user scenario across the full request chain (Load Balancer through Postgres/Redis/
+Ollama), identifying the real bottleneck and honest next step at every hop. Every architecture-layer
+doc (`ingress-and-identity.md`, `frontend.md`, `application-services/README.md` and its matching-
+engine/behavioral-analytics docs, `ai-ml-and-mlops.md`, `data-platform/README.md` and its data-model/
+redis-infrastructure docs, `observability-and-logging.md`) got a short new "Resource Footprint and
+Scaling" section citing — not duplicating — the measured numbers. Root `README.md`'s "Measured
+results" table gained the new LLM-concurrency row. `docs/assumptions-register.md` A6 updated to
+reflect two load-tested endpoints now, not one.
+
+### Phase 32 — status: COMPLETE (real concurrent load test of the LLM-backed extraction path run and documented; resource/scaling story added to every architecture layer, not just one operations doc; Ollama model cache backup/restore built after losing the cache once)

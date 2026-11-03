@@ -107,6 +107,21 @@ runs the same internal-network check inside the container.
   `candidate_id`/`job_id`) — would need a real write-path into `app/ingestion/source_models.py`'s
   tables, not built yet.
 
+## Resource Footprint and Scaling
+
+Streamlit holds one live session per browser connection in the `frontend` process's own memory
+(`st.session_state`, including the SSO login state — `docs/architecture/ingress-and-identity.md`),
+so the real concurrent-user ceiling for the demo UI itself is however many sessions one Streamlit
+process can hold before memory/CPU on that single container becomes the constraint — not measured
+here (this is a single-developer demo UI, not the system's actual capacity bottleneck; see
+`docs/operations/capacity-planning.md`). Streamlit does not horizontally scale behind a load
+balancer the way a stateless API does without sticky sessions, since a session lives in one
+process — the two Reverse Proxy replicas in front of it already round-robin, but a given browser's
+session only works correctly if routed consistently (today it works because there's exactly one
+`frontend` container; adding a second would need session affinity, not built here). The UI is a
+thin client either way — its own footprint is not where this platform's real capacity limits are;
+see `docs/operations/capacity-planning.md` for the full worked scenario.
+
 ## Related Documents
 
 - `docs/architecture/application-services/skill-extraction.md` — the CV upload endpoint this UI calls
