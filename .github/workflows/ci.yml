@@ -287,17 +287,40 @@ jobs:
         run: |
           set -e
           api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
-          upstreams=$(for i in 1 2 3 4; do curl -s -D - -o /dev/null http://localhost:8080/ | grep -i '^x-upstream' ; done | sort -u | wc -l)
+          # Nginx reporting "healthy" only means its own process is listening — not that its
+          # proxy_pass connection to api/frontend has actually been exercised yet. A fresh
+          # container's very first proxied request can transiently 502/refuse while Docker's
+          # embedded DNS and the upstream connection warm up. Retry each check instead of a
+          # single-shot assertion right after the health-wait, since that's exactly the
+          # fragile window — confirmed locally by reproducing the same transient 502 against
+          # a just-restarted gateway container, which resolved itself within seconds.
+          for attempt in $(seq 1 10); do
+            upstreams=$(for i in 1 2 3 4; do curl -s -D - -o /dev/null http://localhost:8080/ | grep -i '^x-upstream'; done | sort -u | wc -l)
+            [ "$upstreams" -eq 2 ] && break
+            echo "round-robin attempt $attempt: saw $upstreams distinct upstream(s), retrying..."
+            sleep 2
+          done
           test "$upstreams" -eq 2
           echo "load balancer round-robin ok: 2 distinct upstreams seen"
-          gw_response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8099/matching/candidates/2/job-matches")
-          direct_response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8000/candidates/2/job-matches")
+          for attempt in $(seq 1 10); do
+            gw_response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8099/matching/candidates/2/job-matches")
+            direct_response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8000/candidates/2/job-matches")
+            [ "$gw_response" = "$direct_response" ] && [ -n "$gw_response" ] && break
+            echo "gateway routing attempt $attempt: gw=$gw_response"
+            sleep 2
+          done
           test "$gw_response" = "$direct_response"
+          test -n "$gw_response"
           echo "gateway routing ok: identical response via gateway vs direct"
-          ws_status=$(curl -s -o /dev/null -w '%{http_code}' -i -N \
-            -H "Connection: Upgrade" -H "Upgrade: websocket" \
-            -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-            "http://localhost:8080/_stcore/stream" --max-time 3)
+          for attempt in $(seq 1 10); do
+            ws_status=$(curl -s -o /dev/null -w '%{http_code}' -i -N \
+              -H "Connection: Upgrade" -H "Upgrade: websocket" \
+              -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+              "http://localhost:8080/_stcore/stream" --max-time 3)
+            [ "$ws_status" = "101" ] && break
+            echo "websocket attempt $attempt: status=$ws_status"
+            sleep 2
+          done
           test "$ws_status" = "101"
           echo "websocket passthrough ok: 101 Switching Protocols through loadbalancer -> reverseproxy -> frontend"
       - name: Smoke-test SSO (Phase 29 — Keycloak rejects wrong password, accepts correct one)
