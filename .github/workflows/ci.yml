@@ -313,10 +313,15 @@ jobs:
           test -n "$gw_response"
           echo "gateway routing ok: identical response via gateway vs direct"
           for attempt in $(seq 1 10); do
+            # --max-time deliberately cuts the long-lived websocket stream once the 101
+            # upgrade is confirmed; curl then exits non-zero (timeout), which is expected,
+            # not a failure. `|| true` stops that from tripping `set -e` before the actual
+            # status-code assertion below ever runs — the real, deterministic bug that broke
+            # this step the first time it ever got this far in CI (not a race after all).
             ws_status=$(curl -s -o /dev/null -w '%{http_code}' -i -N \
               -H "Connection: Upgrade" -H "Upgrade: websocket" \
               -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-              "http://localhost:8080/_stcore/stream" --max-time 3)
+              "http://localhost:8080/_stcore/stream" --max-time 3 || true)
             [ "$ws_status" = "101" ] && break
             echo "websocket attempt $attempt: status=$ws_status"
             sleep 2
