@@ -1473,3 +1473,31 @@ results" table gained the new LLM-concurrency row. `docs/assumptions-register.md
 reflect two load-tested endpoints now, not one.
 
 ### Phase 32 — status: COMPLETE (real concurrent load test of the LLM-backed extraction path run and documented; resource/scaling story added to every architecture layer, not just one operations doc; Ollama model cache backup/restore built after losing the cache once)
+
+## Phase 33 — real SSO login bug: found, mis-fixed once, then actually fixed (2026-11-03)
+
+A real bug, found only by clicking through the login in an actual browser rather than a scripted
+HTTP client: every real browser login failed with "OIDC state mismatch — possible CSRF, please log
+in again." — not an edge case, every single attempt. Phase 29's own verification had exercised a
+scripted HTTP client and `AppTest`'s bare script-execution harness, neither of which reproduces how
+Streamlit behaves across a genuine external-redirect-and-back round trip, so this was never caught.
+
+Two fix attempts, each checked against the real running stack rather than assumed correct:
+
+**First attempt (incomplete)**: the CSRF `state` lived in `st.session_state`, which doesn't survive
+a full browser navigation away to Keycloak and back (confirmed via `curl -sS -D -` showing
+Streamlit sends no `Set-Cookie` at all). Moved it into a plain module-level dict, reasoning that
+since `frontend` is a single process, it would persist — it didn't. Temporary debug logging showed
+the dict was already empty on the very next check, immediately after being populated: Streamlit
+re-executes the entire script file top-to-bottom on every rerun, so a plain `= {}` module-level
+assignment resets on every single rerun, not just across the external redirect.
+
+**Actual fix**: `st.cache_resource`, Streamlit's real mechanism for a value that survives reruns
+within one process (plus `show_spinner=False` — its default spinner is itself a Streamlit command,
+which broke the "`set_page_config()` must be first" rule). Verified by a real browser login
+completing end-to-end, and the existing 10-test `AppTest` suite still passing. Documented in full,
+including the test-coverage gap this exposed (no automated test exercises the state-comparison
+branch itself), in `docs/architecture/ingress-and-identity.md`'s Verification & Results and Known
+Limitations.
+
+### Phase 33 — status: COMPLETE (real browser login verified working end-to-end; both the bug and the first incomplete fix attempt documented, not silently corrected)

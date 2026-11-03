@@ -229,12 +229,51 @@ hitting real endpoints:
    hostname `localhost` (not `127.0.0.1`, not any other hostname) — worth knowing if
    this ever needs to run somewhere else.
 
+6. **A real bug found only by clicking through the login in an actual browser**, not
+   caught by points 1-4 above: those exercised either a scripted HTTP client or
+   `AppTest`'s bare script-execution harness, neither of which reproduces how
+   Streamlit behaves across a genuine browser round trip to an external IdP and back.
+   A real browser login consistently failed with "OIDC state mismatch — possible
+   CSRF, please log in again," on *every* attempt, not as an edge case. Root-caused
+   in two passes, each verified against the real running stack rather than assumed
+   fixed:
+   - **First attempt (incomplete)**: the CSRF `state` was stored in
+     `st.session_state`, which doesn't survive a full external-redirect-and-back
+     navigation (confirmed via `curl -sS -D -` showing Streamlit issues no
+     `Set-Cookie` at all, so there's no way for it to reattach to the prior session).
+     Moved `state` into a plain module-level dict instead, reasoning that since
+     `frontend` runs as a single process, it would persist.
+   - **That didn't work either** — confirmed live via temporary debug logging: the
+     dict was already empty on the very next check, immediately after being
+     populated. Actual root cause: Streamlit re-executes the *entire script file*
+     top-to-bottom on every rerun (its core execution model), so a plain
+     module-level `= {}` assignment resets to empty on every single rerun, not just
+     across the external redirect.
+   - **Actual fix**: `st.cache_resource`, Streamlit's documented mechanism for a
+     value that survives reruns within one process — the factory function backing it
+     only actually executes once. (`show_spinner=False` is required on the
+     decorator: its default spinner is itself a Streamlit command, which broke the
+     "`set_page_config()` must be the first command" rule when the cache was first
+     populated before `set_page_config()` ran.) Verified by a real browser login
+     completing successfully end-to-end after this fix, and by the existing 10-test
+     `AppTest` suite still passing.
+   - **The test-coverage gap this exposed**: `tests/frontend/test_streamlit_app.py`
+     never exercised the state-comparison logic at all — every test either bypasses
+     login by pre-seeding `id_token_claims` or checks the pre-redirect login link,
+     not the post-redirect callback branch. `AppTest` also can't easily reproduce
+     Streamlit's real rerun/reconnect semantics across an external redirect, which is
+     exactly what both bugs above depended on — a real, acknowledged limit of this
+     project's test suite for this one code path, not something closed by this fix.
+
 ### Known Limitations
 
 - `st.session_state` is not a hardened session mechanism — it's per Streamlit server
   connection, not a signed/encrypted cookie-based session a real auth system would
   use. Acceptable for a local single-user demo, not for anything deployed (same
   class of gap as `JME_API_KEY`, assumption A9).
+- No automated test exercises the CSRF `state`-comparison branch itself (see
+  Verification & Results point 6) — covered today only by manual real-browser
+  verification, not by `AppTest`.
 - No ID token signature verification — the JWT payload is base64-decoded and trusted
   as-is, without checking Keycloak's signature on it. Fine when the token exchange
   itself happened over a direct, trusted connection to Keycloak (which it does
