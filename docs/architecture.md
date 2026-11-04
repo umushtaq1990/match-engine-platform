@@ -1,6 +1,6 @@
 # Architecture Overview
 
-One consolidated, arc42-shaped view of Project JME, the "start here" document for understanding how the whole system fits together. It links out to the deep-dive doc for anything it summarizes rather than duplicating it (see `docs/README.md`'s "Why consolidated, not one file per brief bullet"); this document's own job is synthesis, not new content.
+One consolidated, arc42-shaped view of Project JME, how the whole system fits together.
 
 Two diagrams anchor this document, built fresh from the real implemented system (not mockups):
 - [`docs/architect/JME_Solution_Context.drawio`](architect/JME_Solution_Context.drawio)  who uses this system and what it exposes to them. Rendered below (exported directly from the `.drawio` source, open that file in diagrams.net/VS Code to edit it).
@@ -12,8 +12,7 @@ Two diagrams anchor this document, built fresh from the real implemented system 
 
 ## 1. Introduction and goals
 
-Project JME is an end-to-end AI-architecture portfolio project: a talent-matching platform built to demonstrate how a real system gets designed, built, measured, and hardened, not a toy demo. The brief (`docs/prd.md`) frames six use cases (A–F below); the engineering discipline threaded through
-every phase (`docs/progress.md`) is **rule-based-first, then measure before adding complexity** (assumption A5), embeddings, a knowledge graph, and Redis were each added only once a documented, scoped need existed, not speculatively.
+Project JME is an end-to-end AI-architecture portfolio project: a talent-matching platform built to demonstrate how a real system gets designed, built, measured, and hardened. The brief (`docs/prd.md`) frames six use cases (A–F below).
 
 | ID | Use case | Status |
 |---|---|---|
@@ -26,12 +25,11 @@ every phase (`docs/progress.md`) is **rule-based-first, then measure before addi
 
 ## 2. System scope and context
 
-See the Solution Context diagram. Three human actor types (candidate, employer/recruiter, data/ML engineer) interact with the platform's exposed capabilities; two upstream sources (an HRIS/ATS feed and a course catalog, both synthetic) represent what a real integration would look like. The
-platform itself is a single Docker Compose stack locally, with a documented (not provisioned) Kubernetes/AKS-shaped deployment target (`docs/operations/kubernetes.md`).
+See the Solution Context diagram. Three human actor types (candidate, employer/recruiter, data/ML engineer) interact with the platform's exposed capabilities; two upstream sources (an HRIS/ATS feed and a course catalog, both synthetic) represent what a real integration would look like. The platform itself is a single Docker Compose stack locally, with a documented (not provisioned) Kubernetes/AKS-shaped deployment target (`docs/operations/kubernetes.md`).
 
 **Explicitly out of scope** (`docs/prd.md` §6): a public self-service portal, real candidate PII, multi-agent orchestration frameworks, and any confidential prior-employer material, a standing constraint maintained by discipline throughout (assumption A8).
 
-## 3. Solution strategy — the decisions that shaped everything else
+## 3. Solution strategy
 
 - **Rule-based before ML, every time** (A5): the matching engine, skill-gap analysis, and course recommendations all shipped as deterministic, explainable baselines first. Embeddings and the knowledge graph were added only once each had a measured case, and only promoted embeddings-blended ranking to the default after re-verification showed it winning (NDCG 0.878 vs. 0.645), see `docs/architecture/data-platform/embedding-matching.md`.
 - **Two-stage retrieve-then-score for anything at scale**: pgvector's ANN index narrows thousands-to-millions of candidates/jobs to a few hundred plausible ones before any expensive scoring runs, the architectural pattern that makes 1M-candidate/50K-job scale tractable at all (`docs/architecture/data-platform/data-at-scale.md`).
@@ -46,7 +44,7 @@ See the Technical Architecture diagram for the full picture. By layer:
 | Layer | Components | Doc |
 |---|---|---|
 | Ingress / identity | `loadbalancer`/`reverseproxy-1`/`reverseproxy-2`/`gateway` (nginx), `keycloak` (OIDC SSO) | `docs/architecture/ingress-and-identity.md` |
-| Demo frontend | `frontend` (Streamlit, separate image — Candidate upload-CV/view-matches and Employer view-matches flows over `api`/`extraction`) | `docs/architecture/frontend.md` |
+| Demo frontend | `frontend` (Streamlit, separate image, Candidate upload-CV/view-matches and Employer view-matches flows over `api`/`extraction`) | `docs/architecture/frontend.md` |
 | Application services | `api` (matching engine, 4 workers), `analytics` (event ingestion + Streams consumer), `extraction` (skill parsing) | `docs/architecture/application-services/matching-engine.md`, `docs/architecture/application-services/behavioral-analytics.md`, `docs/architecture/application-services/skill-extraction.md` |
 | AI/ML serving | `ollama` (qwen2.5:1.5b generation; nomic-embed-text, all-minilm embeddings) | `docs/architecture/ai-ml-and-mlops.md` |
 | Data platform | PostgreSQL 16 + pgvector (relational + vector), Neo4j 5 + GDS (knowledge graph), Redis 7 (rate limit/cache/streams), SeaweedFS (S3-compatible object storage for CV uploads) | `docs/architecture/data-platform/data-model.md`, `docs/architecture/data-platform/knowledge-graph.md`, `docs/architecture/data-platform/redis-infrastructure.md`, `docs/architecture/application-services/skill-extraction.md` |
@@ -56,8 +54,7 @@ See the Technical Architecture diagram for the full picture. By layer:
 
 ## 5. Runtime view
 
-**A. A candidate requests job matches** (`GET /candidates/{id}/job-matches`): `api` checks the version-stamped Redis cache first (`X-Cache` header reports hit/miss); on a miss, it scores every eligible job rule-based (skill/location/salary/occupation + skill-gap), then — by default — re-ranks
-that pool using the embeddings-blended score if the candidate has embeddings computed (`X-Ranking-Mode` reports which path ran), writes the result back to Redis with a 1-hour TTL, and publishes a `recommendation_shown` event via Redis Streams (`XADD`) for the analytics service to pick up asynchronously — a real matching response never blocks on analytics being up.
+**A. A candidate requests job matches** (`GET /candidates/{id}/job-matches`): `api` checks the version-stamped Redis cache first (`X-Cache` header reports hit/miss); on a miss, it scores every eligible job rule-based (skill/location/salary/occupation + skill-gap), then by default re-ranks that pool using the embeddings-blended score if the candidate has embeddings computed (`X-Ranking-Mode` reports which path ran), writes the result back to Redis with a 1-hour TTL, and publishes a `recommendation_shown` event via Redis Streams (`XADD`) for the analytics service to pick up asynchronously, a real matching response never blocks on analytics being up.
 
 **B. A candidate's embeddings get recomputed** (`embeddings-compute`, a batch job): checks each dimension's content hash against what's stored, recomputes only what's stale, and the moment a candidate's embeddings change bumps their Redis cache-version key (`app/embeddings/cache_invalidation.py`), making any cached ranking for them unreachable immediately rather than waiting out the TTL.
 
@@ -68,8 +65,7 @@ Louvain clustering runs entirely in Cypher, once over skills and once over candi
 
 ## 6. Deployment view
 
-Local: Docker Compose, one `name: jme` project, always-on services plus profiled one-off jobs, see `docker-compose.yml` directly, it's the authoritative deployment manifest for local dev. Kubernetes: verified end-to-end on a local `kind` cluster (`docs/operations/kubernetes.md`), with a
-`kustomize` overlay that produces valid Azure-shaped manifests (AKS pods, Azure Database for PostgreSQL, Azure Cache for Redis, ACR, AGIC ingress), generated and reviewed, never `kubectl apply`'d against a real Azure subscription (assumption A1).
+Local: Docker Compose, one `name: jme` project, always-on services plus profiled one-off jobs, see `docker-compose.yml` directly, it's the authoritative deployment manifest for local dev. Kubernetes: verified end-to-end on a local `kind` cluster (`docs/operations/kubernetes.md`), with a `kustomize` overlay that produces valid Azure-shaped manifests (AKS pods, Azure Database for PostgreSQL, Azure Cache for Redis, ACR, AGIC ingress), generated and reviewed, never `kubectl apply`'d against a real Azure subscription (assumption A1).
 
 ## 7. Cross-cutting concepts
 
