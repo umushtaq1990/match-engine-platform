@@ -2,7 +2,7 @@
 
 ## Purpose & Scope
 
-This is a local-first, single-user portfolio project, not a deployed multi-tenant service. The threat model below is scoped accordingly — it documents what's protected against, what isn't, and exactly what would need to change before any of that stops being true.
+This is a local-first, single-user portfolio project, not a deployed multi-tenant service. The threat model below is scoped accordingly, it documents what's protected against, what isn't, and exactly what would need to change before any of that stops being true.
 
 ## Architecture & Design
 
@@ -10,11 +10,11 @@ This is a local-first, single-user portfolio project, not a deployed multi-tenan
 
 A single static API key, not per-user authentication: there is no user model, no roles, and nothing in the current schema (candidates/jobs/skills) represents "who is calling the API", building OAuth2/JWT now would add a token issuer and identity model for a user concept that doesn't exist yet. This is the honest MVP for a single-tenant project's auth requirement, not a placeholder nobody thought about.
 
-The behavioral-analytics service (`app/analytics/`) uses the identical pattern — same `X-API-Key` header, same `require_api_key` dependency (necessarily duplicated code, not a shared import, per its own service-boundary decision — see `docs/architecture/application-services/behavioral-analytics.md`) — and reuses the *same* `JME_API_KEY` value rather than minting a second one. Deliberate for v1: both services are internal-only today, the same trust boundary. A distinct per-service key becomes worth the operational overhead once that stops being true (e.g., a real frontend calling the analytics API directly, or the two services getting different exposure).
+The behavioral-analytics service (`app/analytics/`) uses the identical pattern, same `X-API-Key` header, same `require_api_key` dependency (necessarily duplicated code, not a shared import, per its own service-boundary decision, see `docs/architecture/application-services/behavioral-analytics.md`) and reuses the *same* `JME_API_KEY` value rather than minting a second one. Deliberate for v1: both services are internal-only today, the same trust boundary. A distinct per-service key becomes worth the operational overhead once that stops being true (e.g., a real frontend calling the analytics API directly, or the two services getting different exposure).
 
 ### Rate limiting
 
-Basic in-app rate limiting across all three live services (`api`, `analytics`, `extraction`) via `slowapi`/`limits`, keyed by the caller's `X-API-Key` (falling back to source IP), default 100 requests/minute. `/health` and `/readiness` are explicitly exempt — infrastructure health checks shouldn't compete with the limit real callers are rate-limited by. `analytics`'s ingestion routes (`/events`, `/events/batch`) are also explicitly exempt, not rate-limited at all: they're internal, best-effort instrumentation traffic driven 1:1 by matching-API request volume, not external caller behavior — a real soak test (`docs/operations/production-readiness.md`) measured ~2,280 instrumentation calls/minute under moderate matching-API load, which any numeric limit here would have silently dropped most of (this endpoint doesn't raise on failure by the caller's own design, see `app/api/analytics_client.py`).
+Basic in-app rate limiting across all three live services (`api`, `analytics`, `extraction`) via `slowapi`/`limits`, keyed by the caller's `X-API-Key` (falling back to source IP), default 100 requests/minute. `/health` and `/readiness` are explicitly exempt, infrastructure health checks shouldn't compete with the limit real callers are rate-limited by. `analytics`'s ingestion routes (`/events`, `/events/batch`) are also explicitly exempt, not rate-limited at all: they're internal, best-effort instrumentation traffic driven 1:1 by matching-API request volume, not external caller behavior, a real soak test (`docs/operations/production-readiness.md`) measured ~2,280 instrumentation calls/minute under moderate matching-API load, which any numeric limit here would have silently dropped most of (this endpoint doesn't raise on failure by the caller's own design, see `app/api/analytics_client.py`).
 
 ### Secrets handling
 
@@ -29,31 +29,30 @@ Basic in-app rate limiting across all three live services (`api`, `analytics`, `
 
 ### Dependency/image scanning
 
-- **Image scanning**: `.github/workflows/ci.yml`'s `build-and-scan` job builds every service image and scans each with Trivy (`aquasecurity/trivy-action`, severity CRITICAL+HIGH). Each Dockerfile already only installs the narrow `requirements-*.txt` its own image needs (a deliberate image-separation decision, see `docs/adr/0001-decouple-ingestion-migrate-api.md`), which limits scan surface — a side effect of that design, not a substitute for actually scanning.
+- **Image scanning**: `.github/workflows/ci.yml`'s `build-and-scan` job builds every service image and scans each with Trivy (`aquasecurity/trivy-action`, severity CRITICAL+HIGH). Each Dockerfile already only installs the narrow `requirements*.txt` its own image needs (a deliberate image-separation decision, see `docs/adr/0001-decouple-ingestion-migrate-api.md`), which limits scan surface a side effect of that design, not a substitute for actually scanning.
 - **Dependency scanning**: `.github/dependabot.yml` runs weekly against the `pip` (`app/`), `docker`, and `github-actions` ecosystems.
 
 ## Implementation
 
-- `app/api/deps.py`, `app/analytics/deps.py`, `app/extraction/deps.py` — the duplicated `require_api_key` dependency, `secrets.compare_digest` for a timing-safe comparison.
+- `app/api/deps.py`, `app/analytics/deps.py`, `app/extraction/deps.py` the duplicated `require_api_key` dependency, `secrets.compare_digest` for a timing-safe comparison.
 - `app/api/rate_limit.py`, `app/analytics/rate_limit.py`, `app/extraction/rate_limit.py` ; `slowapi` limiters, Redis-backed for `api`/`analytics`, in-memory for single-worker `extraction`.
 - `.github/workflows/ci.yml`'s `build-and-scan` job, `.github/dependabot.yml`.
 
 ## Verification & Results
 
-**A real limitation found by testing, then fixed.** `api` runs 4 `uvicorn` worker processes (a measured fix for CPU-bound scoring — see `docs/operations/production-readiness.md`). Each worker kept its own
-independent in-memory rate-limit counter — the same class of bug found separately with Prometheus metrics under multiple workers. A real test (150 rapid sequential requests with one key) let **122** through before 429s started, not a clean 100 — the effective limit was inflated and unevenly
+**A real limitation found by testing, then fixed.** `api` runs 4 `uvicorn` worker processes (a measured fix for CPU-bound scoring, see `docs/operations/production-readiness.md`). Each worker kept its own independent in-memory rate-limit counter, the same class of bug found separately with Prometheus metrics under multiple workers. A real test (150 rapid sequential requests with one key) let **122** through before 429s started, not a clean 100 the effective limit was inflated and unevenly
 enforced across workers, not a true global limit. **Fixed** by pointing `api` and `analytics` at a shared Redis-backed `storage_uri` (`app/api/rate_limit.py`, `docs/architecture/data-platform/redis-infrastructure.md`), re-running the identical 150-request test against the fix now measures a clean **100 through, 50 blocked**. `extraction` still runs a single worker and was left on in-memory storage; `api`'s old imprecise-but-bounded behavior is gone, not just documented as acceptable.
 
 ## Known Limitations
 
 **What the API-key model does NOT protect against**:
 - A single leaked key grants full access to every endpoint, no scoping, no per-caller differentiation, no revocation short of rotating the one key.
-- No TLS termination anywhere, a real nginx reverse proxy now exists (Phase 28, `docs/architecture/ingress-and-identity.md`) but with no real certificate configured; it's still plain HTTP end-to-end. TLS at the proxy is the obvious next step before any non-localhost exposure, not built yet.
+- No TLS termination anywhere, a real nginx reverse proxy now exists ( `docs/architecture/ingress-and-identity.md`) but with no real certificate configured; it's still plain HTTP end-to-end. TLS at the proxy is the obvious next step before any non-localhost exposure, not built yet.
 - No audit log of who called what, when.
 
 **Other known gaps**:
-- No OAuth2/JWT for service-to-service calls, no per-caller identity on the APIs themselves, acceptable now (assumption A9), revisit before any shared deployment. (Separately, Phase 29 added real SSO/OIDC login for the human-facing Frontend, see `docs/architecture/ingress-and-identity.md`, but that's a login gate on the UI, not a replacement for the static `JME_API_KEY` the APIs themselves still check.)
-- No TLS (local-only; Phase 28's reverse proxy terminates connections in plaintext, no cert).
+- No OAuth2/JWT for service-to-service calls, no per-caller identity on the APIs themselves, acceptable now (assumption A9), revisit before any shared deployment. (Separately, added real SSO/OIDC login for the human-facing Frontend, see `docs/architecture/ingress-and-identity.md`, but that's a login gate on the UI, not a replacement for the static `JME_API_KEY` the APIs themselves still check.)
+- No TLS (local-only; reverse proxy terminates connections in plaintext, no cert).
 - No secrets manager, env-var placeholders only (assumption A7).
 - Dependency/image scanning (Trivy) currently runs report-only (`exit-code: 0`). No findings have been triaged into a known-acceptable baseline yet, so failing the build on every CRITICAL finding today would likely fail on base-image CVEs nobody has looked at, not real newly-introduced risk.
 
