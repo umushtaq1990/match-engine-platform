@@ -137,6 +137,29 @@ a request body. Deliberately not fail-open like the Redis integrations elsewhere
 if object storage is unreachable, the upload fails with a real `503`, since a CV upload with
 nowhere to put the file is a genuine failure the caller must see, not something to silently drop.
 
+### Synthetic CVs
+
+`app/extraction/generate_synthetic_cvs.py` (`docker compose run --rm cv-seed`) closes a real gap:
+the synthetic dataset had 2,000 candidates but, before this, zero CV *documents* — only the
+`generate_synthetic_data.py` relational rows existed, matching `data-model.md`'s stated scope.
+For every seeded candidate without an existing `candidate_documents` row, it builds a one-page PDF
+(name/contact/location, a summary line from `years_experience` + `primary_occupation_id`, and the
+candidate's own `candidate_skills` rows) with `fpdf2`, then pushes it through the **exact same**
+`validate_cv_upload()` + `upload_cv()` path a real browser upload hits — the resulting
+`candidate_documents` rows and SeaweedFS objects are indistinguishable from genuine uploads, not a
+separate synthetic-only code path.
+
+Idempotent by design: a candidate that already has a `candidate_documents` row — a real upload, or
+a prior run of this script — is left untouched (`--force` overrides this). CI's smoke test exploits
+this directly: it uploads a real CV for candidate 1 first, then runs `cv-seed`, then asserts
+candidate 1's `original_filename` is still the uploaded one (`ci_test_cv.pdf`), not the synthetic
+generator's output — proving the generator never overwrites a real upload.
+
+The generated PDF bytes are **never committed to this repository** — same stance as the rest of
+the synthetic dataset (`docs/progress.md`). Anyone who needs the CV documents runs `docker compose
+run --rm seed && docker compose run --rm cv-seed` themselves; the generator is fully deterministic
+in content (it reads straight from each candidate's already-seeded skills, not from randomness).
+
 ## Verification & Results
 
 **Generator enhancement**: `app/ingestion/generate_synthetic_data.py` now weaves each job's actual
@@ -246,6 +269,10 @@ correctly returned `404` before ever touching object storage.
   all inputs or a proof the underlying sampling inconsistency is actually resolved. A text that
   genuinely has no skills in it and one the model simply fails all 3 attempts on are indistinguishable
   to this fix; both return `{"matches": [], "unmatched": []}`.
+- Synthetic CVs are structured/templated (name, summary, a skills list), not free-flowing resume
+  prose — they exist to exercise the upload/storage/retrieval path end to end at real dataset scale,
+  not to stress-test PDF text extraction against realistic formatting noise (headers/columns/tables),
+  which the Roadmap's "parse the uploaded PDF's text" item will need separate, messier fixtures for.
 
 ## Roadmap
 

@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [api, migrate, seed, dataquality, mlflow, analytics, extraction, graph, frontend]
+        image: [api, migrate, seed, dataquality, mlflow, analytics, extraction, graph, frontend, cvseed]
     steps:
       - uses: actions/checkout@v4
       - name: Build ${{ matrix.image }} image
@@ -250,6 +250,16 @@ jobs:
           diff /tmp/ci_test_cv.pdf /tmp/ci_downloaded_cv.pdf && echo "downloaded CV matches uploaded CV exactly"
           reject=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8002/candidates/1/cv -H "X-API-Key: $api_key" -F "file=@/tmp/ci_test_cv.pdf;type=image/png")
           test "$reject" = "422"
+      - name: Generate synthetic CVs for every candidate
+        run: docker compose run --rm cv-seed
+      - name: Confirm synthetic CVs were generated without overwriting the real upload above
+        run: |
+          set -e
+          count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from candidate_documents;" | xargs)
+          filename=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select original_filename from candidate_documents where candidate_id=1;" | xargs)
+          echo "candidate_documents=$count candidate_1_filename=$filename"
+          [ "$count" = "2000" ]
+          [ "$filename" = "ci_test_cv.pdf" ]
       - name: Start frontend (Phase 27 demo UI)
         run: docker compose up -d frontend
       - name: Wait for frontend healthy

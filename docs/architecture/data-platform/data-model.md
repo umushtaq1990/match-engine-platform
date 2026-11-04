@@ -12,18 +12,244 @@ design, synthetic data generation, and the deliberate imperfections that keep th
 
 ## Architecture & Design
 
-### Entity-relationship summary
+### Entity-relationship diagram (full schema, all 20 tables)
 
+The master schema reference for the data-engineering team: every table the platform defines, with
+primary/foreign/unique keys. Covers more than this doc's own core-domain scope (below) deliberately
+— each governance/ML/analytics table is detailed in its owning service's doc, but the relationships
+between all of them only make sense drawn together once.
+
+```mermaid
+erDiagram
+    SKILLS {
+        int id PK
+        string name UK
+        string category
+    }
+    SKILL_SYNONYMS {
+        int id PK
+        int skill_id FK
+        string synonym_text UK
+    }
+    OCCUPATIONS {
+        int id PK
+        string code UK
+        string title
+    }
+    OCCUPATION_SKILLS {
+        int id PK
+        int occupation_id FK
+        int skill_id FK
+        numeric importance
+    }
+    COURSES {
+        int id PK
+        string title
+        string provider
+        string level
+        int duration_hours
+    }
+    COURSE_SKILLS {
+        int id PK
+        int course_id FK
+        int skill_id FK
+        numeric coverage_weight
+    }
+    CANDIDATES {
+        int id PK
+        string full_name
+        string email UK
+        string location_city
+        string location_region
+        int years_experience
+        int desired_salary_min "nullable"
+        int desired_salary_max "nullable"
+        int primary_occupation_id FK "nullable"
+        timestamp created_at
+    }
+    CANDIDATE_SKILLS {
+        int id PK
+        int candidate_id FK
+        int skill_id FK
+        enum proficiency
+        enum evidence_source
+    }
+    CANDIDATE_SKILL_ASSESSMENTS {
+        int id PK
+        int candidate_id FK
+        int skill_id FK
+        enum result
+        timestamp assessed_at
+    }
+    JOBS {
+        int id PK
+        string title
+        string company_name
+        int occupation_id FK "nullable"
+        text description_raw
+        string location_city
+        string location_region
+        int salary_min "nullable"
+        int salary_max "nullable"
+        enum employment_type
+        timestamp posted_at
+    }
+    JOB_SKILLS {
+        int id PK
+        int job_id FK
+        int skill_id FK
+        enum requirement_level
+    }
+    CANDIDATE_DOCUMENTS {
+        int id PK
+        int candidate_id FK "unique — 1:1, one CV per candidate"
+        string object_key "SeaweedFS key, bytes live there not here"
+        string original_filename
+        string content_type
+        bigint size_bytes
+        timestamp uploaded_at
+    }
+    ENTITY_EMBEDDINGS {
+        int id PK
+        string entity_type "no FK — polymorphic (candidate/job)"
+        int entity_id "no FK — see entity_type"
+        string dimension
+        string embedding_model
+        string source_hash
+        vector vector "384-dim, HNSW ANN index"
+        timestamp computed_at
+    }
+    EMBEDDING_EVAL_RESULTS {
+        int id PK
+        timestamp run_at
+        string config_label
+        string embedding_model
+        string scoring_mode
+        int sample_size
+        numeric precision_at_k_avg
+        numeric recall_at_k_avg
+        numeric ndcg_at_k_avg
+        numeric mrr_avg
+        numeric near_miss_accuracy "nullable"
+        jsonb detail
+    }
+    DATA_QUALITY_RUNS {
+        int id PK
+        timestamp run_at
+        int total_checks
+        int passed_checks
+        int warned_checks
+        int failed_checks
+    }
+    DATA_QUALITY_CHECK_RESULTS {
+        int id PK
+        int run_id FK
+        string check_name
+        string category
+        enum status
+        numeric threshold_warn "nullable"
+        numeric threshold_fail "nullable"
+        numeric actual_value "nullable"
+        int affected_rows "nullable"
+        text details "nullable"
+    }
+    EVALUATION_RUNS {
+        int id PK
+        timestamp run_at
+        int k
+        int sample_size
+        int excluded_no_ground_truth
+        string config_label
+        numeric precision_at_k_avg
+        numeric recall_at_k_avg
+        numeric ndcg_at_k_avg
+        numeric mrr_avg
+    }
+    EVALUATION_CANDIDATE_RESULTS {
+        int id PK
+        int run_id FK
+        int candidate_id "no FK — informal reference, indexed only"
+        numeric precision_at_k
+        numeric recall_at_k
+        numeric ndcg_at_k
+        numeric reciprocal_rank
+    }
+    EXTRACTION_RUNS {
+        int id PK
+        timestamp run_at
+        string llm_model
+        string embedding_model
+        numeric similarity_threshold
+        string prompt_version
+        int sample_size
+        numeric precision_avg
+        numeric recall_avg
+        numeric f1_avg
+        numeric requirement_level_accuracy_avg
+        numeric unmatched_phrase_rate_avg
+    }
+    EXTRACTION_EXAMPLE_RESULTS {
+        int id PK
+        int run_id FK
+        string example_id
+        string source
+        numeric precision
+        numeric recall
+        numeric f1
+        numeric requirement_level_accuracy "nullable"
+        jsonb expected_skill_ids
+        jsonb predicted_skill_ids
+        jsonb unmatched_phrases
+    }
+    ANALYTICS_BEHAVIORAL_EVENTS {
+        string event_id PK "uuid, analytics schema — isolated, no cross-schema FK"
+        timestamp occurred_at "nullable, client-supplied"
+        timestamp received_at "server-set, authoritative for ordering"
+        string actor_type
+        int actor_id "no FK — deliberate bounded-context boundary"
+        string session_id "nullable"
+        string event_type
+        string entity_type "nullable"
+        int entity_id "nullable, no FK"
+        string source
+        jsonb metadata
+    }
+
+    SKILLS ||--o{ SKILL_SYNONYMS : "skill_id"
+    SKILLS ||--o{ OCCUPATION_SKILLS : "skill_id"
+    OCCUPATIONS ||--o{ OCCUPATION_SKILLS : "occupation_id"
+    SKILLS ||--o{ COURSE_SKILLS : "skill_id"
+    COURSES ||--o{ COURSE_SKILLS : "course_id"
+    SKILLS ||--o{ CANDIDATE_SKILLS : "skill_id"
+    CANDIDATES ||--o{ CANDIDATE_SKILLS : "candidate_id"
+    SKILLS ||--o{ CANDIDATE_SKILL_ASSESSMENTS : "skill_id"
+    CANDIDATES ||--o{ CANDIDATE_SKILL_ASSESSMENTS : "candidate_id"
+    OCCUPATIONS ||--o{ CANDIDATES : "primary_occupation_id (nullable)"
+    OCCUPATIONS ||--o{ JOBS : "occupation_id (nullable)"
+    SKILLS ||--o{ JOB_SKILLS : "skill_id"
+    JOBS ||--o{ JOB_SKILLS : "job_id"
+    CANDIDATES ||--o| CANDIDATE_DOCUMENTS : "candidate_id (1:1)"
+    DATA_QUALITY_RUNS ||--o{ DATA_QUALITY_CHECK_RESULTS : "run_id"
+    EVALUATION_RUNS ||--o{ EVALUATION_CANDIDATE_RESULTS : "run_id"
+    EXTRACTION_RUNS ||--o{ EXTRACTION_EXAMPLE_RESULTS : "run_id"
 ```
-Skill ──< SkillSynonym
-Skill ──< OccupationSkill >── Occupation
-Skill ──< CourseSkill >── Course
-Skill ──< CandidateSkill >── Candidate
-Skill ──< CandidateSkillAssessment >── Candidate
-Skill ──< JobSkill >── Job
-Occupation ──< Candidate (primary_occupation_id, nullable)
-Occupation ──< Job (occupation_id)
-```
+
+**Intentionally not drawn as FK-backed relationships above** (real in the data, but enforced in
+application code / a data-quality check, not a database constraint — each is a deliberate bounded-
+context or polymorphism choice, not an oversight):
+- `ENTITY_EMBEDDINGS.entity_id` → `CANDIDATES.id` / `JOBS.id`, selected by `entity_type` — pgvector's
+  fixed-width column means one physical table backs multiple logical entity types.
+- `EVALUATION_CANDIDATE_RESULTS.candidate_id` → `CANDIDATES.id` — indexed but not FK-constrained.
+- `ANALYTICS_BEHAVIORAL_EVENTS.actor_id` / `.entity_id` → `CANDIDATES.id` / `JOBS.id` — a separate
+  Postgres **schema** (`analytics`, not `public`) by design, so its migrations stay independent of
+  the matching engine's; referential integrity here is a data-quality report, not a constraint. See
+  [behavioral-analytics.md](../application-services/behavioral-analytics.md) "Service boundary".
+
+**Indexes beyond the PK/FK/UK already shown above**: `entity_embeddings` carries a hand-written HNSW
+approximate-nearest-neighbor index on `vector` (`vector_cosine_ops` — not autogenerate-able, see
+`app/embeddings/models.py`); `analytics.behavioral_events` carries two composite indexes,
+`(actor_type, actor_id, received_at)` and `(event_type, received_at)`, for its two real query
+patterns (an actor's timeline, an event-type funnel) rather than one index per column.
 
 ### Design decision: distinguishing "not recorded" from "assessed absent"
 
@@ -43,6 +269,10 @@ data means a candidate lacks a skill.
 ## Implementation
 
 ### Tables
+
+This doc's own scope remains the 11 core-domain tables below (as stated in Purpose & Scope) — the
+9 governance/ML tables and `analytics.behavioral_events` shown in the diagram above are each
+detailed in their owning service's doc (see Related Documents), not repeated here.
 
 | Table | Purpose | Key fields |
 |---|---|---|
@@ -133,5 +363,9 @@ cross-layer scenario — not repeated here to avoid two places drifting out of s
 - [data-quality.md](data-quality.md) — automated checks run against this schema
 - [skill-extraction.md](../application-services/skill-extraction.md) — consumes `description_raw`/`skill_synonyms`
 - [matching-engine.md](../application-services/matching-engine.md) — the scoring logic built on this schema
+- [skill-extraction.md](../application-services/skill-extraction.md) — `candidate_documents`, `extraction_runs`/`extraction_example_results`, synthetic CV generation
+- [embedding-matching.md](embedding-matching.md) — `entity_embeddings`, `embedding_eval_results`
+- [data-quality.md](data-quality.md) — `data_quality_runs`, `data_quality_check_results`
+- [behavioral-analytics.md](../application-services/behavioral-analytics.md) — `analytics.behavioral_events`
 - [assumptions-register.md](../../assumptions-register.md) — A4 (skill taxonomy scale decision)
 - `docs/progress.md` — full build history, kept locally as an internal working log, not included in this repository

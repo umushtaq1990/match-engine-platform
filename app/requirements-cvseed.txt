@@ -1,0 +1,3 @@
+-r requirements-base.txt
+minio==7.2.20
+fpdf2==2.8.2

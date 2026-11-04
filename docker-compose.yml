@@ -372,6 +372,30 @@ services:
         condition: service_healthy
     profiles: ["tools"]
 
+  # One-off job: generates synthetic CV PDFs for every already-seeded
+  # candidate that doesn't already have one, uploaded through the exact same
+  # path a real user upload hits (app/extraction/document_storage.py). Run
+  # after `seed` (needs candidate ids) — requires `seaweedfs` to actually
+  # store the bytes. Dummy CVs are never committed to this repo; regenerate
+  # the dataset locally by running this job yourself. Run explicitly:
+  # docker compose run --rm cv-seed
+  cv-seed:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.cvseed
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      CV_STORAGE_ENDPOINT: seaweedfs:8333
+      CV_STORAGE_ACCESS_KEY: ${CV_STORAGE_ACCESS_KEY}
+      CV_STORAGE_SECRET_KEY: ${CV_STORAGE_SECRET_KEY}
+      CV_STORAGE_BUCKET: candidate-cvs
+    depends_on:
+      db:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    profiles: ["tools"]
+
   # Phase 17: pgvector/pgvector is a drop-in-compatible build of the same
   # Postgres 16 with the pgvector extension pre-installed (confirmed via
   # Docker Hub's API, not a fork) — not a new vector-DB service, the

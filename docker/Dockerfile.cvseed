@@ -1,0 +1,24 @@
+# Dev/local-only one-off job: generates synthetic CV PDFs for every already-
+# seeded candidate and uploads them through the same Use Case C upload path a
+# real user hits (app/extraction/document_storage.py), so the resulting
+# candidate_documents rows are indistinguishable from real uploads. The
+# generated CV bytes are never committed to this repo — this image is how
+# anyone regenerates the dataset locally. See
+# docs/architecture/application-services/skill-extraction.md "Synthetic CVs".
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY app/requirements-base.txt app/requirements-cvseed.txt ./
+RUN pip install --no-cache-dir -r requirements-cvseed.txt
+
+COPY app/db.py ./app/db.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/ingestion/__init__.py ./app/ingestion/__init__.py
+COPY app/ingestion/source_models.py ./app/ingestion/source_models.py
+COPY app/extraction/__init__.py ./app/extraction/__init__.py
+COPY app/extraction/document_storage.py ./app/extraction/document_storage.py
+COPY app/extraction/models.py ./app/extraction/models.py
+COPY app/extraction/generate_synthetic_cvs.py ./app/extraction/generate_synthetic_cvs.py
+
+CMD ["python", "-m", "app.extraction.generate_synthetic_cvs"]
