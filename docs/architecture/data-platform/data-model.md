@@ -1,26 +1,31 @@
 # Data Model
 
-Status: v0.2, implemented and verified. Schema lives in `app/ingestion/source_models.py`, managed
-via Alembic (`alembic/versions/`). Generator: `app/ingestion/generate_synthetic_data.py` (paths
-updated after the Phase 2 follow-up restructuring into `app/ingestion/`/`app/api/` — see ADR 0001).
+Status: v0.2, implemented and verified. Schema lives in `app/ingestion/source_models.py`, managed via Alembic (`alembic/versions/`). Generator: `app/ingestion/generate_synthetic_data.py` (paths updated after the Phase 2 follow-up restructuring into `app/ingestion/`/`app/api/`).
 
 ## Purpose & Scope
 
-Defines the relational schema underlying the whole platform: the canonical skill/occupation/course
-taxonomy, candidate and job entities, and the junction tables connecting them. Scope covers schema
-design, synthetic data generation, and the deliberate imperfections that keep the dataset realistic.
+Defines the relational schema underlying the whole platform: the canonical skill/occupation/course taxonomy, candidate and job entities, and the junction tables connecting them. Scope covers schema design, synthetic data generation, and the deliberate imperfections that keep the dataset realistic.
 
 ## Architecture & Design
 
-### Entity-relationship diagram (full schema, all 20 tables)
+### Entity-relationship diagrams (full schema, split by cluster for readability)
 
-The master schema reference for the data-engineering team: every table the platform defines, with
-primary/foreign/unique keys. Covers more than this doc's own core-domain scope (below) deliberately
-— each governance/ML/analytics table is detailed in its owning service's doc, but the relationships
-between all of them only make sense drawn together once.
+The master schema reference for the data-engineering team: every table the platform defines, with primary/foreign/unique keys. Covers more than this doc's own core-domain scope (below) deliberately, each governance/ML/analytics table is detailed in its owning service's doc, but the relationships between all of them only make sense drawn together once.
+
+Split into three diagrams grouped by how tables actually connect, rather than one single
+21-table diagram, so each stays legible when zoomed in — one diagram this wide was unreadable at
+a zoomed-in scroll position. Each sets `direction TB` so related tables stack vertically instead
+of sprawling horizontally; tables with no FK relationship to the rest of the schema get their own
+section instead of floating, disconnected, inside a bigger picture.
+
+#### Core domain — taxonomy, candidates, jobs
+
+The one fully-connected graph: skills/occupations/courses taxonomy, candidates, jobs, and the
+join tables between them. 12 tables.
 
 ```mermaid
 erDiagram
+    direction TB
     SKILLS {
         int id PK
         string name UK
@@ -109,30 +114,31 @@ erDiagram
         bigint size_bytes
         timestamp uploaded_at
     }
-    ENTITY_EMBEDDINGS {
-        int id PK
-        string entity_type "no FK — polymorphic (candidate/job)"
-        int entity_id "no FK — see entity_type"
-        string dimension
-        string embedding_model
-        string source_hash
-        vector vector "384-dim, HNSW ANN index"
-        timestamp computed_at
-    }
-    EMBEDDING_EVAL_RESULTS {
-        int id PK
-        timestamp run_at
-        string config_label
-        string embedding_model
-        string scoring_mode
-        int sample_size
-        numeric precision_at_k_avg
-        numeric recall_at_k_avg
-        numeric ndcg_at_k_avg
-        numeric mrr_avg
-        numeric near_miss_accuracy "nullable"
-        jsonb detail
-    }
+
+    SKILLS ||--o{ SKILL_SYNONYMS : "skill_id"
+    SKILLS ||--o{ OCCUPATION_SKILLS : "skill_id"
+    OCCUPATIONS ||--o{ OCCUPATION_SKILLS : "occupation_id"
+    SKILLS ||--o{ COURSE_SKILLS : "skill_id"
+    COURSES ||--o{ COURSE_SKILLS : "course_id"
+    SKILLS ||--o{ CANDIDATE_SKILLS : "skill_id"
+    CANDIDATES ||--o{ CANDIDATE_SKILLS : "candidate_id"
+    SKILLS ||--o{ CANDIDATE_SKILL_ASSESSMENTS : "skill_id"
+    CANDIDATES ||--o{ CANDIDATE_SKILL_ASSESSMENTS : "candidate_id"
+    OCCUPATIONS ||--o{ CANDIDATES : "primary_occupation_id (nullable)"
+    OCCUPATIONS ||--o{ JOBS : "occupation_id (nullable)"
+    SKILLS ||--o{ JOB_SKILLS : "skill_id"
+    JOBS ||--o{ JOB_SKILLS : "job_id"
+    CANDIDATES ||--o| CANDIDATE_DOCUMENTS : "candidate_id (1:1)"
+```
+
+#### Governance & ML run tracking
+
+Three independent run/result pairs — each is self-contained (a `*_runs` header row linked only to
+its own detail rows) and not connected to each other or to the core domain by any FK. 6 tables.
+
+```mermaid
+erDiagram
+    direction TB
     DATA_QUALITY_RUNS {
         int id PK
         timestamp run_at
@@ -201,6 +207,44 @@ erDiagram
         jsonb predicted_skill_ids
         jsonb unmatched_phrases
     }
+
+    DATA_QUALITY_RUNS ||--o{ DATA_QUALITY_CHECK_RESULTS : "run_id"
+    EVALUATION_RUNS ||--o{ EVALUATION_CANDIDATE_RESULTS : "run_id"
+    EXTRACTION_RUNS ||--o{ EXTRACTION_EXAMPLE_RESULTS : "run_id"
+```
+
+#### Standalone & cross-cutting tables (no FK constraints)
+
+Three tables with zero FK-constrained relationships to anything else in the schema — each is
+deliberately decoupled (polymorphic, append-only, or a separate Postgres schema), not an
+oversight. See the callouts just below for exactly why each one has no drawn relationship.
+
+```mermaid
+erDiagram
+    ENTITY_EMBEDDINGS {
+        int id PK
+        string entity_type "no FK — polymorphic (candidate/job)"
+        int entity_id "no FK — see entity_type"
+        string dimension
+        string embedding_model
+        string source_hash
+        vector vector "384-dim, HNSW ANN index"
+        timestamp computed_at
+    }
+    EMBEDDING_EVAL_RESULTS {
+        int id PK
+        timestamp run_at
+        string config_label
+        string embedding_model
+        string scoring_mode
+        int sample_size
+        numeric precision_at_k_avg
+        numeric recall_at_k_avg
+        numeric ndcg_at_k_avg
+        numeric mrr_avg
+        numeric near_miss_accuracy "nullable"
+        jsonb detail
+    }
     ANALYTICS_BEHAVIORAL_EVENTS {
         string event_id PK "uuid, analytics schema — isolated, no cross-schema FK"
         timestamp occurred_at "nullable, client-supplied"
@@ -214,24 +258,6 @@ erDiagram
         string source
         jsonb metadata
     }
-
-    SKILLS ||--o{ SKILL_SYNONYMS : "skill_id"
-    SKILLS ||--o{ OCCUPATION_SKILLS : "skill_id"
-    OCCUPATIONS ||--o{ OCCUPATION_SKILLS : "occupation_id"
-    SKILLS ||--o{ COURSE_SKILLS : "skill_id"
-    COURSES ||--o{ COURSE_SKILLS : "course_id"
-    SKILLS ||--o{ CANDIDATE_SKILLS : "skill_id"
-    CANDIDATES ||--o{ CANDIDATE_SKILLS : "candidate_id"
-    SKILLS ||--o{ CANDIDATE_SKILL_ASSESSMENTS : "skill_id"
-    CANDIDATES ||--o{ CANDIDATE_SKILL_ASSESSMENTS : "candidate_id"
-    OCCUPATIONS ||--o{ CANDIDATES : "primary_occupation_id (nullable)"
-    OCCUPATIONS ||--o{ JOBS : "occupation_id (nullable)"
-    SKILLS ||--o{ JOB_SKILLS : "skill_id"
-    JOBS ||--o{ JOB_SKILLS : "job_id"
-    CANDIDATES ||--o| CANDIDATE_DOCUMENTS : "candidate_id (1:1)"
-    DATA_QUALITY_RUNS ||--o{ DATA_QUALITY_CHECK_RESULTS : "run_id"
-    EVALUATION_RUNS ||--o{ EVALUATION_CANDIDATE_RESULTS : "run_id"
-    EXTRACTION_RUNS ||--o{ EXTRACTION_EXAMPLE_RESULTS : "run_id"
 ```
 
 **Intentionally not drawn as FK-backed relationships above** (real in the data, but enforced in
