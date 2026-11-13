@@ -61,6 +61,14 @@ issue #17's registration-time placeholders forever. A new "Your profile" section
 lookup tables, loaded in full for a selectbox/multiselect — no search/pagination needed at this
 scale).
 
+Issue #19: the seeded dataset pads its 150 `Occupation` rows out of only 26 real titles by
+appending a number ("Accountant 2", "Accountant 3", ...), which showed up verbatim in the
+occupation picker. `Occupation.is_curated` (backfilled by migration — the padding rows match
+`title ~ '\s\d+$'`) lets `GET /occupations` filter those out, and new `POST /occupations`/
+`POST /skills` endpoints (case-insensitive get-or-create) let a candidate add one that isn't
+listed — a "+ Add a new occupation" sentinel option and a free-text "Add a new skill" input in
+the frontend call these before saving.
+
 ## Implementation
 
 `app/frontend/streamlit_app.py`  one script, two modes selected by the user's real
@@ -124,6 +132,12 @@ location/salary/occupation components moved off their neutral `0.5` defaults onc
 set. `tests/api/test_candidate_details_routes.py` covers the GET/PATCH/occupations/skills routes
 against a real (disposable) Postgres transaction; `tests/frontend/test_streamlit_app.py` covers
 the form rendering pre-filled values and the save button calling `PATCH` with the expected payload.
+
+**Issue #19** (curated occupations, add-new-occupation/skill): verified live — `GET /occupations`
+returns exactly the 26 real titles (confirmed via `psql`, the backfill correctly flagged
+"Accountant 2".."Accountant 6" etc. as `is_curated=false`); `POST /occupations`/`POST /skills`
+create new rows and are idempotent on a case-insensitive re-post (verified with `curl`); linked a
+newly created occupation + skill onto a real candidate via `PATCH /candidates/{id}/details`.
 
 ## Known Limitations
 

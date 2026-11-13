@@ -124,8 +124,16 @@ class OccupationOut(BaseModel):
     title: str
 
 
+class OccupationCreate(BaseModel):
+    title: str
+
+
 class SkillOut(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    name: str
+
+
+class SkillCreate(BaseModel):
     name: str

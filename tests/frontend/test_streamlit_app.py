@@ -224,6 +224,47 @@ def test_profile_details_form_renders_with_prefilled_values(mock_get):
     assert at.multiselect[0].value == ["SQL"]
 
 
+@patch("requests.get")
+def test_selecting_add_new_occupation_reveals_title_input(mock_get):
+    mock_get.side_effect = _no_existing_cv
+    at = _logged_in_app().run()
+    at.selectbox[0].set_value("+ Add a new occupation").run()
+    assert not at.exception
+    assert any(ti.label == "New occupation title" for ti in at.text_input)
+
+
+@patch("app.frontend.candidate_client.requests.post")
+@patch("app.frontend.candidate_client.requests.patch")
+@patch("requests.get")
+def test_saving_with_a_new_occupation_and_skill_creates_both_then_patches(mock_get, mock_patch, mock_post):
+    mock_get.side_effect = _no_existing_cv
+    mock_patch.return_value = MagicMock(status_code=200, json=lambda: _default_candidate_details())
+
+    def post_side_effect(url, *args, **kwargs):
+        if url.endswith("/occupations"):
+            return MagicMock(status_code=201, json=lambda: {"id": 77, "title": "Robot Wrangler"})
+        if url.endswith("/skills"):
+            return MagicMock(status_code=201, json=lambda: {"id": 88, "name": "Telekinesis"})
+        raise AssertionError(f"unexpected POST to {url}")
+    mock_post.side_effect = post_side_effect
+
+    at = _logged_in_app().run()
+    at.selectbox[0].set_value("+ Add a new occupation").run()
+    next(ti for ti in at.text_input if ti.label == "New occupation title").set_value("Robot Wrangler").run()
+    next(ti for ti in at.text_input if ti.label == "Add a new skill (optional)").set_value("Telekinesis").run()
+    save_button = next(b for b in at.button if b.label == "Save profile details")
+    at = save_button.click().run()
+
+    assert not at.exception
+    occupation_call = next(c for c in mock_post.call_args_list if c.args[0].endswith("/occupations"))
+    assert occupation_call.kwargs["json"] == {"title": "Robot Wrangler"}
+    skill_call = next(c for c in mock_post.call_args_list if c.args[0].endswith("/skills"))
+    assert skill_call.kwargs["json"] == {"name": "Telekinesis"}
+    patch_payload = mock_patch.call_args.kwargs["json"]
+    assert patch_payload["primary_occupation_id"] == 77
+    assert 88 in patch_payload["skill_ids"]
+
+
 @patch("app.frontend.candidate_client.requests.patch")
 @patch("requests.get")
 def test_saving_profile_details_calls_patch_with_expected_payload(mock_get, mock_patch):

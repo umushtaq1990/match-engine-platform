@@ -46,7 +46,19 @@ def list_occupations() -> list[dict]:
     return resp.json()
 
 
+def create_occupation(title: str) -> dict:
+    resp = requests.post(f"{API_URL}/occupations", headers=_HEADERS, json={"title": title}, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def list_skills() -> list[dict]:
     resp = requests.get(f"{API_URL}/skills", headers=_HEADERS, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def create_skill(name: str) -> dict:
+    resp = requests.post(f"{API_URL}/skills", headers=_HEADERS, json={"name": name}, timeout=10)
     resp.raise_for_status()
     return resp.json()

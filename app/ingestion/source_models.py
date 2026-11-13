@@ -79,6 +79,13 @@ class Occupation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(20), unique=True)
     title: Mapped[str] = mapped_column(String(150))
+    # Issue #19: True for the real occupation titles (and anything a user adds
+    # via POST /occupations) — False for the synthetic padding rows
+    # app/ingestion/generate_synthetic_data.py creates to reach its target row
+    # count ("Accountant 2", "Accountant 3", ...) by cycling a short list of
+    # real titles. Lets GET /occupations hide the padding from pickers without
+    # touching the seeded data other tables already reference by id.
+    is_curated: Mapped[bool] = mapped_column(default=True)
 
     skills: Mapped[list["OccupationSkill"]] = relationship(back_populates="occupation")
 

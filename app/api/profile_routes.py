@@ -5,9 +5,11 @@ data). Same X-API-Key auth as every other route here; no JWT verification
 of the caller-supplied keycloak_user_id — see
 docs/architecture/ingress-and-identity.md Known Limitations.
 """
+import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,9 +17,11 @@ from app.api.deps import DbSession, RequireApiKey
 from app.api.schemas import (
     CandidateDetailsOut,
     CandidateDetailsUpdate,
+    OccupationCreate,
     OccupationOut,
     ProfileCreate,
     ProfileOut,
+    SkillCreate,
     SkillOut,
 )
 from app.identity.models import UserProfile, UserRole
@@ -140,9 +144,62 @@ def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate,
 
 @router.get("/occupations", response_model=list[OccupationOut])
 def list_occupations(db: Session = DbSession):
-    return db.query(Occupation).order_by(Occupation.title).all()
+    """Issue #19: only the curated titles -- the synthetic dataset's padding
+    rows (is_curated=False, see the migration that added this column) are
+    excluded so they don't clutter a picker.
+    """
+    return db.query(Occupation).filter_by(is_curated=True).order_by(Occupation.title).all()
+
+
+@router.post("/occupations", response_model=OccupationOut, status_code=201)
+def create_occupation(payload: OccupationCreate, response: Response, db: Session = DbSession):
+    """Issue #19: lets a candidate add an occupation that isn't in the
+    curated list yet. Case-insensitive get-or-create -- re-submitting an
+    existing title (curated or not) returns that row instead of creating a
+    duplicate, same idempotent-on-collision pattern as
+    `_get_or_create_candidate` above.
+    """
+    existing = db.query(Occupation).filter(func.lower(Occupation.title) == payload.title.lower()).first()
+    if existing is not None:
+        response.status_code = 200
+        return existing
+
+    occupation = Occupation(code=f"OCC-USER-{uuid.uuid4().hex[:8]}", title=payload.title, is_curated=True)
+    db.add(occupation)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        occupation = db.query(Occupation).filter(func.lower(Occupation.title) == payload.title.lower()).first()
+        if occupation is None:
+            raise
+        response.status_code = 200
+    return occupation
 
 
 @router.get("/skills", response_model=list[SkillOut])
 def list_skills(db: Session = DbSession):
     return db.query(Skill).order_by(Skill.name).all()
+
+
+@router.post("/skills", response_model=SkillOut, status_code=201)
+def create_skill(payload: SkillCreate, response: Response, db: Session = DbSession):
+    """Issue #19: same case-insensitive get-or-create as create_occupation
+    above, for a candidate adding a skill that isn't in the list yet.
+    """
+    existing = db.query(Skill).filter(func.lower(Skill.name) == payload.name.lower()).first()
+    if existing is not None:
+        response.status_code = 200
+        return existing
+
+    skill = Skill(name=payload.name)
+    db.add(skill)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        skill = db.query(Skill).filter(func.lower(Skill.name) == payload.name.lower()).first()
+        if skill is None:
+            raise
+        response.status_code = 200
+    return skill

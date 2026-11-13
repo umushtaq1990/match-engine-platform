@@ -170,3 +170,76 @@ def test_list_skills_returns_seeded_rows(profile_db_session):
         assert {"id", "name"} <= body[0].keys()
     finally:
         app.dependency_overrides.clear()
+
+
+def test_list_occupations_excludes_non_curated_rows(profile_db_session):
+    curated = Occupation(code="ISSUE19-CUR", title="Issue19 Curated Occupation", is_curated=True)
+    filler = Occupation(code="ISSUE19-FILL", title="Issue19 Filler Occupation 2", is_curated=False)
+    profile_db_session.add_all([curated, filler])
+    profile_db_session.commit()
+
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.get("/occupations", headers=API_KEY_HEADERS)
+        assert response.status_code == 200
+        titles = [o["title"] for o in response.json()]
+        assert "Issue19 Curated Occupation" in titles
+        assert "Issue19 Filler Occupation 2" not in titles
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_occupation_creates_a_new_curated_row(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.post(
+            "/occupations", headers=API_KEY_HEADERS, json={"title": "Issue19 Brand New Occupation"},
+        )
+        assert response.status_code == 201
+        occupation_id = response.json()["id"]
+
+        listed = client.get("/occupations", headers=API_KEY_HEADERS)
+        assert any(o["id"] == occupation_id for o in listed.json())
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_occupation_is_idempotent_case_insensitive(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        first = client.post(
+            "/occupations", headers=API_KEY_HEADERS, json={"title": "Issue19 Dup Occupation"},
+        )
+        assert first.status_code == 201
+        second = client.post(
+            "/occupations", headers=API_KEY_HEADERS, json={"title": "issue19 dup occupation"},
+        )
+        assert second.status_code == 200
+        assert second.json()["id"] == first.json()["id"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_skill_creates_a_new_row(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.post("/skills", headers=API_KEY_HEADERS, json={"name": "Issue19 Brand New Skill"})
+        assert response.status_code == 201
+        skill_id = response.json()["id"]
+
+        listed = client.get("/skills", headers=API_KEY_HEADERS)
+        assert any(s["id"] == skill_id for s in listed.json())
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_skill_is_idempotent_case_insensitive(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        first = client.post("/skills", headers=API_KEY_HEADERS, json={"name": "Issue19 Dup Skill"})
+        assert first.status_code == 201
+        second = client.post("/skills", headers=API_KEY_HEADERS, json={"name": "issue19 dup skill"})
+        assert second.status_code == 200
+        assert second.json()["id"] == first.json()["id"]
+    finally:
+        app.dependency_overrides.clear()

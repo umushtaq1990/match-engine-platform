@@ -63,8 +63,18 @@ def test_occupations_route_rejects_missing_api_key():
     assert response.status_code == 401
 
 
+def test_create_occupation_route_rejects_missing_api_key():
+    response = client.post("/occupations", json={"title": "Test Occupation"})
+    assert response.status_code == 401
+
+
 def test_skills_route_rejects_missing_api_key():
     response = client.get("/skills")
+    assert response.status_code == 401
+
+
+def test_create_skill_route_rejects_missing_api_key():
+    response = client.post("/skills", json={"name": "Test Skill"})
     assert response.status_code == 401
 
 

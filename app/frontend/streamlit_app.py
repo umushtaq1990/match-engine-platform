@@ -21,6 +21,8 @@ from app.common.logging import setup_logging
 from app.frontend.keycloak_admin import assign_realm_role, create_user, get_admin_token
 from app.frontend.oidc import decode_id_token, password_grant_login
 from app.frontend.candidate_client import (
+    create_occupation,
+    create_skill,
     get_candidate_details,
     list_occupations,
     list_skills,
@@ -242,7 +244,8 @@ if role == "candidate":
             value=details["desired_salary_max"] or 0,
         )
 
-    occupation_titles = [o["title"] for o in occupations]
+    ADD_NEW_OCCUPATION = "+ Add a new occupation"
+    occupation_titles = [o["title"] for o in occupations] + [ADD_NEW_OCCUPATION]
     current_occupation = next(
         (o["title"] for o in occupations if o["id"] == details["primary_occupation_id"]), None,
     )
@@ -250,24 +253,40 @@ if role == "candidate":
         "Occupation", occupation_titles,
         index=occupation_titles.index(current_occupation) if current_occupation in occupation_titles else 0,
     )
+    new_occupation_title = ""
+    if occupation_title == ADD_NEW_OCCUPATION:
+        new_occupation_title = st.text_input("New occupation title")
 
     skill_options = [s["name"] for s in skills]
     default_skill_names = [skill_name_by_id[sid] for sid in details["skill_ids"] if sid in skill_name_by_id]
     chosen_skill_names = st.multiselect(
         "Your top skills (up to 10)", skill_options, default=default_skill_names, max_selections=10,
     )
+    new_skill_name = st.text_input("Add a new skill (optional)")
 
     if st.button("Save profile details"):
         skill_id_by_name = {s["name"]: s["id"] for s in skills}
         occupation_id_by_title = {o["title"]: o["id"] for o in occupations}
+
+        if occupation_title == ADD_NEW_OCCUPATION and new_occupation_title.strip():
+            occupation_id = create_occupation(new_occupation_title.strip())["id"]
+        else:
+            occupation_id = occupation_id_by_title.get(occupation_title)
+
+        skill_ids = [skill_id_by_name[name] for name in chosen_skill_names]
+        if new_skill_name.strip():
+            new_skill_id = create_skill(new_skill_name.strip())["id"]
+            if new_skill_id not in skill_ids:
+                skill_ids.append(new_skill_id)
+
         update_candidate_details(
             candidate_id,
             location_city=location_city,
             location_region=location_region,
             desired_salary_min=salary_min or None,
             desired_salary_max=salary_max or None,
-            primary_occupation_id=occupation_id_by_title.get(occupation_title),
-            skill_ids=[skill_id_by_name[name] for name in chosen_skill_names],
+            primary_occupation_id=occupation_id,
+            skill_ids=skill_ids,
         )
         st.success("Profile details saved.")
         st.rerun()
