@@ -8,7 +8,7 @@ the Keycloak ID token's `sub` claim.
 import enum
 from datetime import datetime
 
-from sqlalchemy import Enum, String
+from sqlalchemy import Enum, ForeignKey, String
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,4 +29,11 @@ class UserProfile(Base):
     full_name: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(255))
     company_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Issue #17: only ever set for role=candidate — a real, personal
+    # app.ingestion.source_models.Candidate row created at registration time,
+    # instead of every candidate sharing one hardcoded candidate_id. NULL for
+    # employers (no equivalent table to link to, same reasoning as this
+    # table standing alone rather than being a Candidate/Job child, see
+    # module docstring).
+    candidate_id: Mapped[int | None] = mapped_column(ForeignKey("candidates.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

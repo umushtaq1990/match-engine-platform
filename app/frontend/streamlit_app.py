@@ -178,11 +178,11 @@ def _render_matches(matches: list[dict]) -> None:
 
 
 if role == "candidate":
-    # MVP: no real link yet between a logged-in Keycloak identity and a
-    # specific candidate_id (the login email is the unique identifier for
-    # auth, but isn't matched to a candidate record) — a fixed id is used
-    # for this demo state. See docs/architecture/frontend.md Known Limitations.
-    candidate_id = 1
+    # Issue #17: a real, personal candidate_id created for this user at
+    # registration time (app/api/profile_routes.py's _get_or_create_candidate),
+    # linked on their own user_profiles row — no longer a hardcoded id shared
+    # by every candidate.
+    candidate_id = st.session_state["profile"]["candidate_id"]
 
     st.subheader("Upload your CV")
     existing_cv = requests.get(f"{EXTRACTION_URL}/candidates/{candidate_id}/cv", headers=HEADERS, timeout=10)

@@ -29,14 +29,13 @@ touches Postgres directly, it only calls `api` and `extraction` over HTTP, the s
 external client would. This is also the smallest image in the project: no `app/db.py`, no ORM, no
 `requirements-base.txt` at all.
 
-**Reuses the existing seeded dataset for candidate/job records, no data-entry UI for them**: an
-employer enters an existing `job_id`. Building a UI to create *new* candidate/job records would
-mean a real write-path into `app/ingestion/source_models.py`'s tables, deliberately not built for
-a UI whose whole point is demonstrating the matching flow, not demonstrating data entry (see
-Roadmap). The Candidate side no longer asks for a `candidate_id` at all (MVP demo simplification):
-it's hardcoded to `1`, since there's still no real link between a logged-in Keycloak identity and
-a specific candidate record — the login email is the unique identifier for *auth*, not (yet)
-matched to a `candidates` row. See Known Limitations.
+**Reuses the existing seeded dataset for job records, no data-entry UI for them**: an employer
+enters an existing `job_id`. Building a UI to create *new* job records would mean a real write-path
+into `app/ingestion/source_models.py`'s tables, deliberately not built for a UI whose whole point is
+demonstrating the matching flow, not demonstrating data entry (see Roadmap). The Candidate side no
+longer picks from the seeded dataset at all (issue #17): registering as a Candidate creates a real,
+brand-new `candidates` row for that person (see Implementation), so there's no `candidate_id` input
+to show — each candidate's CV/matches are already their own.
 
 This is distinct from *user* identity, which issue #14 did add a minimal real model for: Keycloak
 self-registration plus a `candidate`/`employer` realm role, assigned via a one-time in-app picker
@@ -47,7 +46,10 @@ Issue #15 added real backend storage for that identity: a `user_profiles` table 
 contact info, linked by the Keycloak `sub` claim) plus a `POST`/`GET /profiles` API. Issue #16
 replaced the one-time role-picker buttons with a profile form (name, a candidate/employer radio
 button, company name for employers) that calls that API directly at registration time, and gave
-the logged-out screen explicit "Log in" / "New here?" section headings — see
+the logged-out screen explicit "Log in" / "New here?" section headings. Issue #17 then closed the
+remaining gap between that identity and the matching-engine dataset: `POST /profiles` now also
+creates a personal `candidates` row for role=candidate and links its id onto the profile, so a
+candidate's CV/matches are tied to their own record — not one shared hardcoded id. See
 [ingress-and-identity.md](ingress-and-identity.md) Part 2.
 
 ## Implementation
@@ -55,8 +57,10 @@ the logged-out screen explicit "Log in" / "New here?" section headings — see
 `app/frontend/streamlit_app.py`  one script, two modes selected by the user's real
 `candidate`/`employer` role, sourced from the `user_profiles` table (`_require_profile()`, see
 [ingress-and-identity.md](ingress-and-identity.md) Part 2) rather than an unauthenticated UI toggle:
-- **Candidate**: a hardcoded `candidate_id = 1` (see Architecture & Design above) is used
-  throughout. "Upload your CV" first calls `GET /candidates/{id}/cv` on `extraction` — if a CV is
+- **Candidate**: `candidate_id` comes from `st.session_state["profile"]["candidate_id"]` — the
+  real, personal `candidates` row created for this user at registration (issue #17, see
+  [ingress-and-identity.md](ingress-and-identity.md) Part 2). "Upload your CV" first calls
+  `GET /candidates/{id}/cv` on `extraction` — if a CV is
   already on file, its filename/size/upload date are shown and the uploader is labeled "Replace
   your CV"; otherwise it's a plain upload prompt. Uploading (`POST /candidates/{id}/cv`, client-side
   size check mirrors the server's 2MB cap before even sending the request) re-renders the page so
@@ -90,13 +94,16 @@ browser automation tool, runs the real script headlessly and simulates widget in
 
 Also confirmed the frontend container reaches `api` over the **internal Docker network** (not just the host-mapped port) by running the exact `requests.get` call from inside the running `jme-frontend-1` container itself, the way it will actually be called in practice, not assumed from the host-side test.
 
-**MVP simplification round** (removed the `candidate_id` input, added the existing-CV check, renamed the job-matches button): verified live against the running stack — `GET /candidates/1/cv` returns `404` before any upload (so the plain upload prompt renders, not the "current CV on file" info box) and `GET /candidates/1/job-matches?top_k=10` returns real ranked results. `tests/frontend/test_streamlit_app.py` covers both the existing-CV and no-existing-CV render paths headlessly (mocked `requests.get`).
+**MVP simplification round** (removed the `candidate_id` input, added the existing-CV check, renamed the job-matches button): verified live against the running stack — `GET /candidates/{id}/cv` returns `404` before any upload (so the plain upload prompt renders, not the "current CV on file" info box) and `GET /candidates/{id}/job-matches?top_k=10` returns real ranked results. `tests/frontend/test_streamlit_app.py` covers both the existing-CV and no-existing-CV render paths headlessly (mocked `requests.get`).
+
+**Issue #17** (real per-user `candidate_id`, not the hardcoded `1` above): verified live against the running stack with a scripted session — registered two distinct brand-new Candidates and confirmed each got their own, different `candidate_id` (not the seeded dataset's `candidate_id=1` at all, real new rows); uploaded a CV to the first candidate's own id and confirmed the second candidate's `GET /candidates/{id}/cv` still returned `404` not the first candidate's CV; confirmed an Employer registration left `candidate_id` `null`. Test rows cleaned up after. `tests/api/test_profile_routes.py` covers the linking/reuse logic against a real (disposable) Postgres transaction.
 
 **CI**: `fresh-volume-smoke-test` builds and Trivy-scans the `frontend` image, starts it after `api`/`extraction` are healthy, confirms `/_stcore/health` and the main page both return `200`, and runs the same internal-network check inside the container.
 
 ## Known Limitations
 
-- Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization doesn't: every candidate sees the same hardcoded `candidate_id = 1` (there's no per-user candidate_id input anymore, an MVP demo simplification), and an employer can still type in any `job_id` in the seeded dataset nothing ties a specific Keycloak identity to a specific `candidate_id`/`job_id` yet. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9). A natural next step would be a real lookup (e.g. matching the login email to a `candidates.email` row, or writing a `candidate_id` onto `user_profiles` at registration) rather than hardcoding — not built yet.
+- Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization only partly does now: each candidate has their own real `candidate_id` (issue #17), so one candidate can no longer see or overwrite another's CV/matches — but an employer can still type in any `job_id` in the seeded dataset, nothing ties a specific Keycloak identity to a specific `job_id` yet. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
+- The `candidates` row created at Candidate registration (issue #17) only has real `full_name`/`email`; `location_city`/`location_region`/`years_experience` are hardcoded MVP placeholders (`"Unknown"`/`"Unknown"`/`0`) since the registration form doesn't collect them, which will skew that candidate's own location/experience-based match scoring until a real profile-completion step is built to collect them.
 - No candidate/job creation or editing : only the two read-heavy flows (upload CV, view matches) exist. A real portal would need profile management; deliberately out of scope for v1.
 - CV upload and skill extraction are still two separate, un-chained steps (see `docs/architecture/application-services/skill-extraction.md`'s own Known Limitations), uploading a CV here does not automatically extract skills from it or affect the candidate's match scores.
 - `streamlit.testing.v1.AppTest` has no built-in way to simulate an actual file upload, so the "upload succeeds and shows a success message" path is verified only against the live stack, not as an automated unit test.

@@ -37,7 +37,11 @@ def _logged_in_app(role: str = "candidate") -> AppTest:
     # Pre-seed a completed profile (issue #15/#16) so these tests exercise the
     # app UI itself, not the one-time profile-capture form — same bypass
     # pattern as pre-seeding id_token_claims above to skip the login gate.
-    at.session_state["profile"] = {"role": role, "full_name": f"Demo {role.title()}"}
+    # candidate_id (issue #17) is only ever set for role=candidate.
+    at.session_state["profile"] = {
+        "role": role, "full_name": f"Demo {role.title()}",
+        "candidate_id": 42 if role == "candidate" else None,
+    }
     return at
 
 
@@ -76,7 +80,7 @@ def test_existing_cv_is_shown_with_a_replace_option(mock_get):
             return MagicMock(
                 status_code=200,
                 json=lambda: {
-                    "candidate_id": 1, "original_filename": "resume.pdf", "content_type": "application/pdf",
+                    "candidate_id": 42, "original_filename": "resume.pdf", "content_type": "application/pdf",
                     "size_bytes": 12345, "uploaded_at": "2026-01-01T00:00:00Z",
                 },
             )
@@ -124,7 +128,7 @@ def test_get_job_matches_renders_results_table(mock_get):
 
     assert not at.exception
     called_url, called_kwargs = mock_get.call_args.args[0], mock_get.call_args.kwargs
-    assert called_url.endswith("/candidates/1/job-matches")
+    assert called_url.endswith("/candidates/42/job-matches")
     assert called_kwargs["params"] == {"top_k": 10}
     assert len(at.dataframe) == 1
 
@@ -134,7 +138,7 @@ def test_get_job_matches_shows_error_on_failure(mock_get):
     def side_effect(url, *args, **kwargs):
         if url.endswith("/cv"):
             return MagicMock(status_code=404)
-        return MagicMock(status_code=404, text="No candidate with id=1", headers={})
+        return MagicMock(status_code=404, text="No candidate with id=42", headers={})
     mock_get.side_effect = side_effect
 
     at = _logged_in_app().run()
@@ -352,7 +356,7 @@ def test_submitting_profile_form_as_candidate_assigns_role_and_shows_candidate_f
 ):
     mock_get_token.return_value = "fake-admin-token"
     mock_get_profile.return_value = None
-    mock_create_profile.return_value = {"role": "candidate", "full_name": "Ada Lovelace"}
+    mock_create_profile.return_value = {"role": "candidate", "full_name": "Ada Lovelace", "candidate_id": 99}
     mock_get.side_effect = _no_existing_cv
     at = _logged_in_app_without_profile().run()
     at.text_input[0].set_value("Ada Lovelace").run()

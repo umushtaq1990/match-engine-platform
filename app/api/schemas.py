@@ -90,3 +90,4 @@ class ProfileOut(BaseModel):
     full_name: str
     email: str
     company_name: str | None
+    candidate_id: int | None  # issue #17: server-assigned, only set for role=candidate

@@ -4,10 +4,13 @@ pattern, bound to the same real-transaction-wrapped fixture session style
 (tests/conftest.py's profile_db_session) so a real request goes through the
 real route and a real (disposable) Postgres transaction.
 """
+import datetime as dt
+
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_db
 from app.api.main import app
+from app.ingestion.source_models import Candidate
 
 API_KEY_HEADERS = {"X-API-Key": "dev-local-key-change-me"}
 
@@ -35,6 +38,78 @@ def test_create_profile_returns_the_created_profile(profile_db_session):
         assert body["keycloak_user_id"] == "user-abc"
         assert body["role"] == "candidate"
         assert body["company_name"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_candidate_profile_creates_a_linked_candidate_row(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.post(
+            "/profiles",
+            headers=API_KEY_HEADERS,
+            json={
+                "keycloak_user_id": "user-candidate-1",
+                "role": "candidate",
+                "full_name": "Ada Lovelace",
+                "email": "ada-issue17@example-synthetic.test",
+            },
+        )
+        assert response.status_code == 201
+        candidate_id = response.json()["candidate_id"]
+        assert candidate_id is not None
+
+        candidate = profile_db_session.get(Candidate, candidate_id)
+        assert candidate is not None
+        assert candidate.full_name == "Ada Lovelace"
+        assert candidate.email == "ada-issue17@example-synthetic.test"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_employer_profile_leaves_candidate_id_null(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.post(
+            "/profiles",
+            headers=API_KEY_HEADERS,
+            json={
+                "keycloak_user_id": "user-employer-1",
+                "role": "employer",
+                "full_name": "Grace Hopper",
+                "email": "grace-issue17@example-synthetic.test",
+                "company_name": "Acme Co",
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["candidate_id"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_candidate_profile_reuses_existing_candidate_with_same_email(profile_db_session):
+    existing_candidate = Candidate(
+        full_name="Existing Candidate", email="shared-issue17@example-synthetic.test",
+        location_city="Austin", location_region="TX", years_experience=5,
+        created_at=dt.datetime.now(dt.timezone.utc),
+    )
+    profile_db_session.add(existing_candidate)
+    profile_db_session.commit()
+
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.post(
+            "/profiles",
+            headers=API_KEY_HEADERS,
+            json={
+                "keycloak_user_id": "user-candidate-2",
+                "role": "candidate",
+                "full_name": "New Registrant",
+                "email": "shared-issue17@example-synthetic.test",
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["candidate_id"] == existing_candidate.id
     finally:
         app.dependency_overrides.clear()
 
