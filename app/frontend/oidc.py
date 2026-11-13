@@ -49,6 +49,28 @@ def password_grant_login(username: str, password: str) -> dict:
     return token_resp.json()
 
 
+def refresh_access_token(refresh_token: str) -> dict:
+    """Issue #26: exchanges a refresh_token for a new access_token/refresh_token
+    pair, same token endpoint as password_grant_login. Keycloak access tokens
+    are short-lived, so app/frontend/auth_helpers.py calls this on a 401 to
+    keep a long demo session working without a re-login. Raises ValueError
+    if the refresh_token itself has expired (the caller has no recourse but
+    to send the user back to the login screen).
+    """
+    token_resp = requests.post(
+        f"{OIDC_INTERNAL_ISSUER}/protocol/openid-connect/token",
+        data={
+            "grant_type": "refresh_token",
+            "client_id": OIDC_CLIENT_ID,
+            "refresh_token": refresh_token,
+        },
+        timeout=10,
+    )
+    if token_resp.status_code != 200:
+        raise ValueError("Session expired, please log in again.")
+    return token_resp.json()
+
+
 def decode_id_token(id_token: str) -> dict:
     """Decodes the JWT payload without verifying its signature — accepted gap
     for a local demo, see streamlit_app.py's _require_login docstring."""

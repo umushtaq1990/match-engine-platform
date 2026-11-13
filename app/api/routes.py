@@ -5,12 +5,14 @@ matching orchestrators (rank.py / course_recommendations.py), and translates
 the result dataclasses into the wire schemas in schemas.py. All routes
 require the X-API-Key header (see deps.require_api_key).
 """
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.api.analytics_client import log_event, log_recommendations_shown
 from app.api.cache import candidate_cache_key, get_cached, set_cached
 from app.api.deps import DbSession, RequireApiKey
+from app.api.jwt_auth import get_verified_claims
+from app.api.ownership import candidate_owner_sub, job_owner_sub, require_owner
 from app.api.schemas import (
     CourseRecommendationOut,
     CourseRecommendationsResponse,
@@ -53,7 +55,7 @@ def _to_match_out(result: MatchResult) -> MatchOut:
 @router.get("/candidates/{candidate_id}/job-matches", response_model=list[MatchOut])
 def get_job_matches_for_candidate(
     candidate_id: int, response: Response, top_k: int = 10, include_ineligible: bool = False,
-    mode: str = "blended", db: Session = DbSession,
+    mode: str = "blended", db: Session = DbSession, claims: dict = Depends(get_verified_claims),
 ):
     """Use Case A: rank jobs for a candidate.
 
@@ -73,6 +75,7 @@ def get_job_matches_for_candidate(
     A cached hit still logs a recommendation_shown impression: the user is
     seeing the recommendation again regardless of whether it was recomputed.
     """
+    require_owner(candidate_owner_sub(db, candidate_id), claims["sub"], allow_unowned=True)
     log_event(
         actor_type="candidate", actor_id=candidate_id, event_type="search_performed",
         entity_type="job", metadata={"top_k": top_k, "mode": mode},
@@ -113,6 +116,7 @@ def get_job_matches_for_candidate(
 @router.get("/candidates/{candidate_id}/job-matches/semantic", response_model=list[SemanticMatchOut])
 def get_job_matches_for_candidate_semantic(
     candidate_id: int, response: Response, top_k: int = 10, db: Session = DbSession,
+    claims: dict = Depends(get_verified_claims),
 ):
     """Phase 17: the raw embeddings-blended score breakdown (skills/
     experience/overall similarity, no eligibility/skill-gap fields) — the
@@ -125,6 +129,7 @@ def get_job_matches_for_candidate_semantic(
     Phase 21: same cache-aside, 1-hour TTL policy as the rule-based endpoint
     above (docs/redis-infrastructure.md "Use case 2").
     """
+    require_owner(candidate_owner_sub(db, candidate_id), claims["sub"], allow_unowned=True)
     key = candidate_cache_key("job-matches-semantic", candidate_id, top_k)
     cached = get_cached(key)
     if cached is not None:
@@ -152,7 +157,7 @@ def get_job_matches_for_candidate_semantic(
 @router.get("/jobs/{job_id}/candidate-matches", response_model=list[MatchOut])
 def get_candidate_matches_for_job(
     job_id: int, top_k: int = 10, include_ineligible: bool = False,
-    db: Session = DbSession,
+    db: Session = DbSession, claims: dict = Depends(get_verified_claims),
 ):
     """Use Case B: rank candidates for a job.
 
@@ -161,7 +166,12 @@ def get_candidate_matches_for_job(
     still no real Employer entity/table — job_id continues to stand in for
     the acting employer's identity in the logged event below, a documented
     v1 limitation, not an oversight. See docs/behavioral-analytics.md.
+
+    Issue #26: lenient ownership -- a seeded/unowned job stays freely
+    matchable (preserves demo behavior against the synthetic dataset); a
+    job tied to a real employer may only be matched against by its owner.
     """
+    require_owner(job_owner_sub(db, job_id), claims["sub"], allow_unowned=True)
     log_event(
         actor_type="employer", actor_id=job_id, event_type="search_performed",
         entity_type="candidate", metadata={"top_k": top_k},
@@ -183,8 +193,10 @@ def get_candidate_matches_for_job(
 )
 def get_course_recommendations_for_candidate(
     candidate_id: int, top_k: int = 5, db: Session = DbSession,
+    claims: dict = Depends(get_verified_claims),
 ):
     """Use Case E: recommend courses closing a candidate's target-occupation skill gap."""
+    require_owner(candidate_owner_sub(db, candidate_id), claims["sub"], allow_unowned=True)
     log_event(
         actor_type="candidate", actor_id=candidate_id, event_type="search_performed",
         entity_type="course", metadata={"top_k": top_k},

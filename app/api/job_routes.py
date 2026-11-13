@@ -3,20 +3,21 @@ from routes.py's matching-engine endpoints and profile_routes.py's identity
 endpoints, since this is a distinct resource group (jobs an employer
 themself created/edits, not matching-engine read endpoints or who a
 Keycloak-authenticated user is). Same X-API-Key auth as every other route
-here. Ownership is tracked by Job.posted_by_keycloak_user_id -- trusted as
-given by the frontend, same no-JWT-verification trust boundary as
-app/api/profile_routes.py's candidate-details endpoints, see
-docs/architecture/ingress-and-identity.md Known Limitations.
+here, plus (issue #26) real JWT verification (app/api/jwt_auth.py) and
+ownership enforcement (app/api/ownership.py) -- ownership comes only from
+the verified token's `sub` claim now, never a client-supplied field.
 """
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.analytics_client import log_event
 from app.api.deps import DbSession, RequireApiKey
 from app.api.experience_levels import EXPERIENCE_LEVEL_TO_YEARS, years_experience_to_level
+from app.api.jwt_auth import get_verified_claims
+from app.api.ownership import candidate_owner_sub, job_owner_sub, require_owner
 from app.api.schemas import (
     JobCreate,
     JobDetailsOut,
@@ -94,7 +95,8 @@ def _to_job_details_out(db: Session, job: Job) -> JobDetailsOut:
 
 
 @router.post("/jobs", response_model=JobDetailsOut, status_code=201)
-def create_job(payload: JobCreate, db: Session = DbSession):
+def create_job(payload: JobCreate, db: Session = DbSession, claims: dict = Depends(get_verified_claims)):
+    posted_by_keycloak_user_id = claims["sub"]
     job = Job(
         title=payload.title,
         company_name=payload.company_name,
@@ -110,7 +112,7 @@ def create_job(payload: JobCreate, db: Session = DbSession):
         occupation_id=payload.primary_occupation_id,
         employment_type=EmploymentType.full_time,
         posted_at=datetime.now(timezone.utc),
-        posted_by_keycloak_user_id=payload.posted_by_keycloak_user_id,
+        posted_by_keycloak_user_id=posted_by_keycloak_user_id,
         min_years_experience=(
             EXPERIENCE_LEVEL_TO_YEARS[payload.experience_level] if payload.experience_level else None
         ),
@@ -119,7 +121,7 @@ def create_job(payload: JobCreate, db: Session = DbSession):
     db.flush()
     _replace_job_skills(db, job.id, payload.required_skill_ids, payload.preferred_skill_ids)
     record_change(
-        db, "job_details", job.id, payload.posted_by_keycloak_user_id,
+        db, "job_details", job.id, posted_by_keycloak_user_id,
         old={}, new=_job_audit_fields(job),
     )
     db.commit()
@@ -127,7 +129,11 @@ def create_job(payload: JobCreate, db: Session = DbSession):
 
 
 @router.get("/employers/{keycloak_user_id}/jobs", response_model=list[JobListingOut])
-def list_employer_jobs(keycloak_user_id: str, db: Session = DbSession):
+def list_employer_jobs(
+    keycloak_user_id: str, db: Session = DbSession, claims: dict = Depends(get_verified_claims),
+):
+    if keycloak_user_id != claims["sub"]:
+        raise HTTPException(status_code=403, detail="You do not have access to this employer's jobs")
     jobs = (
         db.query(Job).filter_by(posted_by_keycloak_user_id=keycloak_user_id)
         .order_by(Job.posted_at.desc()).all()
@@ -142,14 +148,28 @@ def list_employer_jobs(keycloak_user_id: str, db: Session = DbSession):
 
 
 @router.get("/jobs/{job_id}/details", response_model=JobDetailsOut)
-def get_job_details(job_id: int, viewed_by_candidate_id: int | None = None, db: Session = DbSession):
+def get_job_details(
+    job_id: int, viewed_by_candidate_id: int | None = None, db: Session = DbSession,
+    claims: dict = Depends(get_verified_claims),
+):
     """Issue #25: `viewed_by_candidate_id` is only ever set by a candidate
     opening a specific match's details from their results, not by the
     employer's own edit-form load (same endpoint, different caller) --
     when present, fires `recommendation_clicked`, the one event type issue
     #24 left unemitted (no UI distinguished "opened this one result" from
     "saw the whole results table" until now).
+
+    Issue #26: no ownership check on the job itself -- a job posting is
+    meant to be viewed by any candidate evaluating it (unlike
+    candidate-details, which is private), so any authenticated caller may
+    read any job's details regardless of who posted it. Only *editing*
+    (PATCH below) is owner-restricted. `viewed_by_candidate_id` -- if the
+    caller supplies it at all -- must still be their own candidate_id, so
+    the event log can't be made to attribute a view to someone else's
+    candidate record.
     """
+    if viewed_by_candidate_id is not None:
+        require_owner(candidate_owner_sub(db, viewed_by_candidate_id), claims["sub"], allow_unowned=False)
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="No such job")
@@ -162,7 +182,14 @@ def get_job_details(job_id: int, viewed_by_candidate_id: int | None = None, db: 
 
 
 @router.patch("/jobs/{job_id}/details", response_model=JobDetailsOut)
-def update_job_details(job_id: int, payload: JobDetailsUpdate, db: Session = DbSession):
+def update_job_details(
+    job_id: int, payload: JobDetailsUpdate, db: Session = DbSession,
+    claims: dict = Depends(get_verified_claims),
+):
+    """Issue #26: strict ownership -- only the job's own posting employer
+    may edit it, no unowned-record bypass (can't PATCH a seeded job via
+    this endpoint)."""
+    require_owner(job_owner_sub(db, job_id), claims["sub"], allow_unowned=False)
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="No such job")
@@ -182,7 +209,7 @@ def update_job_details(job_id: int, payload: JobDetailsUpdate, db: Session = DbS
         job.min_years_experience = EXPERIENCE_LEVEL_TO_YEARS[payload.experience_level]
 
     _replace_job_skills(db, job_id, payload.required_skill_ids, payload.preferred_skill_ids)
-    record_change(db, "job_details", job_id, payload.changed_by_keycloak_user_id, old=old_values, new=_job_audit_fields(job))
+    record_change(db, "job_details", job_id, claims["sub"], old=old_values, new=_job_audit_fields(job))
     db.commit()
     return _to_job_details_out(db, job)
 
@@ -205,11 +232,15 @@ def _get_or_create_interaction(db: Session, candidate_id: int, job_id: int, inte
 
 
 @router.post("/candidates/{candidate_id}/jobs/{job_id}/apply", status_code=201)
-def apply_to_job(candidate_id: int, job_id: int, db: Session = DbSession):
+def apply_to_job(
+    candidate_id: int, job_id: int, db: Session = DbSession, claims: dict = Depends(get_verified_claims),
+):
     """Issue #24: the real action the `job_applied` event type was missing
     until now -- idempotent on re-click, same unique-constraint-backed
-    get-or-create pattern used throughout this app.
+    get-or-create pattern used throughout this app. Issue #26: strict
+    ownership -- applying only ever makes sense as your own candidate_id.
     """
+    require_owner(candidate_owner_sub(db, candidate_id), claims["sub"], allow_unowned=False)
     if db.get(Candidate, candidate_id) is None:
         raise HTTPException(status_code=404, detail="No such candidate")
     if db.get(Job, job_id) is None:
@@ -223,8 +254,11 @@ def apply_to_job(candidate_id: int, job_id: int, db: Session = DbSession):
 
 
 @router.post("/candidates/{candidate_id}/jobs/{job_id}/save", status_code=201)
-def save_job(candidate_id: int, job_id: int, db: Session = DbSession):
+def save_job(
+    candidate_id: int, job_id: int, db: Session = DbSession, claims: dict = Depends(get_verified_claims),
+):
     """Issue #24: same as apply_to_job above, for the `job_saved` event type."""
+    require_owner(candidate_owner_sub(db, candidate_id), claims["sub"], allow_unowned=False)
     if db.get(Candidate, candidate_id) is None:
         raise HTTPException(status_code=404, detail="No such candidate")
     if db.get(Job, job_id) is None:
@@ -238,10 +272,15 @@ def save_job(candidate_id: int, job_id: int, db: Session = DbSession):
 
 
 @router.get("/candidates/{candidate_id}/job-interactions", response_model=list[JobInteractionOut])
-def get_candidate_job_interactions(candidate_id: int, db: Session = DbSession):
+def get_candidate_job_interactions(
+    candidate_id: int, db: Session = DbSession, claims: dict = Depends(get_verified_claims),
+):
     """Issue #24: a candidate's applied/saved jobs, joined with job
-    title/company so the frontend doesn't need N round-trips.
+    title/company so the frontend doesn't need N round-trips. Issue #26:
+    strict ownership -- this is private data, only the candidate themself
+    may read their own applied/saved list.
     """
+    require_owner(candidate_owner_sub(db, candidate_id), claims["sub"], allow_unowned=False)
     rows = (
         db.query(CandidateJobInteraction, Job)
         .join(Job, Job.id == CandidateJobInteraction.job_id)

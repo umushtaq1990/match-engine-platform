@@ -71,11 +71,11 @@ class SemanticMatchOut(BaseModel):
 
 
 class ProfileCreate(BaseModel):
-    """Issue #15: identity-profile registration payload — the Keycloak ID
-    token's `sub` claim is trusted as given by the frontend, same trust
-    boundary app/frontend/keycloak_admin.py's Admin-API calls already have.
+    """Issue #15: identity-profile registration payload. Issue #26:
+    `keycloak_user_id` is deliberately absent -- identity now comes only
+    from the verified access token's `sub` claim (app/api/jwt_auth.py), not
+    a client-supplied field.
     """
-    keycloak_user_id: str
     role: UserRole
     full_name: str
     email: str
@@ -124,9 +124,9 @@ class CandidateDetailsUpdate(BaseModel):
     primary_occupation_id: int | None = None
     experience_level: str | None = None
     skill_ids: list[int] = Field(default_factory=list, max_length=10)
-    # Issue #24: who made this edit, for the entity_change_log audit trail --
-    # same trust boundary as every keycloak_user_id elsewhere in this app.
-    changed_by_keycloak_user_id: str | None = None
+    # Issue #24 added changed_by_keycloak_user_id here as a client-supplied
+    # field; issue #26 removed it -- who made this edit now comes only from
+    # the verified access token's `sub` claim, not a client-supplied value.
 
 
 class OccupationOut(BaseModel):
@@ -152,14 +152,14 @@ class SkillCreate(BaseModel):
 
 
 class JobCreate(BaseModel):
-    """Issue #22: an employer-posted job, owned by the posting Keycloak user
-    (trusted as given by the frontend, same boundary as ProfileCreate above).
-    Issue #23: `location_region` is deliberately absent -- still read by
-    app/matching/scoring.py's _location_component, but the frontend no
-    longer collects it, so a new job gets the same "Unknown" placeholder
-    convention as Candidate registration (see app/api/job_routes.py).
+    """Issue #22: an employer-posted job. Issue #23: `location_region` is
+    deliberately absent -- still read by app/matching/scoring.py's
+    _location_component, but the frontend no longer collects it, so a new
+    job gets the same "Unknown" placeholder convention as Candidate
+    registration (see app/api/job_routes.py). Issue #26:
+    `posted_by_keycloak_user_id` is deliberately absent too -- ownership
+    now comes only from the verified access token's `sub` claim.
     """
-    posted_by_keycloak_user_id: str
     title: str
     company_name: str
     description: str
@@ -223,7 +223,8 @@ class JobDetailsUpdate(BaseModel):
     experience_level: str | None = None
     required_skill_ids: list[int] = Field(default_factory=list, max_length=10)
     preferred_skill_ids: list[int] = Field(default_factory=list, max_length=10)
-    changed_by_keycloak_user_id: str | None = None
+    # Issue #26: changed_by_keycloak_user_id removed -- comes from the
+    # verified access token's `sub` claim now, not a client-supplied value.
 
 
 class JobInteractionOut(BaseModel):

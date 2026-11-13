@@ -18,6 +18,7 @@ import requests
 import streamlit as st
 
 from app.common.logging import setup_logging
+from app.frontend.auth_helpers import call_with_refresh
 from app.frontend.keycloak_admin import assign_realm_role, create_user, get_admin_token
 from app.frontend.oidc import decode_id_token, password_grant_login
 from app.frontend.candidate_client import (
@@ -63,6 +64,10 @@ def _render_login_screen() -> None:
             st.error(str(exc))
         else:
             st.session_state["id_token_claims"] = decode_id_token(token_json["id_token"])
+            # Issue #26: the access/refresh tokens, carried on every
+            # backend call from here on (see app/frontend/auth_helpers.py).
+            st.session_state["access_token"] = token_json["access_token"]
+            st.session_state["refresh_token"] = token_json["refresh_token"]
             st.rerun()
 
     if st.button("New here? Register"):
@@ -88,6 +93,8 @@ def _render_registration_screen() -> None:
                 st.error(str(exc))
             else:
                 st.session_state["id_token_claims"] = decode_id_token(token_json["id_token"])
+                st.session_state["access_token"] = token_json["access_token"]
+                st.session_state["refresh_token"] = token_json["refresh_token"]
                 st.session_state["pending_full_name"] = full_name
                 st.rerun()
 
@@ -136,7 +143,7 @@ def _require_profile() -> str:
         return st.session_state["profile"]["role"]
 
     claims = st.session_state["id_token_claims"]
-    profile = get_profile(claims["sub"])
+    profile = call_with_refresh(get_profile, claims["sub"], access_token=st.session_state["access_token"])
     if profile is not None:
         st.session_state["profile"] = profile
         return profile["role"]
@@ -154,12 +161,13 @@ def _require_profile() -> str:
         role = chosen_role.lower()
         admin_token = get_admin_token()
         assign_realm_role(claims["sub"], role, admin_token)
-        profile = create_profile(
-            keycloak_user_id=claims["sub"],
+        profile = call_with_refresh(
+            create_profile,
             role=role,
             full_name=full_name,
             email=claims.get("email", ""),
             company_name=company_name,
+            access_token=st.session_state["access_token"],
         )
         st.session_state["profile"] = profile
         st.rerun()
@@ -170,6 +178,8 @@ _require_login()
 
 st.set_page_config(page_title="Talent Matching Platform", page_icon="🧩", layout="wide")
 role = _require_profile()
+# Issue #26: carried on every identity-bearing backend call from here on.
+access_token = st.session_state["access_token"]
 
 st.title("Talent Matching Platform")
 username = st.session_state["id_token_claims"].get("preferred_username", "?")
@@ -210,6 +220,26 @@ def _render_matches(matches: list[dict]) -> None:
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
 
+def _get_job_matches(candidate_id: int, access_token: str, top_k: int = 10) -> requests.Response:
+    """Issue #26: a thin wrapper, not a client-module function, so
+    call_with_refresh can retry it the same way it retries the client
+    modules -- it returns the raw Response (like the rest of this inline
+    call site already expected) rather than raising on a non-200.
+    """
+    return requests.get(
+        f"{API_URL}/candidates/{candidate_id}/job-matches",
+        headers={**HEADERS, "Authorization": f"Bearer {access_token}"},
+        params={"top_k": top_k}, timeout=10,
+    )
+
+
+def _get_candidate_matches(job_id: int, access_token: str) -> requests.Response:
+    return requests.get(
+        f"{API_URL}/jobs/{job_id}/candidate-matches",
+        headers={**HEADERS, "Authorization": f"Bearer {access_token}"}, timeout=10,
+    )
+
+
 def _render_job_detail_view(candidate_id: int) -> None:
     """Issue #25: a candidate's drill-down into one specific match, with
     real Apply/Save actions and a Back button — the "view details" click
@@ -244,11 +274,11 @@ def _render_job_detail_view(candidate_id: int) -> None:
     apply_col, save_col, back_col = st.columns(3)
     with apply_col:
         if st.button("Apply"):
-            apply_to_job(candidate_id, job_id)
+            call_with_refresh(apply_to_job, candidate_id, job_id, access_token=st.session_state["access_token"])
             st.success("Applied.")
     with save_col:
         if st.button("Save for later"):
-            save_job(candidate_id, job_id)
+            call_with_refresh(save_job, candidate_id, job_id, access_token=st.session_state["access_token"])
             st.success("Saved.")
     with back_col:
         if st.button("Back to results"):
@@ -299,7 +329,7 @@ if role == "candidate":
                 st.error(f"Upload failed ({response.status_code}): {response.text}")
 
     st.subheader("Your profile")
-    details = get_candidate_details(candidate_id)
+    details = call_with_refresh(get_candidate_details, candidate_id, access_token=access_token)
     occupations = list_occupations()
     skills = list_skills()
     skill_name_by_id = {s["id"]: s["name"] for s in skills}
@@ -370,7 +400,8 @@ if role == "candidate":
             if new_skill_id not in skill_ids:
                 skill_ids.append(new_skill_id)
 
-        update_candidate_details(
+        call_with_refresh(
+            update_candidate_details,
             candidate_id,
             location_city=location_city,
             postal_code=postal_code or None,
@@ -380,13 +411,15 @@ if role == "candidate":
             primary_occupation_id=occupation_id,
             experience_level=EXPERIENCE_LEVELS[experience_label],
             skill_ids=skill_ids,
-            changed_by_keycloak_user_id=st.session_state["id_token_claims"]["sub"],
+            access_token=access_token,
         )
         st.success("Profile details saved.")
         st.rerun()
 
     with st.expander("Edit history"):
-        history = get_change_log("candidate_details", candidate_id)
+        history = call_with_refresh(
+            get_change_log, "candidate_details", candidate_id, access_token=access_token,
+        )
         if not history:
             st.caption("No changes recorded yet.")
         for entry in history[:10]:
@@ -394,9 +427,8 @@ if role == "candidate":
             st.caption(f"{entry['changed_at']} — changed: {changed_fields}")
 
     if st.button("Show Job Matches"):
-        response = requests.get(
-            f"{API_URL}/candidates/{candidate_id}/job-matches",
-            headers=HEADERS, params={"top_k": 10}, timeout=10,
+        response = call_with_refresh(
+            _get_job_matches, candidate_id, access_token=access_token, top_k=10,
         )
         if response.status_code == 200:
             st.caption(f"Ranking mode: {response.headers.get('X-Ranking-Mode', 'unknown')}")
@@ -416,13 +448,13 @@ if role == "candidate":
         chosen_job_id = next(jid for jid, label in match_label_by_id.items() if label == chosen_match_label)
         if st.button("View Job Details"):
             st.session_state["viewing_job_id"] = chosen_job_id
-            st.session_state["viewing_job_detail"] = get_job_details(
-                chosen_job_id, viewed_by_candidate_id=candidate_id,
+            st.session_state["viewing_job_detail"] = call_with_refresh(
+                get_job_details, chosen_job_id, viewed_by_candidate_id=candidate_id, access_token=access_token,
             )
             st.rerun()
 
     with st.expander("Your applied/saved jobs"):
-        interactions = get_job_interactions(candidate_id)
+        interactions = call_with_refresh(get_job_interactions, candidate_id, access_token=access_token)
         if not interactions:
             st.caption("Nothing applied or saved yet.")
         for interaction in interactions:
@@ -437,7 +469,7 @@ else:
     # by Job.posted_by_keycloak_user_id -- see app/api/job_routes.py.
     st.header("Employer")
     keycloak_user_id = st.session_state["id_token_claims"]["sub"]
-    jobs = list_employer_jobs(keycloak_user_id)
+    jobs = call_with_refresh(list_employer_jobs, keycloak_user_id, access_token=access_token)
     occupations = list_occupations()
     skills = list_skills()
     skill_name_by_id = {s["id"]: s["name"] for s in skills}
@@ -463,7 +495,7 @@ else:
         }
     else:
         job_id = job_id_by_label[chosen_job_label]
-        details = get_job_details(job_id)
+        details = call_with_refresh(get_job_details, job_id, access_token=access_token)
 
     # Every widget key below is suffixed with the selected job's id (or "new")
     # so switching jobs always starts from freshly fetched `details` instead
@@ -571,19 +603,22 @@ else:
                 required_skill_ids.append(new_skill_id)
 
         if job_id is None:
-            saved = create_job(
-                keycloak_user_id, title, company_name, description, location_city,
+            saved = call_with_refresh(
+                create_job,
+                title, company_name, description, location_city,
                 postal_code or None, country or None,
                 salary_min or None, salary_max or None, occupation_id,
                 JOB_EXPERIENCE_LEVELS[experience_label], required_skill_ids, preferred_skill_ids,
+                access_token=access_token,
             )
         else:
-            saved = update_job_details(
+            saved = call_with_refresh(
+                update_job_details,
                 job_id, title, company_name, description, location_city,
                 postal_code or None, country or None,
                 salary_min or None, salary_max or None, occupation_id,
                 JOB_EXPERIENCE_LEVELS[experience_label], required_skill_ids, preferred_skill_ids,
-                changed_by_keycloak_user_id=keycloak_user_id,
+                access_token=access_token,
             )
         st.success("Job saved.")
         st.session_state["selected_job_id"] = saved["id"]
@@ -591,7 +626,9 @@ else:
 
     if job_id is not None:
         with st.expander("Edit history"):
-            history = get_change_log("job_details", job_id)
+            history = call_with_refresh(
+                get_change_log, "job_details", job_id, access_token=access_token,
+            )
             if not history:
                 st.caption("No changes recorded yet.")
             for entry in history[:10]:
@@ -600,9 +637,7 @@ else:
 
     st.subheader("Matching candidates")
     if job_id is not None and st.button("Get Matching Candidates"):
-        response = requests.get(
-            f"{API_URL}/jobs/{job_id}/candidate-matches", headers=HEADERS, timeout=10,
-        )
+        response = call_with_refresh(_get_candidate_matches, job_id, access_token=access_token)
         if response.status_code == 200:
             _render_matches(response.json())
         else:

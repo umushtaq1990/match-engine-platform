@@ -12,8 +12,9 @@ API_KEY = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
 _HEADERS = {"X-API-Key": API_KEY}
 
 
-def get_candidate_details(candidate_id: int) -> dict:
-    resp = requests.get(f"{API_URL}/candidates/{candidate_id}/details", headers=_HEADERS, timeout=10)
+def get_candidate_details(candidate_id: int, access_token: str) -> dict:
+    headers = {**_HEADERS, "Authorization": f"Bearer {access_token}"}
+    resp = requests.get(f"{API_URL}/candidates/{candidate_id}/details", headers=headers, timeout=10)
     resp.raise_for_status()
     return resp.json()
 
@@ -22,11 +23,12 @@ def update_candidate_details(
     candidate_id: int, location_city: str, postal_code: str | None, country: str | None,
     desired_salary_min: int | None, desired_salary_max: int | None,
     primary_occupation_id: int | None, experience_level: str | None, skill_ids: list[int],
-    changed_by_keycloak_user_id: str | None = None,
+    access_token: str,
 ) -> dict:
+    headers = {**_HEADERS, "Authorization": f"Bearer {access_token}"}
     resp = requests.patch(
         f"{API_URL}/candidates/{candidate_id}/details",
-        headers=_HEADERS,
+        headers=headers,
         json={
             "location_city": location_city,
             "postal_code": postal_code,
@@ -36,7 +38,6 @@ def update_candidate_details(
             "primary_occupation_id": primary_occupation_id,
             "experience_level": experience_level,
             "skill_ids": skill_ids,
-            "changed_by_keycloak_user_id": changed_by_keycloak_user_id,
         },
         timeout=10,
     )

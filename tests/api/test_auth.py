@@ -145,3 +145,31 @@ def test_require_api_key_rejects_wrong_value(monkeypatch):
 def test_require_api_key_accepts_configured_value(monkeypatch):
     monkeypatch.setenv("JME_API_KEY", "test-key-123")
     require_api_key("test-key-123")  # does not raise
+
+
+# --- Issue #26: a valid X-API-Key alone is no longer enough on routes that
+# also require a verified bearer token -----------------------------------
+
+API_KEY_HEADERS = {"X-API-Key": "dev-local-key-change-me"}
+
+
+def test_candidate_details_get_route_rejects_valid_api_key_with_no_bearer_token():
+    response = client.get("/candidates/1/details", headers=API_KEY_HEADERS)
+    assert response.status_code == 401
+
+
+def test_job_details_get_route_rejects_valid_api_key_with_no_bearer_token():
+    response = client.get("/jobs/1/details", headers=API_KEY_HEADERS)
+    assert response.status_code == 401
+
+
+def test_audit_route_rejects_valid_api_key_with_no_bearer_token():
+    response = client.get("/audit/candidate_details/1", headers=API_KEY_HEADERS)
+    assert response.status_code == 401
+
+
+def test_job_matches_route_rejects_valid_api_key_with_malformed_bearer_token():
+    response = client.get(
+        "/candidates/1/job-matches", headers={**API_KEY_HEADERS, "Authorization": "not-a-bearer-token"},
+    )
+    assert response.status_code == 401

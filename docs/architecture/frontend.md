@@ -145,6 +145,19 @@ spirit as a portfolio project's "about/contact" footer.
   An "Edit history" expander (issue #24) shows that job's own change history from
   `GET /audit/job_details/{id}`.
 
+**Issue #26** (bearer token + silent refresh): both login call sites now also store
+`st.session_state["access_token"]`/`["refresh_token"]` from the token response (previously only
+the decoded, unverified `id_token` was kept). Every identity-bearing client call goes through
+`app/frontend/auth_helpers.py`'s `call_with_refresh(func, *args, **kwargs)` instead of being
+called directly: it calls `func`, and on a 401 (either a raised `requests.HTTPError` from a
+client-module function's `.raise_for_status()`, or a raw `requests.Response` with
+`status_code == 401` from the two inline matching-endpoint calls) it exchanges the refresh token
+for a new pair via `oidc.py`'s `refresh_access_token`, updates both session values, and retries
+once — Keycloak access tokens are short-lived, so without this a long demo session would start
+failing mid-use. If the refresh token itself has expired, the session is cleared and the user is
+sent back to the login screen with a clear message, rather than a raw exception. One centralized
+retry point instead of repeating try/except at each of the ~15 call sites that needed it.
+
 `docker/Dockerfile.frontend` / `app/requirements-frontend.txt` just `streamlit` and `requests`,
 nothing else. `docker-compose.yml`'s `frontend` service depends on `api` and `extraction` being
 healthy, exposes `8501` (Streamlit's default), and is configured via `API_URL`/`EXTRACTION_URL`/
@@ -253,9 +266,17 @@ edit-form load path) does not fire a second click event. `tests/api/test_job_rou
 `test_viewing_a_match_shows_details_with_apply_save_and_back` covers the full
 view-details/apply/back sequence.
 
+**Issue #26** (real JWT verification + ownership enforcement): verified live against the running
+stack using throwaway Keycloak users created via the Admin API (never the real end-user accounts
+— see `docs/architecture/ingress-and-identity.md` Part 2 for the full scripted verification and
+every case covered). 315/315 tests pass, including a new `tests/api/test_jwt_auth.py` (signature
+verification against a throwaway RSA keypair) and `tests/frontend/test_auth_helpers.py`
+(`call_with_refresh`'s retry-on-401 behavior, both the raised-exception and raw-Response-object
+call styles).
+
 ## Known Limitations
 
-- Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization only partly does now: each candidate has their own real `candidate_id` (issue #17) and each job is tied to the employer who posted it (`Job.posted_by_keycloak_user_id`, issue #22) — but `GET /jobs/{id}/details`/`PATCH /jobs/{id}/details` don't actually check that the caller owns the job before returning/editing it (same no-JWT-verification trust boundary as every other route here, not enforced authorization), and an employer can still type a seeded dataset's `job_id` directly against the API (not the UI) to view/edit a job they didn't post. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
+- **Closed (issue #26)**: authentication and authorization both exist now, not just a login gate. `app/api/jwt_auth.py` verifies the Keycloak access token's RS256 signature/issuer/`azp` on every identity-bearing route (candidate-details, job-details, apply/save, job-interactions, audit, and the 3 matching GET endpoints), and `app/api/ownership.py` enforces that a caller only edits their own records (`PATCH /candidates/{id}/details`, `PATCH /jobs/{id}/details`, apply/save, job-interactions, audit — all strict, no bypass) and only reads private data they own, with an unowned/seeded-dataset record staying freely readable (`GET /candidates/{id}/details`, the 3 matching endpoints — preserves testing against the shared synthetic dataset exactly like before). `GET /jobs/{id}/details` has no ownership check at all — a job posting is meant to be viewed by any candidate evaluating it, unlike a candidate's private profile. `POST /profiles`/`POST /jobs` derive identity from the verified token only, never a client-supplied field. See `docs/architecture/ingress-and-identity.md` Part 2 for the full design and live verification, and the paragraph below for the token-refresh mechanics.
 - The `candidates` row created at Candidate registration (issue #17) still starts with placeholder `location_city`/`location_region` (`"Unknown"`) and `null` salary/occupation/skills — but issue #18's "Your profile" form now lets the candidate fill in real values themselves post-registration, closing most of that gap (years_experience remains uncollected by any UI).
 - Skills set via "Your profile" (issue #18) are always recorded as `proficiency=intermediate`/`evidence_source=self_reported` — there's no UI for a candidate to claim a different proficiency level, a simplification since CV-extraction-sourced skills (the other `evidence_source`) aren't chained in yet either (see below).
 - Saving "Your profile" does not invalidate the `GET /candidates/{id}/job-matches` Redis cache (`docs/redis-infrastructure.md`'s 1-hour TTL) — a candidate who saves new details and immediately re-checks matches within that hour can see a stale, pre-save score until the cache entry expires. Acceptable for a demo; a real system would bust the cache key on profile save.

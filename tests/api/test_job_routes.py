@@ -2,6 +2,16 @@
 matching_db_session (tests/conftest.py) since these routes read/write
 Job/JobSkill, same real-transaction-wrapped pattern as
 tests/api/test_routes_db.py.
+
+Issue #26: identity comes from a verified JWT, not a client-supplied
+`posted_by_keycloak_user_id`/`changed_by_keycloak_user_id` field (both
+removed from the request schemas) -- tests override `get_verified_claims`
+the same way they already override `get_db`. PATCH/apply/save/
+job-interactions are strict-ownership, so those tests must make the
+client's overridden `sub` match the job's `posted_by_keycloak_user_id` or
+a UserProfile linking the candidate to that `sub` (see _make_owned_candidate).
+GET /jobs/{id}/details has no ownership check at all (any authenticated
+caller may view any job's details, like a real job posting).
 """
 import datetime as dt
 from unittest.mock import patch
@@ -9,14 +19,17 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_db
+from app.api.jwt_auth import get_verified_claims
 from app.api.main import app
+from app.identity.models import UserProfile, UserRole
 from app.ingestion.source_models import Candidate, EmploymentType, Job, Occupation, Skill
 
 API_KEY_HEADERS = {"X-API-Key": "dev-local-key-change-me"}
 
 
-def _client_bound_to(session) -> TestClient:
+def _client_bound_to(session, sub: str = "employer-1") -> TestClient:
     app.dependency_overrides[get_db] = lambda: (yield session)
+    app.dependency_overrides[get_verified_claims] = lambda: {"sub": sub}
     return TestClient(app)
 
 
@@ -42,12 +55,22 @@ def _make_candidate(session, email="interactions@example-synthetic.test") -> Can
     return candidate
 
 
+def _make_owned_candidate(session, sub: str, email="owned-issue26@example-synthetic.test") -> Candidate:
+    candidate = _make_candidate(session, email=email)
+    session.add(UserProfile(
+        keycloak_user_id=sub, role=UserRole.candidate, full_name="Owned Candidate",
+        email=email, candidate_id=candidate.id,
+    ))
+    session.flush()
+    return candidate
+
+
 def test_apply_to_job_creates_interaction(matching_db_session):
-    candidate = _make_candidate(matching_db_session)
+    candidate = _make_owned_candidate(matching_db_session, sub="candidate-apply-1")
     job = _make_job(matching_db_session)
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="candidate-apply-1")
     try:
         response = client.post(
             f"/candidates/{candidate.id}/jobs/{job.id}/apply", headers=API_KEY_HEADERS,
@@ -66,11 +89,11 @@ def test_apply_to_job_creates_interaction(matching_db_session):
 
 
 def test_apply_to_job_is_idempotent_on_repeat_click(matching_db_session):
-    candidate = _make_candidate(matching_db_session)
+    candidate = _make_owned_candidate(matching_db_session, sub="candidate-apply-2")
     job = _make_job(matching_db_session)
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="candidate-apply-2")
     try:
         client.post(f"/candidates/{candidate.id}/jobs/{job.id}/apply", headers=API_KEY_HEADERS)
         second = client.post(f"/candidates/{candidate.id}/jobs/{job.id}/apply", headers=API_KEY_HEADERS)
@@ -83,11 +106,11 @@ def test_apply_to_job_is_idempotent_on_repeat_click(matching_db_session):
 
 
 def test_save_job_creates_interaction_distinct_from_apply(matching_db_session):
-    candidate = _make_candidate(matching_db_session)
+    candidate = _make_owned_candidate(matching_db_session, sub="candidate-save-1")
     job = _make_job(matching_db_session)
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="candidate-save-1")
     try:
         client.post(f"/candidates/{candidate.id}/jobs/{job.id}/apply", headers=API_KEY_HEADERS)
         client.post(f"/candidates/{candidate.id}/jobs/{job.id}/save", headers=API_KEY_HEADERS)
@@ -99,30 +122,38 @@ def test_save_job_creates_interaction_distinct_from_apply(matching_db_session):
         app.dependency_overrides.clear()
 
 
-def test_apply_to_job_returns_404_for_missing_candidate_or_job(matching_db_session):
-    candidate = _make_candidate(matching_db_session)
+def test_apply_to_job_rejects_a_candidate_id_the_caller_doesnt_own(matching_db_session):
     job = _make_job(matching_db_session)
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="candidate-impostor")
     try:
-        assert client.post(
-            f"/candidates/999999999/jobs/{job.id}/apply", headers=API_KEY_HEADERS,
-        ).status_code == 404
-        assert client.post(
+        response = client.post(f"/candidates/999999999/jobs/{job.id}/apply", headers=API_KEY_HEADERS)
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_apply_to_job_returns_404_for_missing_job(matching_db_session):
+    candidate = _make_owned_candidate(matching_db_session, sub="candidate-apply-3")
+    matching_db_session.commit()
+
+    client = _client_bound_to(matching_db_session, sub="candidate-apply-3")
+    try:
+        response = client.post(
             f"/candidates/{candidate.id}/jobs/999999999/apply", headers=API_KEY_HEADERS,
-        ).status_code == 404
+        )
+        assert response.status_code == 404
     finally:
         app.dependency_overrides.clear()
 
 
 def test_create_job_records_audit_entry(matching_db_session):
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="employer-audit")
     try:
         response = client.post(
             "/jobs", headers=API_KEY_HEADERS,
             json={
-                "posted_by_keycloak_user_id": "employer-audit",
                 "title": "Audited Job", "company_name": "Acme Co", "description": "desc",
                 "location_city": "Austin",
             },
@@ -139,16 +170,16 @@ def test_create_job_records_audit_entry(matching_db_session):
 
 
 def test_update_job_details_records_audit_entry_for_changed_fields_only(matching_db_session):
-    job = _make_job(matching_db_session)
+    job = _make_job(matching_db_session, posted_by="employer-update-audit")
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="employer-update-audit")
     try:
         client.patch(
             f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
             json={
                 "title": job.title, "company_name": job.company_name, "description": "desc",
-                "location_city": "Dallas", "changed_by_keycloak_user_id": "employer-1",
+                "location_city": "Dallas",
             },
         )
         audit = client.get(f"/audit/job_details/{job.id}", headers=API_KEY_HEADERS)
@@ -169,12 +200,11 @@ def test_create_job_creates_job_and_split_skills(matching_db_session):
     matching_db_session.flush()
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="employer-abc")
     try:
         response = client.post(
             "/jobs", headers=API_KEY_HEADERS,
             json={
-                "posted_by_keycloak_user_id": "employer-abc",
                 "title": "Backend Engineer", "company_name": "Acme Co",
                 "description": "Build things", "location_city": "Austin",
                 "salary_min": 90000, "salary_max": 130000,
@@ -197,7 +227,7 @@ def test_list_employer_jobs_returns_only_that_employers_jobs(matching_db_session
     _make_job(matching_db_session, posted_by="employer-2", title="Job B")
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="employer-1")
     try:
         response = client.get("/employers/employer-1/jobs", headers=API_KEY_HEADERS)
         assert response.status_code == 200
@@ -207,11 +237,36 @@ def test_list_employer_jobs_returns_only_that_employers_jobs(matching_db_session
         app.dependency_overrides.clear()
 
 
+def test_list_employer_jobs_rejects_a_caller_asking_for_someone_elses_list(matching_db_session):
+    client = _client_bound_to(matching_db_session, sub="employer-someone-else")
+    try:
+        response = client.get("/employers/employer-1/jobs", headers=API_KEY_HEADERS)
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_get_job_details_returns_404_for_missing_job(matching_db_session):
     client = _client_bound_to(matching_db_session)
     try:
         response = client.get("/jobs/999999999/details", headers=API_KEY_HEADERS)
         assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_job_details_has_no_ownership_check(matching_db_session):
+    """Issue #26: viewing a job posting is open to any authenticated caller,
+    including one that isn't its owner -- unlike candidate-details, a job
+    posting is meant to be seen by candidates evaluating it.
+    """
+    job = _make_job(matching_db_session, posted_by="employer-owner")
+    matching_db_session.commit()
+
+    client = _client_bound_to(matching_db_session, sub="someone-else-entirely")
+    try:
+        response = client.get(f"/jobs/{job.id}/details", headers=API_KEY_HEADERS)
+        assert response.status_code == 200
     finally:
         app.dependency_overrides.clear()
 
@@ -234,11 +289,11 @@ def test_get_job_details_includes_occupation_title(matching_db_session):
 
 
 def test_get_job_details_fires_recommendation_clicked_only_when_viewed_by_candidate(matching_db_session):
-    candidate = _make_candidate(matching_db_session)
+    candidate = _make_owned_candidate(matching_db_session, sub="candidate-click-1")
     job = _make_job(matching_db_session)
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="candidate-click-1")
     try:
         with patch("app.api.job_routes.log_event") as mock_log_event:
             client.get(f"/jobs/{job.id}/details", headers=API_KEY_HEADERS)
@@ -256,8 +311,22 @@ def test_get_job_details_fires_recommendation_clicked_only_when_viewed_by_candid
         app.dependency_overrides.clear()
 
 
-def test_patch_job_details_updates_fields_and_replaces_skills(matching_db_session):
+def test_get_job_details_rejects_viewed_by_candidate_id_the_caller_doesnt_own(matching_db_session):
     job = _make_job(matching_db_session)
+    matching_db_session.commit()
+
+    client = _client_bound_to(matching_db_session, sub="candidate-impostor")
+    try:
+        response = client.get(
+            f"/jobs/{job.id}/details", headers=API_KEY_HEADERS, params={"viewed_by_candidate_id": 999999999},
+        )
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_job_details_updates_fields_and_replaces_skills(matching_db_session):
+    job = _make_job(matching_db_session, posted_by="employer-patch-1")
     old_skill = Skill(name="Issue22 Old Skill")
     new_required = Skill(name="Issue22 New Required")
     new_preferred = Skill(name="Issue22 New Preferred")
@@ -265,7 +334,7 @@ def test_patch_job_details_updates_fields_and_replaces_skills(matching_db_sessio
     matching_db_session.flush()
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="employer-patch-1")
     try:
         response = client.patch(
             f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
@@ -287,10 +356,25 @@ def test_patch_job_details_updates_fields_and_replaces_skills(matching_db_sessio
         app.dependency_overrides.clear()
 
 
-def test_patch_job_details_sets_postal_code_and_country(matching_db_session):
-    job = _make_job(matching_db_session)
+def test_patch_job_details_rejects_a_caller_who_doesnt_own_it(matching_db_session):
+    job = _make_job(matching_db_session, posted_by="employer-real-owner")
     matching_db_session.commit()
-    client = _client_bound_to(matching_db_session)
+
+    client = _client_bound_to(matching_db_session, sub="employer-impostor")
+    try:
+        response = client.patch(
+            f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
+            json={"title": "X", "company_name": "Y", "description": "Z", "location_city": "Austin"},
+        )
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_job_details_sets_postal_code_and_country(matching_db_session):
+    job = _make_job(matching_db_session, posted_by="employer-patch-2")
+    matching_db_session.commit()
+    client = _client_bound_to(matching_db_session, sub="employer-patch-2")
     try:
         response = client.patch(
             f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
@@ -308,9 +392,9 @@ def test_patch_job_details_sets_postal_code_and_country(matching_db_session):
 
 
 def test_patch_job_details_does_not_overwrite_location_region(matching_db_session):
-    job = _make_job(matching_db_session)
+    job = _make_job(matching_db_session, posted_by="employer-patch-3")
     matching_db_session.commit()
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="employer-patch-3")
     try:
         response = client.patch(
             f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
@@ -325,12 +409,11 @@ def test_patch_job_details_does_not_overwrite_location_region(matching_db_sessio
 
 
 def test_create_job_defaults_location_region_to_unknown_placeholder(matching_db_session):
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="employer-placeholder")
     try:
         response = client.post(
             "/jobs", headers=API_KEY_HEADERS,
             json={
-                "posted_by_keycloak_user_id": "employer-placeholder",
                 "title": "X", "company_name": "Y", "description": "Z", "location_city": "Austin",
             },
         )
@@ -351,19 +434,19 @@ def test_patch_job_details_returns_404_for_missing_job(matching_db_session):
                 "location_city": "Austin",
             },
         )
-        assert response.status_code == 404
+        assert response.status_code == 403
     finally:
         app.dependency_overrides.clear()
 
 
 def test_patch_job_details_dedupes_a_skill_listed_as_both_required_and_preferred(matching_db_session):
-    job = _make_job(matching_db_session)
+    job = _make_job(matching_db_session, posted_by="employer-dedupe")
     shared_skill = Skill(name="Issue22 Shared Skill")
     matching_db_session.add(shared_skill)
     matching_db_session.flush()
     matching_db_session.commit()
 
-    client = _client_bound_to(matching_db_session)
+    client = _client_bound_to(matching_db_session, sub="employer-dedupe")
     try:
         response = client.patch(
             f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
@@ -387,7 +470,6 @@ def test_create_job_rejects_more_than_ten_required_skills(matching_db_session):
         response = client.post(
             "/jobs", headers=API_KEY_HEADERS,
             json={
-                "posted_by_keycloak_user_id": "employer-abc",
                 "title": "X", "company_name": "Y", "description": "Z",
                 "location_city": "Austin",
                 "required_skill_ids": list(range(1, 12)),

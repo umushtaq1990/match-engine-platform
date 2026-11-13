@@ -1,14 +1,15 @@
 """Identity-profile endpoints (issue #15) — a separate router from
 routes.py's matching-engine endpoints since this is a distinct resource
 group (who a Keycloak-authenticated user is, not candidate/job matching
-data). Same X-API-Key auth as every other route here; no JWT verification
-of the caller-supplied keycloak_user_id — see
-docs/architecture/ingress-and-identity.md Known Limitations.
+data). Same X-API-Key auth as every other route here, plus (issue #26)
+real JWT verification (app/api/jwt_auth.py) and ownership enforcement
+(app/api/ownership.py) — identity comes only from the verified token's
+`sub` claim now, never a client-supplied keycloak_user_id field.
 """
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,6 +17,8 @@ from sqlalchemy.orm import Session
 from app.api.analytics_client import log_event
 from app.api.deps import DbSession, RequireApiKey
 from app.api.experience_levels import EXPERIENCE_LEVEL_TO_YEARS, years_experience_to_level
+from app.api.jwt_auth import get_verified_claims
+from app.api.ownership import candidate_owner_sub, require_owner
 from app.api.schemas import (
     CandidateDetailsOut,
     CandidateDetailsUpdate,
@@ -64,15 +67,18 @@ def _get_or_create_candidate(db: Session, full_name: str, email: str, changed_by
 
 
 @router.post("/profiles", response_model=ProfileOut, status_code=201)
-def create_profile(payload: ProfileCreate, db: Session = DbSession):
+def create_profile(
+    payload: ProfileCreate, db: Session = DbSession, claims: dict = Depends(get_verified_claims),
+):
+    keycloak_user_id = claims["sub"]
     candidate_id = None
     if payload.role == UserRole.candidate:
         candidate_id = _get_or_create_candidate(
-            db, payload.full_name, payload.email, payload.keycloak_user_id,
+            db, payload.full_name, payload.email, keycloak_user_id,
         )
 
     profile = UserProfile(
-        keycloak_user_id=payload.keycloak_user_id,
+        keycloak_user_id=keycloak_user_id,
         role=payload.role,
         full_name=payload.full_name,
         email=payload.email,
@@ -93,7 +99,9 @@ def create_profile(payload: ProfileCreate, db: Session = DbSession):
 
 
 @router.get("/profiles/{keycloak_user_id}", response_model=ProfileOut)
-def get_profile(keycloak_user_id: str, db: Session = DbSession):
+def get_profile(keycloak_user_id: str, db: Session = DbSession, claims: dict = Depends(get_verified_claims)):
+    if keycloak_user_id != claims["sub"]:
+        raise HTTPException(status_code=403, detail="You do not have access to this profile")
     profile = db.query(UserProfile).filter_by(keycloak_user_id=keycloak_user_id).first()
     if profile is None:
         raise HTTPException(status_code=404, detail="No profile for this user")
@@ -105,13 +113,20 @@ def get_profile(keycloak_user_id: str, db: Session = DbSession):
 
 
 @router.get("/candidates/{candidate_id}/details", response_model=CandidateDetailsOut)
-def get_candidate_details(candidate_id: int, db: Session = DbSession):
+def get_candidate_details(
+    candidate_id: int, db: Session = DbSession, claims: dict = Depends(get_verified_claims),
+):
     """Issue #18/#20: location/salary/occupation/experience/skills for this
     candidate. Only skills + occupation are read by
     `app/matching/scoring.py` today; location/salary/experience are stored
     for filtering/analysis, not scored (see issue #21 for the discussion of
     simplifying scoring to skills+education only).
+
+    Issue #26: lenient ownership -- an unowned (seeded-dataset) candidate
+    stays freely readable, same as today's demo behavior; a candidate
+    linked to a real profile may only be read by its own owner.
     """
+    require_owner(candidate_owner_sub(db, candidate_id), claims["sub"], allow_unowned=True)
     candidate = db.get(Candidate, candidate_id)
     if candidate is None:
         raise HTTPException(status_code=404, detail="No such candidate")
@@ -129,7 +144,10 @@ def get_candidate_details(candidate_id: int, db: Session = DbSession):
 
 
 @router.patch("/candidates/{candidate_id}/details", response_model=CandidateDetailsOut)
-def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate, db: Session = DbSession):
+def update_candidate_details(
+    candidate_id: int, payload: CandidateDetailsUpdate, db: Session = DbSession,
+    claims: dict = Depends(get_verified_claims),
+):
     """Issue #18/#20: lets a candidate set location/salary/occupation/
     experience/skills — previously only ever set to MVP placeholders at
     registration (issue #17). `location_region` is deliberately not updated
@@ -137,7 +155,12 @@ def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate,
     here, so every row gets `proficiency=intermediate`/
     `evidence_source=self_reported` — there's no UI yet to capture a
     finer-grained proficiency, a documented MVP simplification.
+
+    Issue #26: strict ownership -- unlike the GET above, there's no
+    unowned-record bypass here; editing only ever makes sense as the
+    record's real owner.
     """
+    require_owner(candidate_owner_sub(db, candidate_id), claims["sub"], allow_unowned=False)
     candidate = db.get(Candidate, candidate_id)
     if candidate is None:
         raise HTTPException(status_code=404, detail="No such candidate")
@@ -169,7 +192,7 @@ def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate,
         )
 
     record_change(
-        db, "candidate_details", candidate_id, payload.changed_by_keycloak_user_id,
+        db, "candidate_details", candidate_id, claims["sub"],
         old=old_values,
         new={
             "location_city": candidate.location_city, "postal_code": candidate.postal_code,

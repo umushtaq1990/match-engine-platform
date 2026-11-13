@@ -34,6 +34,9 @@ def _logged_in_app(role: str = "candidate") -> AppTest:
         "sub": f"user-{role}",
         "realm_access": {"roles": [role]},
     }
+    # Issue #26: every backend call now carries a bearer token.
+    at.session_state["access_token"] = "fake-access-token"
+    at.session_state["refresh_token"] = "fake-refresh-token"
     # Pre-seed a completed profile (issue #15/#16) so these tests exercise the
     # app UI itself, not the one-time profile-capture form — same bypass
     # pattern as pre-seeding id_token_claims above to skip the login gate.
@@ -529,7 +532,10 @@ def test_clicking_log_in_toggle_from_registration_returns_to_login_screen():
 @patch("app.frontend.oidc.requests.post")
 def test_submitting_valid_login_credentials_logs_in(mock_token_post, mock_get_profile):
     mock_token_post.return_value = MagicMock(
-        status_code=200, json=lambda: {"id_token": _fake_id_token("candidate", sub="user-candidate")},
+        status_code=200, json=lambda: {
+            "id_token": _fake_id_token("candidate", sub="user-candidate"),
+            "access_token": "fake-access-token", "refresh_token": "fake-refresh-token",
+        },
     )
     mock_get_profile.return_value = None
     at = AppTest.from_file(APP_PATH).run()
@@ -583,7 +589,10 @@ def test_submitting_registration_form_creates_user_and_logs_in(
     mock_create_user.return_value = "user-newuser"
     mock_token_post.return_value = MagicMock(
         status_code=200,
-        json=lambda: {"id_token": _fake_id_token("ada@example-synthetic.test", sub="user-newuser")},
+        json=lambda: {
+            "id_token": _fake_id_token("ada@example-synthetic.test", sub="user-newuser"),
+            "access_token": "fake-access-token", "refresh_token": "fake-refresh-token",
+        },
     )
     mock_get_profile.return_value = None
     at = _register_screen()
@@ -634,6 +643,8 @@ def _logged_in_app_without_profile() -> AppTest:
         "email": "newuser@example-synthetic.test",
         "realm_access": {"roles": []},
     }
+    at.session_state["access_token"] = "fake-access-token"
+    at.session_state["refresh_token"] = "fake-refresh-token"
     return at
 
 
@@ -670,8 +681,9 @@ def test_submitting_profile_form_as_candidate_assigns_role_and_shows_candidate_f
     assert not at.exception
     mock_assign_role.assert_called_once_with("user-newuser", "candidate", "fake-admin-token")
     mock_create_profile.assert_called_once_with(
-        keycloak_user_id="user-newuser", role="candidate", full_name="Ada Lovelace",
+        role="candidate", full_name="Ada Lovelace",
         email="newuser@example-synthetic.test", company_name=None,
+        access_token="fake-access-token",
     )
     assert any("Upload your CV" in s.value for s in at.subheader)
 
@@ -697,8 +709,9 @@ def test_submitting_profile_form_as_employer_captures_company_name(
 
     assert not at.exception
     mock_create_profile.assert_called_once_with(
-        keycloak_user_id="user-newuser", role="employer", full_name="Grace Hopper",
+        role="employer", full_name="Grace Hopper",
         email="newuser@example-synthetic.test", company_name="Acme Co",
+        access_token="fake-access-token",
     )
     assert any("Employer" in h.value for h in at.header)
 
