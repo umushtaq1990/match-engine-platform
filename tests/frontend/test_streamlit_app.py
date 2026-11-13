@@ -73,6 +73,10 @@ def _candidate_support_endpoint_response(url: str):
         return MagicMock(status_code=200, json=_default_occupations)
     if url.endswith("/skills"):
         return MagicMock(status_code=200, json=_default_skills)
+    if url.endswith("/job-interactions"):
+        return MagicMock(status_code=200, json=lambda: [])
+    if "/audit/" in url:
+        return MagicMock(status_code=200, json=lambda: [])
     return None
 
 
@@ -227,10 +231,66 @@ def test_get_job_matches_renders_results_table(mock_get):
     get_matches_button.click().run(timeout=10)
 
     assert not at.exception
-    called_url, called_kwargs = mock_get.call_args.args[0], mock_get.call_args.kwargs
-    assert called_url.endswith("/candidates/42/job-matches")
-    assert called_kwargs["params"] == {"top_k": 10}
+    matches_call = next(c for c in mock_get.call_args_list if c.args[0].endswith("/candidates/42/job-matches"))
+    assert matches_call.kwargs["params"] == {"top_k": 10}
     assert len(at.dataframe) == 1
+
+
+@patch("app.frontend.job_client.requests.post")
+@patch("requests.get")
+def test_apply_and_save_buttons_appear_after_job_matches_and_call_right_endpoints(mock_get, mock_post):
+    def side_effect(url, *args, **kwargs):
+        if url.endswith("/cv"):
+            return MagicMock(status_code=404)
+        support = _candidate_support_endpoint_response(url)
+        if support is not None:
+            return support
+        return MagicMock(
+            status_code=200, headers={"X-Ranking-Mode": "blended"},
+            json=lambda: [{
+                "entity_id": 101, "label": "Backend Engineer", "eligible": True,
+                "ineligible_reason": None,
+                "score": {"skill": 0.8, "location": 1.0, "salary": 0.5, "occupation": 1.0, "total": 0.82},
+                "skill_gap": {"confirmed_absent_required": [], "not_recorded_required": [],
+                              "confirmed_absent_preferred": [], "not_recorded_preferred": []},
+                "explanation": "total score 0.82",
+            }],
+        )
+    mock_get.side_effect = side_effect
+    mock_post.return_value = MagicMock(status_code=201, json=lambda: {"status": "ok"})
+
+    at = _logged_in_app().run()
+    get_matches_button = next(b for b in at.button if b.label == "Show Job Matches")
+    at = get_matches_button.click().run(timeout=10)
+
+    assert not at.exception
+    assert any(sb.label == "Pick a job from your matches" for sb in at.selectbox)
+    apply_button = next(b for b in at.button if b.label == "Apply")
+    at = apply_button.click().run()
+
+    assert not at.exception
+    apply_call = mock_post.call_args
+    assert apply_call.args[0].endswith("/candidates/42/jobs/101/apply")
+
+
+@patch("requests.get")
+def test_edit_history_expander_renders_candidate_profile_changes(mock_get):
+    def side_effect(url, *args, **kwargs):
+        if url.endswith("/cv"):
+            return MagicMock(status_code=404)
+        if "/audit/" in url:
+            return MagicMock(status_code=200, json=lambda: [
+                {"changed_by_keycloak_user_id": "user-candidate", "changed_at": "2026-01-01T00:00:00Z",
+                 "changes": {"location_city": {"old": "Unknown", "new": "Austin"}}},
+            ])
+        return _candidate_support_endpoint_response(url) or MagicMock(status_code=404)
+    mock_get.side_effect = side_effect
+
+    at = _logged_in_app().run()
+
+    assert not at.exception
+    assert any("Edit history" in e.label for e in at.expander)
+    assert any("location_city" in c.value for c in at.caption)
 
 
 @patch("requests.get")

@@ -9,6 +9,7 @@ COPY app/db.py ./app/db.py
 COPY app/__init__.py ./app/__init__.py
 COPY app/common/ ./app/common/
 COPY app/api/ ./app/api/
+COPY app/audit/ ./app/audit/
 COPY app/identity/ ./app/identity/
 COPY app/matching/ ./app/matching/
 COPY app/ingestion/__init__.py ./app/ingestion/__init__.py

@@ -108,7 +108,16 @@ spirit as a portfolio project's "about/contact" footer.
   selectbox (options from `GET /occupations`). "Save profile details" calls
   `PATCH /candidates/{id}/details`, which replaces that candidate's skill rows wholesale and
   updates the `Candidate` columns directly, then reruns the page so the form reflects the saved
-  state.
+  state. An "Edit history" expander (issue #24, `app/frontend/audit_client.py`) shows the last few
+  changes from `GET /audit/candidate_details/{id}`.
+
+  Issue #24 also added real "Apply"/"Save for later" actions: after a "Show Job Matches" call, the
+  results are stashed in `st.session_state["last_job_matches"]` (so they survive the rerun an
+  Apply/Save click triggers), and a picker below the results table lets the candidate choose one
+  and call `POST /candidates/{id}/jobs/{job_id}/apply` or `.../save` — the real action the
+  `job_applied`/`job_saved` analytics events (`docs/architecture/application-services/
+  behavioral-analytics.md`) were missing until now. An "Your applied/saved jobs" expander lists the
+  current state from `GET /candidates/{id}/job-interactions`.
 - **Employer** (issue #22, `app/frontend/job_client.py`): a "Your jobs" selectbox lists that
   employer's own postings (`GET /employers/{keycloak_user_id}/jobs`) plus a "+ Post a new job"
   option — no more raw `job_id` input. Picking an existing job loads its full detail
@@ -127,6 +136,8 @@ spirit as a portfolio project's "about/contact" footer.
   (or `"new"`) — Streamlit only honors a widget's `value=` the first time that exact key renders
   in a session, so a fixed key would otherwise let a previous job's cached field value silently
   carry into a later job's save on switching (see Verification & Results for the bug this fixed).
+  An "Edit history" expander (issue #24) shows that job's own change history from
+  `GET /audit/job_details/{id}`.
 
 `docker/Dockerfile.frontend` / `app/requirements-frontend.txt` just `streamlit` and `requests`,
 nothing else. `docker-compose.yml`'s `frontend` service depends on `api` and `extraction` being
@@ -212,6 +223,19 @@ job's fields as distinct widgets. `tests/frontend/test_streamlit_app.py`'s
 `test_switching_between_jobs_refreshes_form_fields_not_stale_values` reproduces the exact
 switching sequence and asserts the field refreshes correctly both directions.
 
+**Issue #24** (missing behavioral events, Apply/Save, edit-history audit trail): verified live —
+applied to and saved a real job as the real candidate from this session, confirmed both
+`job_applied`/`job_saved` analytics events and the underlying `candidate_job_interactions` row
+(see `docs/architecture/application-services/behavioral-analytics.md` for the event-logging
+verification); PATCHed the candidate's and the job's details with a real
+`changed_by_keycloak_user_id` and confirmed `GET /audit/candidate_details/{id}` and
+`GET /audit/job_details/{id}` each returned a diff of only the fields that actually changed.
+`tests/api/test_audit_routes.py` covers `record_change`'s diff-only behavior (a no-op update
+writes nothing) and history ordering; `tests/api/test_job_routes.py` covers apply/save idempotency
+and the audit entries create_job/update_job_details now write; `tests/frontend/
+test_streamlit_app.py` covers the Apply/Save buttons appearing after a job-matches result and the
+edit-history expander rendering.
+
 ## Known Limitations
 
 - Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization only partly does now: each candidate has their own real `candidate_id` (issue #17) and each job is tied to the employer who posted it (`Job.posted_by_keycloak_user_id`, issue #22) — but `GET /jobs/{id}/details`/`PATCH /jobs/{id}/details` don't actually check that the caller owns the job before returning/editing it (same no-JWT-verification trust boundary as every other route here, not enforced authorization), and an employer can still type a seeded dataset's `job_id` directly against the API (not the UI) to view/edit a job they didn't post. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
@@ -221,6 +245,8 @@ switching sequence and asserts the field refreshes correctly both directions.
 - Job skills set via "Your jobs" (issue #22) have no equivalent of the candidate side's `proficiency`/`evidence_source` nuance — `JobSkill.requirement_level` (required/preferred) is the only distinction captured, consistent with what the form actually asks for.
 - CV upload and skill extraction are still two separate, un-chained steps (see `docs/architecture/application-services/skill-extraction.md`'s own Known Limitations), uploading a CV here does not automatically extract skills from it or affect the candidate's match scores.
 - `streamlit.testing.v1.AppTest` has no built-in way to simulate an actual file upload, so the "upload succeeds and shows a success message" path is verified only against the live stack, not as an automated unit test.
+- `GET /audit/{entity_type}/{entity_id}` (issue #24) has no ownership check either, same trust-boundary limitation as the job-details routes above — anyone with the API key can read any entity's edit history, not just their own.
+- `recommendation_clicked` (issue #24's taxonomy audit) still has no real trigger anywhere — no UI distinguishes "clicked/opened a specific result" from "saw the whole results table," so that event type stays unemitted. `job_applied`/`job_saved`/`search_performed`/`login` are all real now; this one alone remains a reserved taxonomy entry.
 
 ## Roadmap
 

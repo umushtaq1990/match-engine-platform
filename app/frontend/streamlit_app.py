@@ -28,7 +28,16 @@ from app.frontend.candidate_client import (
     list_skills,
     update_candidate_details,
 )
-from app.frontend.job_client import create_job, get_job_details, list_employer_jobs, update_job_details
+from app.frontend.audit_client import get_change_log
+from app.frontend.job_client import (
+    apply_to_job,
+    create_job,
+    get_job_details,
+    get_job_interactions,
+    list_employer_jobs,
+    save_job,
+    update_job_details,
+)
 from app.frontend.profile_client import create_profile, get_profile
 
 setup_logging("frontend")
@@ -320,9 +329,18 @@ if role == "candidate":
             primary_occupation_id=occupation_id,
             experience_level=EXPERIENCE_LEVELS[experience_label],
             skill_ids=skill_ids,
+            changed_by_keycloak_user_id=st.session_state["id_token_claims"]["sub"],
         )
         st.success("Profile details saved.")
         st.rerun()
+
+    with st.expander("Edit history"):
+        history = get_change_log("candidate_details", candidate_id)
+        if not history:
+            st.caption("No changes recorded yet.")
+        for entry in history[:10]:
+            changed_fields = ", ".join(entry["changes"].keys())
+            st.caption(f"{entry['changed_at']} — changed: {changed_fields}")
 
     if st.button("Show Job Matches"):
         response = requests.get(
@@ -331,9 +349,39 @@ if role == "candidate":
         )
         if response.status_code == 200:
             st.caption(f"Ranking mode: {response.headers.get('X-Ranking-Mode', 'unknown')}")
-            _render_matches(response.json())
+            matches = response.json()
+            st.session_state["last_job_matches"] = matches
+            _render_matches(matches)
         else:
             st.error(f"Request failed ({response.status_code}): {response.text}")
+
+    last_matches = st.session_state.get("last_job_matches")
+    if last_matches:
+        st.subheader("Apply or save a match")
+        match_label_by_id = {m["entity_id"]: f"{m['label']} (score {m['score']['total']})" for m in last_matches}
+        chosen_match_label = st.selectbox(
+            "Pick a job from your matches", list(match_label_by_id.values()),
+        )
+        chosen_job_id = next(jid for jid, label in match_label_by_id.items() if label == chosen_match_label)
+        apply_col, save_col = st.columns(2)
+        with apply_col:
+            if st.button("Apply"):
+                apply_to_job(candidate_id, chosen_job_id)
+                st.success(f"Applied to {match_label_by_id[chosen_job_id]}.")
+        with save_col:
+            if st.button("Save for later"):
+                save_job(candidate_id, chosen_job_id)
+                st.success(f"Saved {match_label_by_id[chosen_job_id]}.")
+
+    with st.expander("Your applied/saved jobs"):
+        interactions = get_job_interactions(candidate_id)
+        if not interactions:
+            st.caption("Nothing applied or saved yet.")
+        for interaction in interactions:
+            st.caption(
+                f"{interaction['interaction_type'].title()}: {interaction['title']} "
+                f"at {interaction['company_name']} ({interaction['created_at']})"
+            )
 
 else:
     # Issue #22: an employer's own job postings, created/edited here instead
@@ -487,10 +535,20 @@ else:
                 postal_code or None, country or None,
                 salary_min or None, salary_max or None, occupation_id,
                 JOB_EXPERIENCE_LEVELS[experience_label], required_skill_ids, preferred_skill_ids,
+                changed_by_keycloak_user_id=keycloak_user_id,
             )
         st.success("Job saved.")
         st.session_state["selected_job_id"] = saved["id"]
         st.rerun()
+
+    if job_id is not None:
+        with st.expander("Edit history"):
+            history = get_change_log("job_details", job_id)
+            if not history:
+                st.caption("No changes recorded yet.")
+            for entry in history[:10]:
+                changed_fields = ", ".join(entry["changes"].keys())
+                st.caption(f"{entry['changed_at']} — changed: {changed_fields}")
 
     st.subheader("Matching candidates")
     if job_id is not None and st.button("Get Matching Candidates"):

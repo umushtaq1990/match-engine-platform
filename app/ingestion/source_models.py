@@ -43,6 +43,11 @@ class EmploymentType(str, enum.Enum):
     contract = "contract"
 
 
+class InteractionType(str, enum.Enum):
+    applied = "applied"
+    saved = "saved"
+
+
 # --- Canonical taxonomy -----------------------------------------------------
 
 class Skill(Base):
@@ -249,3 +254,22 @@ class JobSkill(Base):
 
     job: Mapped["Job"] = relationship(back_populates="requirements")
     skill: Mapped["Skill"] = relationship()
+
+
+class CandidateJobInteraction(Base):
+    """Issue #24: a candidate explicitly applying to or saving a job --
+    distinct from CandidateSkill/JobSkill (evidence about a candidate/job's
+    own attributes), this is an action a candidate took. Unique on
+    (candidate_id, job_id, interaction_type) so re-clicking "Apply"/"Save"
+    is idempotent, not a growing pile of duplicate rows.
+    """
+    __tablename__ = "candidate_job_interactions"
+    __table_args__ = (
+        UniqueConstraint("candidate_id", "job_id", "interaction_type", name="uq_candidate_job_interaction"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    interaction_type: Mapped[InteractionType] = mapped_column(Enum(InteractionType))
+    created_at: Mapped[datetime] = mapped_column()

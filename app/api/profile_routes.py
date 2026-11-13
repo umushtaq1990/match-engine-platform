@@ -13,6 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.analytics_client import log_event
 from app.api.deps import DbSession, RequireApiKey
 from app.api.experience_levels import EXPERIENCE_LEVEL_TO_YEARS, years_experience_to_level
 from app.api.schemas import (
@@ -25,13 +26,14 @@ from app.api.schemas import (
     SkillCreate,
     SkillOut,
 )
+from app.audit.change_log import record_change
 from app.identity.models import UserProfile, UserRole
 from app.ingestion.source_models import Candidate, CandidateSkill, EvidenceSource, Occupation, ProficiencyLevel, Skill
 
 router = APIRouter(dependencies=[RequireApiKey])
 
 
-def _get_or_create_candidate(db: Session, full_name: str, email: str) -> int:
+def _get_or_create_candidate(db: Session, full_name: str, email: str, changed_by: str | None) -> int:
     """Issue #17: a real, personal `candidates` row for this user, instead
     of every candidate sharing one hardcoded candidate_id. `location_city`/
     `location_region`/`years_experience` aren't collected by the
@@ -50,6 +52,14 @@ def _get_or_create_candidate(db: Session, full_name: str, email: str) -> int:
         candidate = db.query(Candidate).filter_by(email=email).first()
         if candidate is None:
             raise
+        return candidate.id
+
+    # Issue #24: only on the fresh-insert path above -- reusing an existing
+    # candidate row on the IntegrityError branch isn't a creation.
+    record_change(
+        db, "candidate_details", candidate.id, changed_by, old={},
+        new={"full_name": full_name, "email": email, "location_city": "Unknown", "years_experience": 0},
+    )
     return candidate.id
 
 
@@ -57,7 +67,9 @@ def _get_or_create_candidate(db: Session, full_name: str, email: str) -> int:
 def create_profile(payload: ProfileCreate, db: Session = DbSession):
     candidate_id = None
     if payload.role == UserRole.candidate:
-        candidate_id = _get_or_create_candidate(db, payload.full_name, payload.email)
+        candidate_id = _get_or_create_candidate(
+            db, payload.full_name, payload.email, payload.keycloak_user_id,
+        )
 
     profile = UserProfile(
         keycloak_user_id=payload.keycloak_user_id,
@@ -74,6 +86,9 @@ def create_profile(payload: ProfileCreate, db: Session = DbSession):
         db.rollback()
         raise HTTPException(status_code=409, detail="Profile already exists for this user")
     db.refresh(profile)
+    # Issue #24: this is a brand-new user's first login, via registration --
+    # see get_profile() below for the returning-user case.
+    log_event(actor_type=profile.role.value, actor_id=profile.id, event_type="login")
     return profile
 
 
@@ -82,6 +97,10 @@ def get_profile(keycloak_user_id: str, db: Session = DbSession):
     profile = db.query(UserProfile).filter_by(keycloak_user_id=keycloak_user_id).first()
     if profile is None:
         raise HTTPException(status_code=404, detail="No profile for this user")
+    # Issue #24: a returning user's login -- the frontend only calls this
+    # once per real session (it caches the profile in session_state
+    # afterward), so this fires once per actual login, not once per rerun.
+    log_event(actor_type=profile.role.value, actor_id=profile.id, event_type="login")
     return profile
 
 
@@ -123,6 +142,14 @@ def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate,
     if candidate is None:
         raise HTTPException(status_code=404, detail="No such candidate")
 
+    old_values = {
+        "location_city": candidate.location_city, "postal_code": candidate.postal_code,
+        "country": candidate.country, "desired_salary_min": candidate.desired_salary_min,
+        "desired_salary_max": candidate.desired_salary_max,
+        "primary_occupation_id": candidate.primary_occupation_id,
+        "years_experience": candidate.years_experience,
+    }
+
     candidate.location_city = payload.location_city
     candidate.postal_code = payload.postal_code
     candidate.country = payload.country
@@ -140,6 +167,18 @@ def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate,
                 proficiency=ProficiencyLevel.intermediate, evidence_source=EvidenceSource.self_reported,
             )
         )
+
+    record_change(
+        db, "candidate_details", candidate_id, payload.changed_by_keycloak_user_id,
+        old=old_values,
+        new={
+            "location_city": candidate.location_city, "postal_code": candidate.postal_code,
+            "country": candidate.country, "desired_salary_min": candidate.desired_salary_min,
+            "desired_salary_max": candidate.desired_salary_max,
+            "primary_occupation_id": candidate.primary_occupation_id,
+            "years_experience": candidate.years_experience,
+        },
+    )
     db.commit()
 
     return CandidateDetailsOut(

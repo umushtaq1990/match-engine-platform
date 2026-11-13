@@ -74,11 +74,13 @@ Indexes: `(actor_type, actor_id, received_at)` for "this actor's timeline" queri
 | event_type | entity_type | metadata (example) | Emitted by |
 |---|---|---|---|
 | `recommendation_shown` | job / candidate / course | `{"rank": 3, "score": 0.71, "algorithm_version": "rule-based-v1"}` | Instrumentation hook in the existing matching API (automatic, not client-initiated) |
-| `recommendation_clicked` | job / candidate / course | `{"rank": 3}` | Client calls `POST /events` |
-| `job_applied` | job | `{}` | Client calls `POST /events` |
-| `job_saved` | job | `{}` | Client calls `POST /events` |
-| `search_performed` | — | `{"query": "...", "result_count": 12}` | Client calls `POST /events` |
-| `login` | — | `{}` | Client calls `POST /events` |
+| `recommendation_clicked` | job / candidate / course | `{"rank": 3}` | Not yet emitted anywhere — no UI tracks an individual recommendation being clicked/opened, as opposed to the whole-result-set "shown" event above. Still just a reserved taxonomy entry. |
+| `job_applied` | job | `{}` | Issue #24: `POST /candidates/{id}/jobs/{job_id}/apply` (`app/api/job_routes.py`), fired server-side alongside creating the real `CandidateJobInteraction` row behind the frontend's "Apply" button — not a generic client-reported `POST /events` call. |
+| `job_saved` | job | `{}` | Issue #24: same as `job_applied`, via `.../save`, behind "Save for later". |
+| `search_performed` | job / candidate / course | `{"top_k": 10, "mode": "blended"}` | Issue #24: one call per request in the same 3 matching-API GET endpoints that already fire `recommendation_shown` — distinct signal (one search vs. N shown results), `app/api/routes.py`. |
+| `login` | — | `{}` | Issue #24: `GET`/`POST /profiles` (`app/api/profile_routes.py`) — fires once per real login (the frontend caches the profile afterward, so a Streamlit rerun doesn't re-fire it), `actor_id` is the `UserProfile` row's own int id (works for both candidate and employer roles, unlike the non-integer `keycloak_user_id`). |
+
+A generic client-reported `POST /events`/`POST /events/batch` path still exists and still works (used by `recommendation_clicked` whenever something eventually emits it), but every event type that has a real trigger today is emitted server-side at the point of the actual action, via `app/api/analytics_client.py`'s new `log_event` (a single-event sibling to `log_recommendations_shown`, same Redis-Streams-else-HTTP-fallback, best-effort, never-raises design) — not round-tripped through the frontend as a separate instrumentation call.
 
 `algorithm_version` on `recommendation_shown` is included deliberately: it's what lets a future A/B comparison ("did the embedding-based matcher get clicked more than the rule-based one?") be answered from this table, without redesigning it.
 
@@ -109,6 +111,19 @@ Mirrors `app/ingestion/generate_synthetic_data.py`'s approach: deterministic (fi
 - **Instrumentation hook, the real integration point**: called the live matching API's `GET /candidates/{id}/job-matches` and confirmed, by querying Postgres before and after, that exactly 5 new `recommendation_shown` rows appeared with `source='api'`, correct `rank` values (1–5), and `entity_id`s matching the exact job ids the API response returned, not just "an event fired," but the right events with the right content.
 - **Best-effort degradation, the whole point of the design**: stopped the `analytics` container and re-called the same matching endpoint, it still returned `200` in ~0.6s (a refused TCP connection fails fast; it does not hang for the 2-second timeout). The matching engine's own behavior is provably unaffected by an analytics outage, not just documented as "should be."
 - **Engagement segmentation**: segmenting the first 200 candidates (and separately the first 200 employers/jobs) produced **zero** `passive_seeker` labels, a clean 100/100 active/dormant split for candidates, 63/137 for employers. Traced to the synthetic event generator's own structure (`app/analytics/generate_synthetic_events.py`): each simulated "session" is one atomic burst, a login plus `TOP_K` `recommendation_shown` events (plus possible clicks/applies) all at the same `occurred_at`, rather than independently-varying recency and frequency. The moment a candidate's most recent session lands inside the 30-day window, that same session has already produced well over 5 events, clearing the `active_seeker` threshold immediately. Recency and frequency are strongly correlated by construction in this generator, which collapses the three-label space into two real buckets for this dataset. This is a property of the synthetic data, not a bug in the segmentation logic, the thresholds and the aggregate query are both independently unit- and DB-tested (`tests/analytics/test_segmentation.py`, `test_segmentation_db.py`) against hand-constructed event sequences that **do** produce all three labels, including `passive_seeker`.
+
+**Issue #24** (closing the "only recommendation_shown ever fires" gap): verified live against the
+running stack — triggered a real login (`GET /profiles/{id}`), confirmed a `login` event via
+`GET /actors/candidate/{id}/events`; called `GET /candidates/{id}/job-matches` and confirmed a
+`search_performed` event alongside the existing `recommendation_shown` ones; applied to and saved
+a real job via the new `POST /candidates/{id}/jobs/{job_id}/apply`/`.../save` endpoints and
+confirmed both `job_applied` and `job_saved` events, plus the underlying
+`candidate_job_interactions` row, idempotent on a repeat click (no duplicate row, same
+unique-constraint-backed get-or-create pattern used throughout this project).
+`tests/api/test_job_routes.py` covers the interaction endpoints; live verification stands in for
+unit coverage of `log_event`/`log_recommendations_shown` actually reaching the analytics service,
+since no analytics container exists in the DB-transaction-wrapped route tests (the same documented
+fail-open gap the original instrumentation hook already had).
 
 ## Known Limitations
 

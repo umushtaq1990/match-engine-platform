@@ -124,6 +124,9 @@ class CandidateDetailsUpdate(BaseModel):
     primary_occupation_id: int | None = None
     experience_level: str | None = None
     skill_ids: list[int] = Field(default_factory=list, max_length=10)
+    # Issue #24: who made this edit, for the entity_change_log audit trail --
+    # same trust boundary as every keycloak_user_id elsewhere in this app.
+    changed_by_keycloak_user_id: str | None = None
 
 
 class OccupationOut(BaseModel):
@@ -216,3 +219,22 @@ class JobDetailsUpdate(BaseModel):
     experience_level: str | None = None
     required_skill_ids: list[int] = Field(default_factory=list, max_length=10)
     preferred_skill_ids: list[int] = Field(default_factory=list, max_length=10)
+    changed_by_keycloak_user_id: str | None = None
+
+
+class JobInteractionOut(BaseModel):
+    """Issue #24: one row of a candidate's applied/saved jobs list, joined
+    with the job's title/company so the frontend doesn't need N round-trips.
+    """
+    job_id: int
+    title: str
+    company_name: str
+    interaction_type: str
+    created_at: str
+
+
+class ChangeLogEntryOut(BaseModel):
+    """Issue #24: one entry of GET /audit/{entity_type}/{entity_id}."""
+    changed_by_keycloak_user_id: str | None
+    changed_at: str
+    changes: dict

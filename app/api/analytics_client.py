@@ -29,6 +29,26 @@ _TIMEOUT_SECONDS = 2.0
 _ALGORITHM_VERSION = "rule-based-v1"
 
 
+def _publish_or_post(events: list[dict]) -> None:
+    """Shared tail of every instrumentation call: Redis Streams when
+    configured, else a synchronous HTTP POST, always best-effort (every
+    exception caught and logged, never raised).
+    """
+    if publish_events(events):
+        return
+
+    api_key = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
+    try:
+        httpx.post(
+            f"{ANALYTICS_URL}/events/batch",
+            json={"events": events},
+            headers={"X-API-Key": api_key},
+            timeout=_TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError:
+        logger.warning("Failed to log events to analytics service", exc_info=True)
+
+
 def log_recommendations_shown(
     *, actor_type: str, actor_id: int, entity_type: str, entity_ids: list[int],
 ) -> None:
@@ -46,19 +66,22 @@ def log_recommendations_shown(
         }
         for rank, entity_id in enumerate(entity_ids, start=1)
     ]
+    _publish_or_post(events)
 
-    if publish_events(events):
-        return
 
-    api_key = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
-    try:
-        httpx.post(
-            f"{ANALYTICS_URL}/events/batch",
-            json={"events": events},
-            headers={"X-API-Key": api_key},
-            timeout=_TIMEOUT_SECONDS,
-        )
-    except httpx.HTTPError:
-        logger.warning(
-            "Failed to log recommendation_shown events to analytics service", exc_info=True
-        )
+def log_event(
+    *, actor_type: str, actor_id: int, event_type: str,
+    entity_type: str | None = None, entity_id: int | None = None, metadata: dict | None = None,
+) -> None:
+    """Issue #24: a single-event sibling to log_recommendations_shown, for
+    event types that aren't "N items shown" (login, search_performed,
+    job_applied, job_saved).
+    """
+    _publish_or_post([{
+        "actor_type": actor_type,
+        "actor_id": actor_id,
+        "event_type": event_type,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "metadata": metadata or {},
+    }])

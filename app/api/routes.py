@@ -8,7 +8,7 @@ require the X-API-Key header (see deps.require_api_key).
 from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy.orm import Session
 
-from app.api.analytics_client import log_recommendations_shown
+from app.api.analytics_client import log_event, log_recommendations_shown
 from app.api.cache import candidate_cache_key, get_cached, set_cached
 from app.api.deps import DbSession, RequireApiKey
 from app.api.schemas import (
@@ -73,6 +73,10 @@ def get_job_matches_for_candidate(
     A cached hit still logs a recommendation_shown impression: the user is
     seeing the recommendation again regardless of whether it was recomputed.
     """
+    log_event(
+        actor_type="candidate", actor_id=candidate_id, event_type="search_performed",
+        entity_type="job", metadata={"top_k": top_k, "mode": mode},
+    )
     key = candidate_cache_key("job-matches", candidate_id, top_k, include_ineligible, mode)
     cached = get_cached(key)
     if cached is not None:
@@ -158,6 +162,10 @@ def get_candidate_matches_for_job(
     the acting employer's identity in the logged event below, a documented
     v1 limitation, not an oversight. See docs/behavioral-analytics.md.
     """
+    log_event(
+        actor_type="employer", actor_id=job_id, event_type="search_performed",
+        entity_type="candidate", metadata={"top_k": top_k},
+    )
     try:
         results = rank_candidates_for_job(db, job_id, top_k=top_k, include_ineligible=include_ineligible)
     except ValueError as exc:
@@ -177,6 +185,10 @@ def get_course_recommendations_for_candidate(
     candidate_id: int, top_k: int = 5, db: Session = DbSession,
 ):
     """Use Case E: recommend courses closing a candidate's target-occupation skill gap."""
+    log_event(
+        actor_type="candidate", actor_id=candidate_id, event_type="search_performed",
+        entity_type="course", metadata={"top_k": top_k},
+    )
     try:
         gap, recommendations = recommend_courses_for_candidate(db, candidate_id, top_k=top_k)
     except ValueError as exc:

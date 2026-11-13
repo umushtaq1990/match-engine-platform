@@ -104,6 +104,26 @@ def test_job_details_patch_route_rejects_missing_api_key():
     assert response.status_code == 401
 
 
+def test_apply_to_job_route_rejects_missing_api_key():
+    response = client.post("/candidates/1/jobs/1/apply")
+    assert response.status_code == 401
+
+
+def test_save_job_route_rejects_missing_api_key():
+    response = client.post("/candidates/1/jobs/1/save")
+    assert response.status_code == 401
+
+
+def test_job_interactions_route_rejects_missing_api_key():
+    response = client.get("/candidates/1/job-interactions")
+    assert response.status_code == 401
+
+
+def test_audit_route_rejects_missing_api_key():
+    response = client.get("/audit/candidate_details/1")
+    assert response.status_code == 401
+
+
 def test_matching_route_rejects_wrong_api_key():
     response = client.get("/candidates/1/job-matches", headers={"X-API-Key": "wrong-key"})
     assert response.status_code == 401

@@ -22,6 +22,7 @@ def update_candidate_details(
     candidate_id: int, location_city: str, postal_code: str | None, country: str | None,
     desired_salary_min: int | None, desired_salary_max: int | None,
     primary_occupation_id: int | None, experience_level: str | None, skill_ids: list[int],
+    changed_by_keycloak_user_id: str | None = None,
 ) -> dict:
     resp = requests.patch(
         f"{API_URL}/candidates/{candidate_id}/details",
@@ -35,6 +36,7 @@ def update_candidate_details(
             "primary_occupation_id": primary_occupation_id,
             "experience_level": experience_level,
             "skill_ids": skill_ids,
+            "changed_by_keycloak_user_id": changed_by_keycloak_user_id,
         },
         timeout=10,
     )

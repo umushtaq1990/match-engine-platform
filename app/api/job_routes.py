@@ -11,14 +11,40 @@ docs/architecture/ingress-and-identity.md Known Limitations.
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.analytics_client import log_event
 from app.api.deps import DbSession, RequireApiKey
 from app.api.experience_levels import EXPERIENCE_LEVEL_TO_YEARS, years_experience_to_level
-from app.api.schemas import JobCreate, JobDetailsOut, JobDetailsUpdate, JobListingOut
-from app.ingestion.source_models import EmploymentType, Job, JobSkill, RequirementLevel
+from app.api.schemas import (
+    JobCreate,
+    JobDetailsOut,
+    JobDetailsUpdate,
+    JobInteractionOut,
+    JobListingOut,
+)
+from app.audit.change_log import record_change
+from app.ingestion.source_models import (
+    Candidate,
+    CandidateJobInteraction,
+    EmploymentType,
+    InteractionType,
+    Job,
+    JobSkill,
+    RequirementLevel,
+)
 
 router = APIRouter(dependencies=[RequireApiKey])
+
+
+def _job_audit_fields(job: Job) -> dict:
+    return {
+        "title": job.title, "company_name": job.company_name, "description": job.description_raw,
+        "location_city": job.location_city, "postal_code": job.postal_code, "country": job.country,
+        "salary_min": job.salary_min, "salary_max": job.salary_max,
+        "occupation_id": job.occupation_id, "min_years_experience": job.min_years_experience,
+    }
 
 
 def _job_skill_ids(db: Session, job_id: int, requirement_level: RequirementLevel) -> list[int]:
@@ -89,6 +115,10 @@ def create_job(payload: JobCreate, db: Session = DbSession):
     db.add(job)
     db.flush()
     _replace_job_skills(db, job.id, payload.required_skill_ids, payload.preferred_skill_ids)
+    record_change(
+        db, "job_details", job.id, payload.posted_by_keycloak_user_id,
+        old={}, new=_job_audit_fields(job),
+    )
     db.commit()
     return _to_job_details_out(db, job)
 
@@ -122,6 +152,8 @@ def update_job_details(job_id: int, payload: JobDetailsUpdate, db: Session = DbS
     if job is None:
         raise HTTPException(status_code=404, detail="No such job")
 
+    old_values = _job_audit_fields(job)
+
     job.title = payload.title
     job.company_name = payload.company_name
     job.description_raw = payload.description
@@ -135,5 +167,78 @@ def update_job_details(job_id: int, payload: JobDetailsUpdate, db: Session = DbS
         job.min_years_experience = EXPERIENCE_LEVEL_TO_YEARS[payload.experience_level]
 
     _replace_job_skills(db, job_id, payload.required_skill_ids, payload.preferred_skill_ids)
+    record_change(db, "job_details", job_id, payload.changed_by_keycloak_user_id, old=old_values, new=_job_audit_fields(job))
     db.commit()
     return _to_job_details_out(db, job)
+
+
+def _get_or_create_interaction(db: Session, candidate_id: int, job_id: int, interaction_type: InteractionType) -> None:
+    existing = db.query(CandidateJobInteraction).filter_by(
+        candidate_id=candidate_id, job_id=job_id, interaction_type=interaction_type,
+    ).first()
+    if existing is not None:
+        return
+    interaction = CandidateJobInteraction(
+        candidate_id=candidate_id, job_id=job_id, interaction_type=interaction_type,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(interaction)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+
+
+@router.post("/candidates/{candidate_id}/jobs/{job_id}/apply", status_code=201)
+def apply_to_job(candidate_id: int, job_id: int, db: Session = DbSession):
+    """Issue #24: the real action the `job_applied` event type was missing
+    until now -- idempotent on re-click, same unique-constraint-backed
+    get-or-create pattern used throughout this app.
+    """
+    if db.get(Candidate, candidate_id) is None:
+        raise HTTPException(status_code=404, detail="No such candidate")
+    if db.get(Job, job_id) is None:
+        raise HTTPException(status_code=404, detail="No such job")
+    _get_or_create_interaction(db, candidate_id, job_id, InteractionType.applied)
+    log_event(
+        actor_type="candidate", actor_id=candidate_id, event_type="job_applied",
+        entity_type="job", entity_id=job_id,
+    )
+    return {"status": "applied"}
+
+
+@router.post("/candidates/{candidate_id}/jobs/{job_id}/save", status_code=201)
+def save_job(candidate_id: int, job_id: int, db: Session = DbSession):
+    """Issue #24: same as apply_to_job above, for the `job_saved` event type."""
+    if db.get(Candidate, candidate_id) is None:
+        raise HTTPException(status_code=404, detail="No such candidate")
+    if db.get(Job, job_id) is None:
+        raise HTTPException(status_code=404, detail="No such job")
+    _get_or_create_interaction(db, candidate_id, job_id, InteractionType.saved)
+    log_event(
+        actor_type="candidate", actor_id=candidate_id, event_type="job_saved",
+        entity_type="job", entity_id=job_id,
+    )
+    return {"status": "saved"}
+
+
+@router.get("/candidates/{candidate_id}/job-interactions", response_model=list[JobInteractionOut])
+def get_candidate_job_interactions(candidate_id: int, db: Session = DbSession):
+    """Issue #24: a candidate's applied/saved jobs, joined with job
+    title/company so the frontend doesn't need N round-trips.
+    """
+    rows = (
+        db.query(CandidateJobInteraction, Job)
+        .join(Job, Job.id == CandidateJobInteraction.job_id)
+        .filter(CandidateJobInteraction.candidate_id == candidate_id)
+        .order_by(CandidateJobInteraction.created_at.desc())
+        .all()
+    )
+    return [
+        JobInteractionOut(
+            job_id=job.id, title=job.title, company_name=job.company_name,
+            interaction_type=interaction.interaction_type.value,
+            created_at=interaction.created_at.isoformat(),
+        )
+        for interaction, job in rows
+    ]

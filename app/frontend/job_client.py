@@ -53,6 +53,7 @@ def update_job_details(
     salary_min: int | None, salary_max: int | None,
     primary_occupation_id: int | None, experience_level: str | None,
     required_skill_ids: list[int], preferred_skill_ids: list[int],
+    changed_by_keycloak_user_id: str | None = None,
 ) -> dict:
     resp = requests.patch(
         f"{API_URL}/jobs/{job_id}/details",
@@ -63,8 +64,27 @@ def update_job_details(
             "salary_min": salary_min, "salary_max": salary_max,
             "primary_occupation_id": primary_occupation_id, "experience_level": experience_level,
             "required_skill_ids": required_skill_ids, "preferred_skill_ids": preferred_skill_ids,
+            "changed_by_keycloak_user_id": changed_by_keycloak_user_id,
         },
         timeout=10,
     )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def apply_to_job(candidate_id: int, job_id: int) -> dict:
+    resp = requests.post(f"{API_URL}/candidates/{candidate_id}/jobs/{job_id}/apply", headers=_HEADERS, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def save_job(candidate_id: int, job_id: int) -> dict:
+    resp = requests.post(f"{API_URL}/candidates/{candidate_id}/jobs/{job_id}/save", headers=_HEADERS, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_job_interactions(candidate_id: int) -> list[dict]:
+    resp = requests.get(f"{API_URL}/candidates/{candidate_id}/job-interactions", headers=_HEADERS, timeout=10)
     resp.raise_for_status()
     return resp.json()
