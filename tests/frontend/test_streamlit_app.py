@@ -45,8 +45,39 @@ def _logged_in_app(role: str = "candidate") -> AppTest:
     return at
 
 
-def _no_existing_cv(*args, **kwargs):
-    return MagicMock(status_code=404)
+def _default_candidate_details() -> dict:
+    return {
+        "location_city": "Unknown", "location_region": "Unknown",
+        "desired_salary_min": None, "desired_salary_max": None,
+        "primary_occupation_id": None, "skill_ids": [],
+    }
+
+
+def _default_occupations() -> list[dict]:
+    return [{"id": 1, "title": "Software Engineer"}]
+
+
+def _default_skills() -> list[dict]:
+    return [{"id": 1, "name": "Python"}, {"id": 2, "name": "SQL"}]
+
+
+def _candidate_support_endpoint_response(url: str):
+    """Issue #18: "Your profile" renders unconditionally alongside "Upload
+    your CV", so every candidate-flow test's mocked `requests.get` must also
+    answer `/details`, `/occupations`, `/skills` — not just `/cv`. Returns
+    `None` for any other URL so callers can fall through to their own logic.
+    """
+    if url.endswith("/details"):
+        return MagicMock(status_code=200, json=_default_candidate_details)
+    if url.endswith("/occupations"):
+        return MagicMock(status_code=200, json=_default_occupations)
+    if url.endswith("/skills"):
+        return MagicMock(status_code=200, json=_default_skills)
+    return None
+
+
+def _no_existing_cv(url, *args, **kwargs):
+    return _candidate_support_endpoint_response(url) or MagicMock(status_code=404)
 
 
 @patch("requests.get")
@@ -84,7 +115,7 @@ def test_existing_cv_is_shown_with_a_replace_option(mock_get):
                     "size_bytes": 12345, "uploaded_at": "2026-01-01T00:00:00Z",
                 },
             )
-        return MagicMock(status_code=404)
+        return _candidate_support_endpoint_response(url) or MagicMock(status_code=404)
     mock_get.side_effect = side_effect
 
     at = _logged_in_app().run()
@@ -108,6 +139,9 @@ def test_get_job_matches_renders_results_table(mock_get):
     def side_effect(url, *args, **kwargs):
         if url.endswith("/cv"):
             return MagicMock(status_code=404)
+        support = _candidate_support_endpoint_response(url)
+        if support is not None:
+            return support
         return MagicMock(
             status_code=200,
             headers={"X-Ranking-Mode": "blended"},
@@ -138,6 +172,9 @@ def test_get_job_matches_shows_error_on_failure(mock_get):
     def side_effect(url, *args, **kwargs):
         if url.endswith("/cv"):
             return MagicMock(status_code=404)
+        support = _candidate_support_endpoint_response(url)
+        if support is not None:
+            return support
         return MagicMock(status_code=404, text="No candidate with id=42", headers={})
     mock_get.side_effect = side_effect
 
@@ -160,6 +197,50 @@ def test_upload_cv_rejects_oversized_file_client_side(mock_get, mock_post):
     upload_button = next(b for b in at.button if b.label == "Upload CV")
     assert upload_button.disabled is True
     mock_post.assert_not_called()
+
+
+@patch("requests.get")
+def test_profile_details_form_renders_with_prefilled_values(mock_get):
+    def side_effect(url, *args, **kwargs):
+        if url.endswith("/cv"):
+            return MagicMock(status_code=404)
+        if url.endswith("/details"):
+            return MagicMock(status_code=200, json=lambda: {
+                "location_city": "Austin", "location_region": "TX",
+                "desired_salary_min": 90000, "desired_salary_max": 120000,
+                "primary_occupation_id": 1, "skill_ids": [2],
+            })
+        return _candidate_support_endpoint_response(url) or MagicMock(status_code=404)
+    mock_get.side_effect = side_effect
+
+    at = _logged_in_app().run()
+
+    assert not at.exception
+    assert any("Your profile" in s.value for s in at.subheader)
+    assert next(ti for ti in at.text_input if ti.label == "City").value == "Austin"
+    assert next(ti for ti in at.text_input if ti.label == "Region/State").value == "TX"
+    assert next(ni for ni in at.number_input if ni.label == "Desired salary (min)").value == 90000
+    assert at.selectbox[0].value == "Software Engineer"
+    assert at.multiselect[0].value == ["SQL"]
+
+
+@patch("app.frontend.candidate_client.requests.patch")
+@patch("requests.get")
+def test_saving_profile_details_calls_patch_with_expected_payload(mock_get, mock_patch):
+    mock_get.side_effect = _no_existing_cv
+    mock_patch.return_value = MagicMock(status_code=200, json=lambda: _default_candidate_details())
+
+    at = _logged_in_app().run()
+    next(ti for ti in at.text_input if ti.label == "City").set_value("Denver").run()
+    at.multiselect[0].set_value(["Python", "SQL"]).run()
+    save_button = next(b for b in at.button if b.label == "Save profile details")
+    at = save_button.click().run()
+
+    assert not at.exception
+    called_url, called_kwargs = mock_patch.call_args.args[0], mock_patch.call_args.kwargs
+    assert called_url.endswith("/candidates/42/details")
+    assert called_kwargs["json"]["location_city"] == "Denver"
+    assert sorted(called_kwargs["json"]["skill_ids"]) == [1, 2]
 
 
 @patch("requests.get")

@@ -5,7 +5,7 @@ internal computation shapes (sets, used for set algebra in scoring.py); these
 are the wire format (sorted lists, JSON-safe), so the two can evolve
 independently without breaking API consumers.
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.identity.models import UserRole
 
@@ -91,3 +91,41 @@ class ProfileOut(BaseModel):
     email: str
     company_name: str | None
     candidate_id: int | None  # issue #17: server-assigned, only set for role=candidate
+
+
+class CandidateDetailsOut(BaseModel):
+    """Issue #18: the scoring-relevant fields `app/matching/scoring.py` reads
+    for a candidate (location, salary, occupation, skills) — editable by the
+    candidate themself, as opposed to `ProfileOut`'s identity fields.
+    """
+    model_config = {"from_attributes": True}
+
+    location_city: str
+    location_region: str
+    desired_salary_min: int | None
+    desired_salary_max: int | None
+    primary_occupation_id: int | None
+    skill_ids: list[int]
+
+
+class CandidateDetailsUpdate(BaseModel):
+    location_city: str
+    location_region: str
+    desired_salary_min: int | None = None
+    desired_salary_max: int | None = None
+    primary_occupation_id: int | None = None
+    skill_ids: list[int] = Field(default_factory=list, max_length=10)
+
+
+class OccupationOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    title: str
+
+
+class SkillOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    name: str

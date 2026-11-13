@@ -52,6 +52,15 @@ creates a personal `candidates` row for role=candidate and links its id onto the
 candidate's CV/matches are tied to their own record — not one shared hardcoded id. See
 [ingress-and-identity.md](ingress-and-identity.md) Part 2.
 
+Issue #18 closed the remaining gap between that per-candidate record and the matching engine's
+actual scoring inputs: `app/matching/scoring.py` has always scored skills (55%), location (15%),
+salary (15%), and occupation (15%), but nothing let a candidate set those values — they stayed at
+issue #17's registration-time placeholders forever. A new "Your profile" section (between
+"Upload your CV" and "Show Job Matches") lets a candidate edit all four directly, backed by new
+`GET`/`PATCH /candidates/{id}/details` and `GET /occupations`/`GET /skills` endpoints (both small
+lookup tables, loaded in full for a selectbox/multiselect — no search/pagination needed at this
+scale).
+
 ## Implementation
 
 `app/frontend/streamlit_app.py`  one script, two modes selected by the user's real
@@ -68,6 +77,13 @@ candidate's CV/matches are tied to their own record — not one shared hardcoded
   (`GET /candidates/{id}/job-matches?top_k=10` on `api`) renders results as a table (label,
   eligibility, score, explanation), with the `X-Ranking-Mode` response header surfaced so it's
   visible whether blended or rule-based ranking was used.
+  "Your profile" (issue #18, `app/frontend/candidate_client.py`) then lets them edit the four
+  fields `scoring.py` actually reads: a multiselect for skills (capped at 10, options loaded from
+  `GET /skills`), city/region text inputs, salary min/max number inputs, and an occupation
+  selectbox (options from `GET /occupations`). "Save profile details" calls
+  `PATCH /candidates/{id}/details`, which replaces that candidate's skill rows wholesale and
+  updates the `Candidate` columns directly, then reruns the page so the form reflects the saved
+  state.
 - **Employer**: enter a `job_id` → click "Get Matching Candidates" (`GET /jobs/{id}/candidate-matches`
   on `api`) → same results table.
 
@@ -100,11 +116,22 @@ Also confirmed the frontend container reaches `api` over the **internal Docker n
 
 **CI**: `fresh-volume-smoke-test` builds and Trivy-scans the `frontend` image, starts it after `api`/`extraction` are healthy, confirms `/_stcore/health` and the main page both return `200`, and runs the same internal-network check inside the container.
 
+**Issue #18** (editable location/salary/occupation/skills): verified live against the running
+stack — `PATCH /candidates/{id}/details` with real values persisted to `candidates` and
+`candidate_skills`, confirmed via `docker compose exec db psql`; re-ran
+`GET /candidates/{id}/job-matches` before and after and confirmed the score breakdown's
+location/salary/occupation components moved off their neutral `0.5` defaults once real data was
+set. `tests/api/test_candidate_details_routes.py` covers the GET/PATCH/occupations/skills routes
+against a real (disposable) Postgres transaction; `tests/frontend/test_streamlit_app.py` covers
+the form rendering pre-filled values and the save button calling `PATCH` with the expected payload.
+
 ## Known Limitations
 
 - Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization only partly does now: each candidate has their own real `candidate_id` (issue #17), so one candidate can no longer see or overwrite another's CV/matches — but an employer can still type in any `job_id` in the seeded dataset, nothing ties a specific Keycloak identity to a specific `job_id` yet. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
-- The `candidates` row created at Candidate registration (issue #17) only has real `full_name`/`email`; `location_city`/`location_region`/`years_experience` are hardcoded MVP placeholders (`"Unknown"`/`"Unknown"`/`0`) since the registration form doesn't collect them, which will skew that candidate's own location/experience-based match scoring until a real profile-completion step is built to collect them.
-- No candidate/job creation or editing : only the two read-heavy flows (upload CV, view matches) exist. A real portal would need profile management; deliberately out of scope for v1.
+- The `candidates` row created at Candidate registration (issue #17) still starts with placeholder `location_city`/`location_region` (`"Unknown"`) and `null` salary/occupation/skills — but issue #18's "Your profile" form now lets the candidate fill in real values themselves post-registration, closing most of that gap (years_experience remains uncollected by any UI).
+- Skills set via "Your profile" (issue #18) are always recorded as `proficiency=intermediate`/`evidence_source=self_reported` — there's no UI for a candidate to claim a different proficiency level, a simplification since CV-extraction-sourced skills (the other `evidence_source`) aren't chained in yet either (see below).
+- Saving "Your profile" does not invalidate the `GET /candidates/{id}/job-matches` Redis cache (`docs/redis-infrastructure.md`'s 1-hour TTL) — a candidate who saves new details and immediately re-checks matches within that hour can see a stale, pre-save score until the cache entry expires. Acceptable for a demo; a real system would bust the cache key on profile save.
+- No candidate/job *record* creation beyond what issue #18 added (editing is now possible for a candidate's own scoring fields; creating new candidate/job rows from the UI, or any employer-side self-service, is still out of scope for v1).
 - CV upload and skill extraction are still two separate, un-chained steps (see `docs/architecture/application-services/skill-extraction.md`'s own Known Limitations), uploading a CV here does not automatically extract skills from it or affect the candidate's match scores.
 - `streamlit.testing.v1.AppTest` has no built-in way to simulate an actual file upload, so the "upload succeeds and shows a success message" path is verified only against the live stack, not as an automated unit test.
 

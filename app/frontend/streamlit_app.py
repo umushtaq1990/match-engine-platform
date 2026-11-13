@@ -8,7 +8,9 @@ then fill in a one-time profile form (name, candidate/employer role,
 company name) on first login (issue #15/#16), but candidate/job *records*
 are still the already-seeded synthetic dataset, not something users create
 here: a candidate picks an existing candidate_id, an employer picks an
-existing job_id. See docs/architecture/frontend.md.
+existing job_id. Candidates can also edit the scoring-relevant fields the
+matching engine reads (location, salary, occupation, skills) via "Your
+profile" (issue #18). See docs/architecture/frontend.md.
 """
 import os
 
@@ -18,6 +20,12 @@ import streamlit as st
 from app.common.logging import setup_logging
 from app.frontend.keycloak_admin import assign_realm_role, create_user, get_admin_token
 from app.frontend.oidc import decode_id_token, password_grant_login
+from app.frontend.candidate_client import (
+    get_candidate_details,
+    list_occupations,
+    list_skills,
+    update_candidate_details,
+)
 from app.frontend.profile_client import create_profile, get_profile
 
 setup_logging("frontend")
@@ -213,6 +221,56 @@ if role == "candidate":
                 st.rerun()
             else:
                 st.error(f"Upload failed ({response.status_code}): {response.text}")
+
+    st.subheader("Your profile")
+    details = get_candidate_details(candidate_id)
+    occupations = list_occupations()
+    skills = list_skills()
+    skill_name_by_id = {s["id"]: s["name"] for s in skills}
+
+    col1, col2 = st.columns(2)
+    with col1:
+        location_city = st.text_input("City", value=details["location_city"])
+        salary_min = st.number_input(
+            "Desired salary (min)", min_value=0, step=1000,
+            value=details["desired_salary_min"] or 0,
+        )
+    with col2:
+        location_region = st.text_input("Region/State", value=details["location_region"])
+        salary_max = st.number_input(
+            "Desired salary (max)", min_value=0, step=1000,
+            value=details["desired_salary_max"] or 0,
+        )
+
+    occupation_titles = [o["title"] for o in occupations]
+    current_occupation = next(
+        (o["title"] for o in occupations if o["id"] == details["primary_occupation_id"]), None,
+    )
+    occupation_title = st.selectbox(
+        "Occupation", occupation_titles,
+        index=occupation_titles.index(current_occupation) if current_occupation in occupation_titles else 0,
+    )
+
+    skill_options = [s["name"] for s in skills]
+    default_skill_names = [skill_name_by_id[sid] for sid in details["skill_ids"] if sid in skill_name_by_id]
+    chosen_skill_names = st.multiselect(
+        "Your top skills (up to 10)", skill_options, default=default_skill_names, max_selections=10,
+    )
+
+    if st.button("Save profile details"):
+        skill_id_by_name = {s["name"]: s["id"] for s in skills}
+        occupation_id_by_title = {o["title"]: o["id"] for o in occupations}
+        update_candidate_details(
+            candidate_id,
+            location_city=location_city,
+            location_region=location_region,
+            desired_salary_min=salary_min or None,
+            desired_salary_max=salary_max or None,
+            primary_occupation_id=occupation_id_by_title.get(occupation_title),
+            skill_ids=[skill_id_by_name[name] for name in chosen_skill_names],
+        )
+        st.success("Profile details saved.")
+        st.rerun()
 
     if st.button("Show Job Matches"):
         response = requests.get(

@@ -12,9 +12,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbSession, RequireApiKey
-from app.api.schemas import ProfileCreate, ProfileOut
+from app.api.schemas import (
+    CandidateDetailsOut,
+    CandidateDetailsUpdate,
+    OccupationOut,
+    ProfileCreate,
+    ProfileOut,
+    SkillOut,
+)
 from app.identity.models import UserProfile, UserRole
-from app.ingestion.source_models import Candidate
+from app.ingestion.source_models import Candidate, CandidateSkill, EvidenceSource, Occupation, ProficiencyLevel, Skill
 
 router = APIRouter(dependencies=[RequireApiKey])
 
@@ -71,3 +78,71 @@ def get_profile(keycloak_user_id: str, db: Session = DbSession):
     if profile is None:
         raise HTTPException(status_code=404, detail="No profile for this user")
     return profile
+
+
+@router.get("/candidates/{candidate_id}/details", response_model=CandidateDetailsOut)
+def get_candidate_details(candidate_id: int, db: Session = DbSession):
+    """Issue #18: the scoring-relevant fields (location/salary/occupation/
+    skills) `app/matching/scoring.py` reads for this candidate.
+    """
+    candidate = db.get(Candidate, candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="No such candidate")
+    skill_ids = [row.skill_id for row in db.query(CandidateSkill).filter_by(candidate_id=candidate_id)]
+    return CandidateDetailsOut(
+        location_city=candidate.location_city,
+        location_region=candidate.location_region,
+        desired_salary_min=candidate.desired_salary_min,
+        desired_salary_max=candidate.desired_salary_max,
+        primary_occupation_id=candidate.primary_occupation_id,
+        skill_ids=skill_ids,
+    )
+
+
+@router.patch("/candidates/{candidate_id}/details", response_model=CandidateDetailsOut)
+def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate, db: Session = DbSession):
+    """Issue #18: lets a candidate set the fields the matching engine scores
+    on (location/salary/occupation/skills) — previously only ever set to MVP
+    placeholders at registration (issue #17). Skills are self-reported here,
+    so every row gets `proficiency=intermediate`/`evidence_source=self_reported`
+    — there's no UI yet to capture a finer-grained proficiency, a documented
+    MVP simplification.
+    """
+    candidate = db.get(Candidate, candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="No such candidate")
+
+    candidate.location_city = payload.location_city
+    candidate.location_region = payload.location_region
+    candidate.desired_salary_min = payload.desired_salary_min
+    candidate.desired_salary_max = payload.desired_salary_max
+    candidate.primary_occupation_id = payload.primary_occupation_id
+
+    db.query(CandidateSkill).filter_by(candidate_id=candidate_id).delete()
+    for skill_id in payload.skill_ids:
+        db.add(
+            CandidateSkill(
+                candidate_id=candidate_id, skill_id=skill_id,
+                proficiency=ProficiencyLevel.intermediate, evidence_source=EvidenceSource.self_reported,
+            )
+        )
+    db.commit()
+
+    return CandidateDetailsOut(
+        location_city=candidate.location_city,
+        location_region=candidate.location_region,
+        desired_salary_min=candidate.desired_salary_min,
+        desired_salary_max=candidate.desired_salary_max,
+        primary_occupation_id=candidate.primary_occupation_id,
+        skill_ids=payload.skill_ids,
+    )
+
+
+@router.get("/occupations", response_model=list[OccupationOut])
+def list_occupations(db: Session = DbSession):
+    return db.query(Occupation).order_by(Occupation.title).all()
+
+
+@router.get("/skills", response_model=list[SkillOut])
+def list_skills(db: Session = DbSession):
+    return db.query(Skill).order_by(Skill.name).all()

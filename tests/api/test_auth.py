@@ -46,6 +46,28 @@ def test_profiles_get_route_rejects_missing_api_key():
     assert response.status_code == 401
 
 
+def test_candidate_details_get_route_rejects_missing_api_key():
+    response = client.get("/candidates/1/details")
+    assert response.status_code == 401
+
+
+def test_candidate_details_patch_route_rejects_missing_api_key():
+    response = client.patch("/candidates/1/details", json={
+        "location_city": "Austin", "location_region": "TX", "skill_ids": [],
+    })
+    assert response.status_code == 401
+
+
+def test_occupations_route_rejects_missing_api_key():
+    response = client.get("/occupations")
+    assert response.status_code == 401
+
+
+def test_skills_route_rejects_missing_api_key():
+    response = client.get("/skills")
+    assert response.status_code == 401
+
+
 def test_matching_route_rejects_wrong_api_key():
     response = client.get("/candidates/1/job-matches", headers={"X-API-Key": "wrong-key"})
     assert response.status_code == 401
