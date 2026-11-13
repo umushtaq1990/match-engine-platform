@@ -214,7 +214,7 @@ if role == "candidate":
             else:
                 st.error(f"Upload failed ({response.status_code}): {response.text}")
 
-    if st.button("Show My Top 10 Job Matches"):
+    if st.button("Show Job Matches"):
         response = requests.get(
             f"{API_URL}/candidates/{candidate_id}/job-matches",
             headers=HEADERS, params={"top_k": 10}, timeout=10,

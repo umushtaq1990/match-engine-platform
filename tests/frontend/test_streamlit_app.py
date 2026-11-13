@@ -59,7 +59,7 @@ def test_candidate_role_claim_shows_candidate_flow(mock_get):
     at = _logged_in_app(role="candidate").run()
     assert not at.exception
     assert any("Upload your CV" in s.value for s in at.subheader)
-    assert any(b.label == "Show My Top 10 Job Matches" for b in at.button)
+    assert any(b.label == "Show Job Matches" for b in at.button)
 
 
 def test_employer_role_claim_shows_job_id_input():
@@ -119,7 +119,7 @@ def test_get_job_matches_renders_results_table(mock_get):
     mock_get.side_effect = side_effect
 
     at = _logged_in_app().run()
-    get_matches_button = next(b for b in at.button if b.label == "Show My Top 10 Job Matches")
+    get_matches_button = next(b for b in at.button if b.label == "Show Job Matches")
     get_matches_button.click().run(timeout=10)
 
     assert not at.exception
@@ -138,7 +138,7 @@ def test_get_job_matches_shows_error_on_failure(mock_get):
     mock_get.side_effect = side_effect
 
     at = _logged_in_app().run()
-    get_matches_button = next(b for b in at.button if b.label == "Show My Top 10 Job Matches")
+    get_matches_button = next(b for b in at.button if b.label == "Show Job Matches")
     get_matches_button.click().run(timeout=10)
 
     assert not at.exception

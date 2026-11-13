@@ -60,7 +60,7 @@ the logged-out screen explicit "Log in" / "New here?" section headings — see
   already on file, its filename/size/upload date are shown and the uploader is labeled "Replace
   your CV"; otherwise it's a plain upload prompt. Uploading (`POST /candidates/{id}/cv`, client-side
   size check mirrors the server's 2MB cap before even sending the request) re-renders the page so
-  the "current CV on file" info reflects the new upload. "Show My Top 10 Job Matches"
+  the "current CV on file" info reflects the new upload. "Show Job Matches"
   (`GET /candidates/{id}/job-matches?top_k=10` on `api`) renders results as a table (label,
   eligibility, score, explanation), with the `X-Ranking-Mode` response header surfaced so it's
   visible whether blended or rule-based ranking was used.
