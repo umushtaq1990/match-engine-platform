@@ -1,9 +1,38 @@
 """Unit tests for app/frontend/keycloak_admin.py (issue #14). Pure requests
 calls, mocked here — the real Admin API calls are verified manually against
-the live stack, same convention as oidc.py's exchange_code_for_token."""
+the live stack, same convention as oidc.py's password_grant_login."""
 from unittest.mock import MagicMock, patch
 
-from app.frontend.keycloak_admin import assign_realm_role, get_admin_token
+from app.frontend.keycloak_admin import assign_realm_role, create_user, get_admin_token
+
+
+@patch("app.frontend.keycloak_admin.requests.post")
+def test_create_user_returns_the_new_user_id(mock_post):
+    mock_post.return_value = MagicMock(
+        status_code=201,
+        headers={"Location": "http://keycloak:8080/admin/realms/jme/users/user-abc-123"},
+    )
+
+    user_id = create_user("ada@example-synthetic.test", "Ada Lovelace", "s3cret-pw", "fake-admin-token")
+
+    assert user_id == "user-abc-123"
+    posted_json = mock_post.call_args.kwargs["json"]
+    assert posted_json["username"] == "ada@example-synthetic.test"
+    assert posted_json["email"] == "ada@example-synthetic.test"
+    assert posted_json["firstName"] == "Ada"
+    assert posted_json["lastName"] == "Lovelace"
+    assert posted_json["credentials"] == [{"type": "password", "value": "s3cret-pw", "temporary": False}]
+
+
+@patch("app.frontend.keycloak_admin.requests.post")
+def test_create_user_raises_value_error_on_duplicate_email(mock_post):
+    mock_post.return_value = MagicMock(status_code=409)
+
+    try:
+        create_user("ada@example-synthetic.test", "Ada Lovelace", "s3cret-pw", "fake-admin-token")
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "already exists" in str(exc)
 
 
 @patch("app.frontend.keycloak_admin.requests.post")

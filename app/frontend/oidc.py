@@ -5,6 +5,12 @@ runs top-to-bottom as a Streamlit script on import (including `_require_login()`
 and bare `st.session_state` access) — importing from it directly outside a
 real `streamlit run` fails. These functions have no Streamlit dependency, so
 they're importable and unit-testable on their own.
+
+Both login and registration are now inline forms on the main page (no
+redirect to a separate Keycloak-hosted page): login via `password_grant_login`
+below, registration via `app/frontend/keycloak_admin.py`'s `create_user` +
+this same `password_grant_login`. There is no Authorization Code flow left
+in this app.
 """
 import base64
 import json
@@ -13,42 +19,7 @@ import os
 import requests
 
 OIDC_CLIENT_ID = "jme-frontend"
-OIDC_PUBLIC_ISSUER = os.environ.get("OIDC_PUBLIC_ISSUER", "http://localhost:8180/realms/jme")
 OIDC_INTERNAL_ISSUER = os.environ.get("OIDC_INTERNAL_ISSUER", "http://keycloak:8080/realms/jme")
-OIDC_REDIRECT_URI = os.environ.get("OIDC_REDIRECT_URI", "http://localhost:8080/")
-
-
-def is_state_valid(returned_state: str | None, pending: dict[str, float]) -> bool:
-    return returned_state in pending
-
-
-def build_registration_url(state: str) -> str:
-    """Same params as build_auth_url, against Keycloak's registration endpoint
-    instead of its login endpoint — redirects back through the exact same
-    `?code=&state=` callback _require_login() already handles (issue #14)."""
-    return (
-        f"{OIDC_PUBLIC_ISSUER}/protocol/openid-connect/registrations"
-        f"?client_id={OIDC_CLIENT_ID}&response_type=code&scope=openid"
-        f"&redirect_uri={OIDC_REDIRECT_URI}&state={state}"
-    )
-
-
-def exchange_code_for_token(code: str) -> dict:
-    """POSTs to the Keycloak token endpoint. Raises ValueError on a non-200
-    response rather than returning one, so callers can't forget to check."""
-    token_resp = requests.post(
-        f"{OIDC_INTERNAL_ISSUER}/protocol/openid-connect/token",
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": OIDC_REDIRECT_URI,
-            "client_id": OIDC_CLIENT_ID,
-        },
-        timeout=10,
-    )
-    if token_resp.status_code != 200:
-        raise ValueError(f"Login failed: {token_resp.text}")
-    return token_resp.json()
 
 
 def password_grant_login(username: str, password: str) -> dict:

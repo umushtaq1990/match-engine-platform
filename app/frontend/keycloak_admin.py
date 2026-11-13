@@ -1,6 +1,7 @@
-"""Thin client for the one Keycloak Admin REST API operation the frontend
-needs: assigning a real `candidate`/`employer` realm role to a user after
-self-registration (issue #14).
+"""Thin client for the Keycloak Admin REST API operations the frontend
+needs: creating a user directly (inline registration form, no redirect to
+Keycloak's own hosted signup page) and assigning a real `candidate`/
+`employer` realm role to a user after registration (issue #14).
 
 Kept separate from streamlit_app.py and oidc.py — same "pure, Streamlit-free,
 unit-testable" split used for the login flow — because this uses a different
@@ -32,6 +33,36 @@ def get_admin_token() -> str:
     )
     resp.raise_for_status()
     return resp.json()["access_token"]
+
+
+def create_user(email: str, full_name: str, password: str, admin_token: str) -> str:
+    """Creates a Keycloak user directly via the Admin API — the inline
+    registration form posts straight here instead of redirecting to
+    Keycloak's own hosted registration page. Username is set to the email
+    address (this realm never asks for a separate username anywhere else).
+    Returns the new user's id, the same value that later appears as the ID
+    token's `sub` claim. Raises ValueError if the email is already taken.
+    """
+    first_name, _, last_name = full_name.partition(" ")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    resp = requests.post(
+        f"{_REALM_BASE}/admin/realms/{_REALM_NAME}/users",
+        headers=headers,
+        json={
+            "username": email,
+            "email": email,
+            "firstName": first_name,
+            "lastName": last_name,
+            "enabled": True,
+            "emailVerified": True,
+            "credentials": [{"type": "password", "value": password, "temporary": False}],
+        },
+        timeout=10,
+    )
+    if resp.status_code == 409:
+        raise ValueError("An account with that email already exists.")
+    resp.raise_for_status()
+    return resp.headers["Location"].rsplit("/", 1)[-1]
 
 
 def assign_realm_role(user_id: str, role: str, admin_token: str) -> None:

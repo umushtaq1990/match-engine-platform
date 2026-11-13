@@ -1,29 +1,22 @@
 """Minimal end-to-end web frontend: a thin UI over the existing
 matching/extraction APIs.
 
-Users self-register their identity via Keycloak (issue #14) and fill in a
-one-time profile form (name, candidate/employer role, company name)
-on first login (issue #15/#16), but candidate/job *records* are still the
-already-seeded synthetic dataset, not something users create here: a
-candidate picks an existing candidate_id, an employer picks an existing
-job_id. See docs/architecture/frontend.md.
+Users register and log in directly on this page (full name/email/password
+to register, username/password to log in — no redirect to a separate
+Keycloak-hosted page) and fill in a one-time profile form (name,
+candidate/employer role, company name) on first login (issue #15/#16), but
+candidate/job *records* are still the already-seeded synthetic dataset, not
+something users create here: a candidate picks an existing candidate_id, an
+employer picks an existing job_id. See docs/architecture/frontend.md.
 """
 import os
-import secrets
-import time
 
 import requests
 import streamlit as st
 
 from app.common.logging import setup_logging
-from app.frontend.keycloak_admin import assign_realm_role, get_admin_token
-from app.frontend.oidc import (
-    build_registration_url,
-    decode_id_token,
-    exchange_code_for_token,
-    is_state_valid,
-    password_grant_login,
-)
+from app.frontend.keycloak_admin import assign_realm_role, create_user, get_admin_token
+from app.frontend.oidc import decode_id_token, password_grant_login
 from app.frontend.profile_client import create_profile, get_profile
 
 setup_logging("frontend")
@@ -37,75 +30,26 @@ API_KEY = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
 HEADERS = {"X-API-Key": API_KEY}
 MAX_CV_SIZE_BYTES = 2 * 1024 * 1024
 
-# OIDC login gate (Keycloak). Two issuer URLs: the browser follows
-# the public one, token exchange happens server-side against the internal
-# one — see docs/architecture/ingress-and-identity.md for why both are needed. This is a human/browser
-# login gate only; JME_API_KEY above is unchanged and still what the APIs
-# themselves check. Pure OIDC helpers live in app/frontend/oidc.py so they're
-# importable and unit-testable without running this whole script.
-_OIDC_STATE_TTL_SECONDS = 600
-
-
-@st.cache_resource(show_spinner=False)
-def _pending_oidc_states() -> dict[str, float]:
-    return {}
-
-
-def _prune_stale_oidc_states() -> None:
-    pending = _pending_oidc_states()
-    cutoff = time.time() - _OIDC_STATE_TTL_SECONDS
-    for stored_state, created_at in list(pending.items()):
-        if created_at < cutoff:
-            del pending[stored_state]
-
 
 def _require_login() -> None:
-    """Login uses a direct Resource Owner Password grant (`password_grant_login`
-    in oidc.py), not a redirect to Keycloak's own hosted login page — the
-    username/password fields render on this page, under this app's own
-    heading, not a separate window. See docs/architecture/ingress-and-identity.md
-    Known Limitations for the tradeoff this accepts (the app itself handles
-    the raw password, unlike the redirect-based Authorization Code flow
-    below). Self-registration still redirects to Keycloak's own hosted
-    registration form and back (same hand-rolled Authorization Code
-    exchange, matching this project's existing os.environ + requests
-    convention, e.g. app/api/analytics_client.py, rather than pulling in
-    authlib) since collecting a brand-new account's details inline wasn't
-    asked for, only login was.
+    """Both login and registration happen inline on this page — no redirect
+    to a separate Keycloak-hosted page. Login is a Resource Owner Password
+    grant (`password_grant_login` in oidc.py); registration creates the user
+    directly via the Keycloak Admin API (`create_user` in keycloak_admin.py)
+    and then immediately logs them in the same way. See
+    docs/architecture/ingress-and-identity.md Known Limitations for the
+    tradeoff this accepts (the app itself handles the raw password, rather
+    than never seeing it).
     """
     if "id_token_claims" in st.session_state:
         return
-
-    params = st.query_params
-    if "code" in params and "state" in params:
-        returned_state = params.get("state")
-        pending = _pending_oidc_states()
-        if not is_state_valid(returned_state, pending):
-            st.error("OIDC state mismatch — possible CSRF, please log in again.")
-            st.query_params.clear()
-            st.stop()
-        del pending[returned_state]
-        try:
-            token_json = exchange_code_for_token(params["code"])
-        except ValueError as exc:
-            st.query_params.clear()
-            st.error(str(exc))
-            st.stop()
-        st.query_params.clear()
-        st.session_state["id_token_claims"] = decode_id_token(token_json["id_token"])
-        st.rerun()
-
-    _prune_stale_oidc_states()
-    state = secrets.token_urlsafe(16)
-    _pending_oidc_states()[state] = time.time()
-    registration_url = build_registration_url(state)
 
     st.set_page_config(page_title="Project JME", page_icon="🧩")
     st.title("Talent Matching Platform")
 
     st.markdown("### Log in")
     username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    password = st.text_input("Password", type="password", key="login_password")
     if st.button("Log in"):
         try:
             token_json = password_grant_login(username, password)
@@ -116,7 +60,21 @@ def _require_login() -> None:
             st.rerun()
 
     st.markdown("### New here?")
-    st.markdown(f"[Register]({registration_url})")
+    full_name = st.text_input("Full name")
+    email = st.text_input("Email")
+    new_password = st.text_input("Password", type="password", key="register_password")
+    if st.button("Register"):
+        try:
+            admin_token = get_admin_token()
+            create_user(email, full_name, new_password, admin_token)
+            token_json = password_grant_login(email, new_password)
+        except ValueError as exc:
+            st.error(str(exc))
+        else:
+            st.session_state["id_token_claims"] = decode_id_token(token_json["id_token"])
+            st.session_state["pending_full_name"] = full_name
+            st.rerun()
+
     st.stop()
 
 
@@ -143,7 +101,8 @@ def _require_profile() -> str:
 
     st.title("Talent Matching Platform")
     st.subheader("Welcome! Tell us a bit about yourself.")
-    full_name = st.text_input("Full name", value=claims.get("name", ""))
+    default_name = claims.get("name") or st.session_state.get("pending_full_name", "")
+    full_name = st.text_input("Full name", value=default_name)
     chosen_role = st.radio("I am a...", ["Candidate", "Employer"], horizontal=True)
     company_name = None
     if chosen_role == "Employer":

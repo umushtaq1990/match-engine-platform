@@ -121,32 +121,35 @@ def test_employer_get_candidate_matches_calls_correct_endpoint(mock_get):
     assert called_url.endswith("/jobs/1/candidate-matches")
 
 
-# --- OIDC login gate (_require_login) --------------------------------------
-# Login uses a direct Resource Owner Password grant rendered inline on this
-# page (text_input fields, see _require_login's docstring); registration
-# still redirects to Keycloak's own hosted form and back via the
-# Authorization Code flow. The real Keycloak calls (correct vs. wrong
-# password, real registration redirect, real token response) are verified
+# --- Login/registration gate (_require_login) ------------------------------
+# Both login and registration are inline forms on this page (text_input
+# fields, see _require_login's docstring) — no redirect to a separate
+# Keycloak-hosted page for either one. The real Keycloak calls (correct vs.
+# wrong password, real user creation, real token response) are verified
 # manually against the running stack — see
 # docs/architecture/ingress-and-identity.md Verification & Results. These
 # tests cover what AppTest *can* exercise headlessly: the gate blocking
-# access, the inline login form's username/password submission, and not
-# blocking access once a session exists.
+# access, both forms' submission, and not blocking access once a session
+# exists.
+#
+# Field order on the logged-out screen: [0] login username, [1] login
+# password, [2] registration full name, [3] registration email,
+# [4] registration password.
 
-def test_unauthenticated_user_sees_login_form_not_the_app():
+def test_unauthenticated_user_sees_login_and_registration_forms_not_the_app():
     at = AppTest.from_file(APP_PATH).run()
     assert not at.exception
     assert not at.number_input  # _require_login() st.stop()s before the rest of the app ever renders
     assert any("Log in" in m.value for m in at.markdown)
-    assert len(at.text_input) == 2
+    assert any("New here" in m.value for m in at.markdown)
+    assert len(at.text_input) == 5
     assert any(b.label == "Log in" for b in at.button)
-    registration_markdown = next(m for m in at.markdown if "Register" in m.value)
-    assert "/protocol/openid-connect/registrations?" in registration_markdown.value
+    assert any(b.label == "Register" for b in at.button)
 
 
 @patch("app.frontend.profile_client.get_profile")
 @patch("app.frontend.oidc.requests.post")
-def test_submitting_valid_credentials_logs_in(mock_token_post, mock_get_profile):
+def test_submitting_valid_login_credentials_logs_in(mock_token_post, mock_get_profile):
     mock_token_post.return_value = MagicMock(
         status_code=200, json=lambda: {"id_token": _fake_id_token("candidate", sub="user-candidate")},
     )
@@ -164,7 +167,7 @@ def test_submitting_valid_credentials_logs_in(mock_token_post, mock_get_profile)
 
 
 @patch("app.frontend.oidc.requests.post")
-def test_submitting_invalid_credentials_shows_error_and_stays_on_login(mock_token_post):
+def test_submitting_invalid_login_credentials_shows_error_and_stays_on_login(mock_token_post):
     mock_token_post.return_value = MagicMock(status_code=401)
     at = AppTest.from_file(APP_PATH).run()
     at.text_input[0].set_value("candidate").run()
@@ -175,6 +178,55 @@ def test_submitting_invalid_credentials_shows_error_and_stays_on_login(mock_toke
     assert not at.exception
     assert "id_token_claims" not in at.session_state
     assert any("Invalid username or password" in e.value for e in at.error)
+
+
+@patch("app.frontend.profile_client.get_profile")
+@patch("app.frontend.oidc.requests.post")
+@patch("app.frontend.keycloak_admin.create_user")
+@patch("app.frontend.keycloak_admin.get_admin_token")
+def test_submitting_registration_form_creates_user_and_logs_in(
+    mock_get_token, mock_create_user, mock_token_post, mock_get_profile,
+):
+    mock_get_token.return_value = "fake-admin-token"
+    mock_create_user.return_value = "user-newuser"
+    mock_token_post.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"id_token": _fake_id_token("ada@example-synthetic.test", sub="user-newuser")},
+    )
+    mock_get_profile.return_value = None
+    at = AppTest.from_file(APP_PATH).run()
+    at.text_input[2].set_value("Ada Lovelace").run()
+    at.text_input[3].set_value("ada@example-synthetic.test").run()
+    at.text_input[4].set_value("s3cret-pw").run()
+    register_button = next(b for b in at.button if b.label == "Register")
+    at = register_button.click().run()
+
+    assert not at.exception
+    mock_create_user.assert_called_once_with(
+        "ada@example-synthetic.test", "Ada Lovelace", "s3cret-pw", "fake-admin-token",
+    )
+    assert at.session_state["pending_full_name"] == "Ada Lovelace"
+    # Past the login gate now, straight into the first-login profile form,
+    # pre-filled with the name just entered at registration.
+    assert any("Tell us a bit about yourself" in s.value for s in at.subheader)
+    assert at.text_input[0].value == "Ada Lovelace"
+
+
+@patch("app.frontend.keycloak_admin.create_user")
+@patch("app.frontend.keycloak_admin.get_admin_token")
+def test_submitting_registration_form_with_duplicate_email_shows_error(mock_get_token, mock_create_user):
+    mock_get_token.return_value = "fake-admin-token"
+    mock_create_user.side_effect = ValueError("An account with that email already exists.")
+    at = AppTest.from_file(APP_PATH).run()
+    at.text_input[2].set_value("Ada Lovelace").run()
+    at.text_input[3].set_value("ada@example-synthetic.test").run()
+    at.text_input[4].set_value("s3cret-pw").run()
+    register_button = next(b for b in at.button if b.label == "Register")
+    at = register_button.click().run()
+
+    assert not at.exception
+    assert "id_token_claims" not in at.session_state
+    assert any("already exists" in e.value for e in at.error)
 
 
 # --- Issue #15/#16: first-login profile-capture form for users with no
