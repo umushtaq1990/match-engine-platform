@@ -31,10 +31,16 @@ def _job_skill_ids(db: Session, job_id: int, requirement_level: RequirementLevel
 def _replace_job_skills(
     db: Session, job_id: int, required_skill_ids: list[int], preferred_skill_ids: list[int],
 ) -> None:
+    """A skill picked as both required and preferred would otherwise violate
+    job_skills' (job_id, skill_id) unique constraint -- required wins, same
+    as a candidate only ever getting one proficiency per skill.
+    """
     db.query(JobSkill).filter_by(job_id=job_id).delete()
     for skill_id in required_skill_ids:
         db.add(JobSkill(job_id=job_id, skill_id=skill_id, requirement_level=RequirementLevel.required))
     for skill_id in preferred_skill_ids:
+        if skill_id in required_skill_ids:
+            continue
         db.add(JobSkill(job_id=job_id, skill_id=skill_id, requirement_level=RequirementLevel.preferred))
 
 

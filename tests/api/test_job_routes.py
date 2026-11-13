@@ -132,6 +132,31 @@ def test_patch_job_details_returns_404_for_missing_job(matching_db_session):
         app.dependency_overrides.clear()
 
 
+def test_patch_job_details_dedupes_a_skill_listed_as_both_required_and_preferred(matching_db_session):
+    job = _make_job(matching_db_session)
+    shared_skill = Skill(name="Issue22 Shared Skill")
+    matching_db_session.add(shared_skill)
+    matching_db_session.flush()
+    matching_db_session.commit()
+
+    client = _client_bound_to(matching_db_session)
+    try:
+        response = client.patch(
+            f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
+            json={
+                "title": "X", "company_name": "Y", "description": "Z",
+                "location_city": "Austin", "location_region": "TX",
+                "required_skill_ids": [shared_skill.id], "preferred_skill_ids": [shared_skill.id],
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["required_skill_ids"] == [shared_skill.id]
+        assert body["preferred_skill_ids"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_create_job_rejects_more_than_ten_required_skills(matching_db_session):
     client = _client_bound_to(matching_db_session)
     try:
