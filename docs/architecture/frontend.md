@@ -86,6 +86,11 @@ display reads this value as anything but an int.
 `app/frontend/streamlit_app.py`  one script, two modes selected by the user's real
 `candidate`/`employer` role, sourced from the `user_profiles` table (`_require_profile()`, see
 [ingress-and-identity.md](ingress-and-identity.md) Part 2) rather than an unauthenticated UI toggle:
+
+A "Contact Us" sidebar button (next to "Log out", both roles) toggles a static page with a
+`mailto:` link — `st.session_state["show_contact"]`, same `st.stop()`-gated toggle pattern as the
+login/registration screen switch. No backend involved; just a static support-contact page, same
+spirit as a portfolio project's "about/contact" footer.
 - **Candidate**: `candidate_id` comes from `st.session_state["profile"]["candidate_id"]` — the
   real, personal `candidates` row created for this user at registration (issue #17, see
   [ingress-and-identity.md](ingress-and-identity.md) Part 2). "Upload your CV" first calls

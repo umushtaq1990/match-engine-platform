@@ -170,6 +170,19 @@ if st.sidebar.button(f"Log out ({username})"):
 
 st.sidebar.caption(f"Signed in as {role}.")
 
+if st.sidebar.button("Contact Us"):
+    st.session_state["show_contact"] = True
+    st.rerun()
+
+if st.session_state.get("show_contact"):
+    st.title("Contact Us")
+    st.write("For any help or questions, please reach out:")
+    st.markdown("📧 [usmanmushtaq1990@gmail.com](mailto:usmanmushtaq1990@gmail.com)")
+    if st.button("Back"):
+        st.session_state["show_contact"] = False
+        st.rerun()
+    st.stop()
+
 
 def _render_matches(matches: list[dict]) -> None:
     if not matches:

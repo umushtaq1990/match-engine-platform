@@ -640,3 +640,30 @@ def test_logout_button_clears_session_and_shows_login_link_again(mock_get):
     at = logout_button.click().run()
     assert not at.exception
     assert any(b.label == "Log in" for b in at.button)
+
+
+@patch("requests.get")
+def test_contact_us_button_shows_contact_page(mock_get):
+    mock_get.side_effect = _no_existing_cv
+    at = _logged_in_app().run()
+    contact_button = next(b for b in at.sidebar.button if b.label == "Contact Us")
+    at = contact_button.click().run()
+
+    assert not at.exception
+    assert any("Contact Us" in t.value for t in at.title)
+    assert any("usmanmushtaq1990@gmail.com" in m.value for m in at.markdown)
+    assert any(b.label == "Back" for b in at.button)
+    assert not any("Upload your CV" in s.value for s in at.subheader)
+
+
+@patch("requests.get")
+def test_back_button_from_contact_page_returns_to_the_app(mock_get):
+    mock_get.side_effect = _no_existing_cv
+    at = _logged_in_app().run()
+    contact_button = next(b for b in at.sidebar.button if b.label == "Contact Us")
+    at = contact_button.click().run()
+    back_button = next(b for b in at.button if b.label == "Back")
+    at = back_button.click().run()
+
+    assert not at.exception
+    assert any("Upload your CV" in s.value for s in at.subheader)
