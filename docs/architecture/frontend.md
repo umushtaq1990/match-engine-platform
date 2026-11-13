@@ -111,13 +111,19 @@ spirit as a portfolio project's "about/contact" footer.
   state. An "Edit history" expander (issue #24, `app/frontend/audit_client.py`) shows the last few
   changes from `GET /audit/candidate_details/{id}`.
 
-  Issue #24 also added real "Apply"/"Save for later" actions: after a "Show Job Matches" call, the
-  results are stashed in `st.session_state["last_job_matches"]` (so they survive the rerun an
-  Apply/Save click triggers), and a picker below the results table lets the candidate choose one
-  and call `POST /candidates/{id}/jobs/{job_id}/apply` or `.../save` — the real action the
-  `job_applied`/`job_saved` analytics events (`docs/architecture/application-services/
-  behavioral-analytics.md`) were missing until now. An "Your applied/saved jobs" expander lists the
-  current state from `GET /candidates/{id}/job-interactions`.
+  Issue #24 also added real "Apply"/"Save for later" actions, and issue #25 gave them a proper
+  home: after "Show Job Matches," the results are stashed in `st.session_state["last_job_matches"]`
+  (so they survive reruns), and a picker below the table lets the candidate choose one and click
+  "View Job Details" — this loads a full drill-down view (`_render_job_detail_view`): the job's
+  title/description/company/location, salary, resolved occupation title (`JobDetailsOut.
+  occupation_title`, resolved server-side since `GET /occupations` only returns curated titles but
+  a matched job can have any occupation), required/preferred skills, with "Apply"/"Save for
+  later"/"Back to results" buttons right there — not at the picker level. Opening this view itself
+  calls `GET /jobs/{id}/details?viewed_by_candidate_id={id}`, which fires `recommendation_clicked`
+  (the one event type issue #24 left unemitted — the same endpoint's employer edit-form load omits
+  the param, so it doesn't mis-fire there). "Apply"/"Save" call
+  `POST /candidates/{id}/jobs/{job_id}/apply`/`.../save`. An "Your applied/saved jobs" expander on
+  the main results page lists the current state from `GET /candidates/{id}/job-interactions`.
 - **Employer** (issue #22, `app/frontend/job_client.py`): a "Your jobs" selectbox lists that
   employer's own postings (`GET /employers/{keycloak_user_id}/jobs`) plus a "+ Post a new job"
   option — no more raw `job_id` input. Picking an existing job loads its full detail
@@ -236,6 +242,17 @@ and the audit entries create_job/update_job_details now write; `tests/frontend/
 test_streamlit_app.py` covers the Apply/Save buttons appearing after a job-matches result and the
 edit-history expander rendering.
 
+**Issue #25** (clickable job matches, real job-details view, `recommendation_clicked`): verified
+live — called `GET /jobs/{id}/details?viewed_by_candidate_id={id}` as the real candidate from this
+session and confirmed a `recommendation_clicked` event via `GET /actors/candidate/{id}/events`;
+confirmed `occupation_title` resolves correctly even for a job whose occupation isn't in the
+curated list; confirmed the same endpoint called without the query param (the employer's own
+edit-form load path) does not fire a second click event. `tests/api/test_job_routes.py` covers
+`occupation_title` resolution and that `recommendation_clicked` only fires when
+`viewed_by_candidate_id` is present; `tests/frontend/test_streamlit_app.py`'s
+`test_viewing_a_match_shows_details_with_apply_save_and_back` covers the full
+view-details/apply/back sequence.
+
 ## Known Limitations
 
 - Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization only partly does now: each candidate has their own real `candidate_id` (issue #17) and each job is tied to the employer who posted it (`Job.posted_by_keycloak_user_id`, issue #22) — but `GET /jobs/{id}/details`/`PATCH /jobs/{id}/details` don't actually check that the caller owns the job before returning/editing it (same no-JWT-verification trust boundary as every other route here, not enforced authorization), and an employer can still type a seeded dataset's `job_id` directly against the API (not the UI) to view/edit a job they didn't post. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
@@ -246,7 +263,7 @@ edit-history expander rendering.
 - CV upload and skill extraction are still two separate, un-chained steps (see `docs/architecture/application-services/skill-extraction.md`'s own Known Limitations), uploading a CV here does not automatically extract skills from it or affect the candidate's match scores.
 - `streamlit.testing.v1.AppTest` has no built-in way to simulate an actual file upload, so the "upload succeeds and shows a success message" path is verified only against the live stack, not as an automated unit test.
 - `GET /audit/{entity_type}/{entity_id}` (issue #24) has no ownership check either, same trust-boundary limitation as the job-details routes above — anyone with the API key can read any entity's edit history, not just their own.
-- `recommendation_clicked` (issue #24's taxonomy audit) still has no real trigger anywhere — no UI distinguishes "clicked/opened a specific result" from "saw the whole results table," so that event type stays unemitted. `job_applied`/`job_saved`/`search_performed`/`login` are all real now; this one alone remains a reserved taxonomy entry.
+- All 6 taxonomy event types are now real (issue #25 closed the last gap, `recommendation_clicked`, via a candidate opening a specific match's details).
 
 ## Roadmap
 

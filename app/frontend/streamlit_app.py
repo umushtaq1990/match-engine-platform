@@ -210,12 +210,63 @@ def _render_matches(matches: list[dict]) -> None:
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
 
+def _render_job_detail_view(candidate_id: int) -> None:
+    """Issue #25: a candidate's drill-down into one specific match, with
+    real Apply/Save actions and a Back button — the "view details" click
+    itself fires `recommendation_clicked` (see job_client.get_job_details'
+    `viewed_by_candidate_id` param), the one event type issue #24 left
+    unemitted since nothing distinguished "opened this one result" from
+    "saw the whole results table" until now.
+    """
+    detail = st.session_state["viewing_job_detail"]
+    job_id = st.session_state["viewing_job_id"]
+
+    st.title(detail["title"])
+    st.caption(f"{detail['company_name']} — {detail['location_city']}")
+    st.write(detail["description"])
+
+    if detail["occupation_title"]:
+        st.caption(f"Occupation: {detail['occupation_title']}")
+    if detail["salary_min"] or detail["salary_max"]:
+        st.caption(f"Salary: ${detail['salary_min'] or '?'} - ${detail['salary_max'] or '?'}")
+    if detail["experience_level"]:
+        st.caption(f"Experience required: {detail['experience_level'].replace('_', ' ').title()}")
+
+    skills = list_skills()
+    skill_name_by_id = {s["id"]: s["name"] for s in skills}
+    required_names = [skill_name_by_id[sid] for sid in detail["required_skill_ids"] if sid in skill_name_by_id]
+    preferred_names = [skill_name_by_id[sid] for sid in detail["preferred_skill_ids"] if sid in skill_name_by_id]
+    if required_names:
+        st.caption(f"Required skills: {', '.join(required_names)}")
+    if preferred_names:
+        st.caption(f"Preferred skills: {', '.join(preferred_names)}")
+
+    apply_col, save_col, back_col = st.columns(3)
+    with apply_col:
+        if st.button("Apply"):
+            apply_to_job(candidate_id, job_id)
+            st.success("Applied.")
+    with save_col:
+        if st.button("Save for later"):
+            save_job(candidate_id, job_id)
+            st.success("Saved.")
+    with back_col:
+        if st.button("Back to results"):
+            del st.session_state["viewing_job_id"]
+            del st.session_state["viewing_job_detail"]
+            st.rerun()
+
+
 if role == "candidate":
     # Issue #17: a real, personal candidate_id created for this user at
     # registration time (app/api/profile_routes.py's _get_or_create_candidate),
     # linked on their own user_profiles row — no longer a hardcoded id shared
     # by every candidate.
     candidate_id = st.session_state["profile"]["candidate_id"]
+
+    if st.session_state.get("viewing_job_id") is not None:
+        _render_job_detail_view(candidate_id)
+        st.stop()
 
     st.subheader("Upload your CV")
     existing_cv = requests.get(f"{EXTRACTION_URL}/candidates/{candidate_id}/cv", headers=HEADERS, timeout=10)
@@ -357,21 +408,18 @@ if role == "candidate":
 
     last_matches = st.session_state.get("last_job_matches")
     if last_matches:
-        st.subheader("Apply or save a match")
+        st.subheader("View a match")
         match_label_by_id = {m["entity_id"]: f"{m['label']} (score {m['score']['total']})" for m in last_matches}
         chosen_match_label = st.selectbox(
             "Pick a job from your matches", list(match_label_by_id.values()),
         )
         chosen_job_id = next(jid for jid, label in match_label_by_id.items() if label == chosen_match_label)
-        apply_col, save_col = st.columns(2)
-        with apply_col:
-            if st.button("Apply"):
-                apply_to_job(candidate_id, chosen_job_id)
-                st.success(f"Applied to {match_label_by_id[chosen_job_id]}.")
-        with save_col:
-            if st.button("Save for later"):
-                save_job(candidate_id, chosen_job_id)
-                st.success(f"Saved {match_label_by_id[chosen_job_id]}.")
+        if st.button("View Job Details"):
+            st.session_state["viewing_job_id"] = chosen_job_id
+            st.session_state["viewing_job_detail"] = get_job_details(
+                chosen_job_id, viewed_by_candidate_id=candidate_id,
+            )
+            st.rerun()
 
     with st.expander("Your applied/saved jobs"):
         interactions = get_job_interactions(candidate_id)

@@ -199,6 +199,10 @@ class JobDetailsOut(BaseModel):
     salary_min: int | None
     salary_max: int | None
     primary_occupation_id: int | None
+    # Issue #25: resolved server-side, not a client lookup against GET
+    # /occupations -- that endpoint only returns curated titles, but a
+    # candidate can view a seeded job whose occupation isn't curated.
+    occupation_title: str | None
     experience_level: str | None
     required_skill_ids: list[int]
     preferred_skill_ids: list[int]

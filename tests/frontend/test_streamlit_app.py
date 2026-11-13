@@ -238,10 +238,18 @@ def test_get_job_matches_renders_results_table(mock_get):
 
 @patch("app.frontend.job_client.requests.post")
 @patch("requests.get")
-def test_apply_and_save_buttons_appear_after_job_matches_and_call_right_endpoints(mock_get, mock_post):
+def test_viewing_a_match_shows_details_with_apply_save_and_back(mock_get, mock_post):
     def side_effect(url, *args, **kwargs):
         if url.endswith("/cv"):
             return MagicMock(status_code=404)
+        if url.endswith("/jobs/101/details"):
+            return MagicMock(status_code=200, json=lambda: {
+                "id": 101, "title": "Backend Engineer", "company_name": "Acme Co",
+                "description": "Build things", "location_city": "Austin",
+                "postal_code": None, "country": None, "salary_min": 90000, "salary_max": 120000,
+                "primary_occupation_id": 8, "occupation_title": "Software Engineer",
+                "experience_level": "senior", "required_skill_ids": [1], "preferred_skill_ids": [2],
+            })
         support = _candidate_support_endpoint_response(url)
         if support is not None:
             return support
@@ -265,12 +273,25 @@ def test_apply_and_save_buttons_appear_after_job_matches_and_call_right_endpoint
 
     assert not at.exception
     assert any(sb.label == "Pick a job from your matches" for sb in at.selectbox)
+    view_details_button = next(b for b in at.button if b.label == "View Job Details")
+    at = view_details_button.click().run()
+
+    assert not at.exception
+    details_call = next(c for c in mock_get.call_args_list if c.args[0].endswith("/jobs/101/details"))
+    assert details_call.kwargs["params"] == {"viewed_by_candidate_id": 42}
+    assert any("Backend Engineer" in t.value for t in at.title)
+    assert any("Software Engineer" in c.value for c in at.caption)
+
     apply_button = next(b for b in at.button if b.label == "Apply")
     at = apply_button.click().run()
-
     assert not at.exception
     apply_call = mock_post.call_args
     assert apply_call.args[0].endswith("/candidates/42/jobs/101/apply")
+
+    back_button = next(b for b in at.button if b.label == "Back to results")
+    at = back_button.click().run()
+    assert not at.exception
+    assert any("Upload your CV" in s.value for s in at.subheader)
 
 
 @patch("requests.get")

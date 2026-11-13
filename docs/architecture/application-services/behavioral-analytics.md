@@ -74,7 +74,7 @@ Indexes: `(actor_type, actor_id, received_at)` for "this actor's timeline" queri
 | event_type | entity_type | metadata (example) | Emitted by |
 |---|---|---|---|
 | `recommendation_shown` | job / candidate / course | `{"rank": 3, "score": 0.71, "algorithm_version": "rule-based-v1"}` | Instrumentation hook in the existing matching API (automatic, not client-initiated) |
-| `recommendation_clicked` | job / candidate / course | `{"rank": 3}` | Not yet emitted anywhere — no UI tracks an individual recommendation being clicked/opened, as opposed to the whole-result-set "shown" event above. Still just a reserved taxonomy entry. |
+| `recommendation_clicked` | job | `{}` | Issue #25: `GET /jobs/{id}/details?viewed_by_candidate_id={id}` (`app/api/job_routes.py`) — fires only when that optional query param is present, i.e. only when a candidate opens one specific match's details from their results, not when the same endpoint is used to load the employer's own edit form (same endpoint, different caller, param omitted). |
 | `job_applied` | job | `{}` | Issue #24: `POST /candidates/{id}/jobs/{job_id}/apply` (`app/api/job_routes.py`), fired server-side alongside creating the real `CandidateJobInteraction` row behind the frontend's "Apply" button — not a generic client-reported `POST /events` call. |
 | `job_saved` | job | `{}` | Issue #24: same as `job_applied`, via `.../save`, behind "Save for later". |
 | `search_performed` | job / candidate / course | `{"top_k": 10, "mode": "blended"}` | Issue #24: one call per request in the same 3 matching-API GET endpoints that already fire `recommendation_shown` — distinct signal (one search vs. N shown results), `app/api/routes.py`. |

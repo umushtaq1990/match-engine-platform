@@ -17,8 +17,9 @@ def list_employer_jobs(keycloak_user_id: str) -> list[dict]:
     return resp.json()
 
 
-def get_job_details(job_id: int) -> dict:
-    resp = requests.get(f"{API_URL}/jobs/{job_id}/details", headers=_HEADERS, timeout=10)
+def get_job_details(job_id: int, viewed_by_candidate_id: int | None = None) -> dict:
+    params = {"viewed_by_candidate_id": viewed_by_candidate_id} if viewed_by_candidate_id is not None else None
+    resp = requests.get(f"{API_URL}/jobs/{job_id}/details", headers=_HEADERS, params=params, timeout=10)
     resp.raise_for_status()
     return resp.json()
 

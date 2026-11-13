@@ -32,6 +32,7 @@ from app.ingestion.source_models import (
     InteractionType,
     Job,
     JobSkill,
+    Occupation,
     RequirementLevel,
 )
 
@@ -71,6 +72,7 @@ def _replace_job_skills(
 
 
 def _to_job_details_out(db: Session, job: Job) -> JobDetailsOut:
+    occupation = db.get(Occupation, job.occupation_id) if job.occupation_id is not None else None
     return JobDetailsOut(
         id=job.id,
         title=job.title,
@@ -82,6 +84,7 @@ def _to_job_details_out(db: Session, job: Job) -> JobDetailsOut:
         salary_min=job.salary_min,
         salary_max=job.salary_max,
         primary_occupation_id=job.occupation_id,
+        occupation_title=occupation.title if occupation is not None else None,
         experience_level=(
             years_experience_to_level(job.min_years_experience) if job.min_years_experience is not None else None
         ),
@@ -139,10 +142,22 @@ def list_employer_jobs(keycloak_user_id: str, db: Session = DbSession):
 
 
 @router.get("/jobs/{job_id}/details", response_model=JobDetailsOut)
-def get_job_details(job_id: int, db: Session = DbSession):
+def get_job_details(job_id: int, viewed_by_candidate_id: int | None = None, db: Session = DbSession):
+    """Issue #25: `viewed_by_candidate_id` is only ever set by a candidate
+    opening a specific match's details from their results, not by the
+    employer's own edit-form load (same endpoint, different caller) --
+    when present, fires `recommendation_clicked`, the one event type issue
+    #24 left unemitted (no UI distinguished "opened this one result" from
+    "saw the whole results table" until now).
+    """
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="No such job")
+    if viewed_by_candidate_id is not None:
+        log_event(
+            actor_type="candidate", actor_id=viewed_by_candidate_id,
+            event_type="recommendation_clicked", entity_type="job", entity_id=job_id,
+        )
     return _to_job_details_out(db, job)
 
 

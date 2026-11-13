@@ -4,6 +4,7 @@ Job/JobSkill, same real-transaction-wrapped pattern as
 tests/api/test_routes_db.py.
 """
 import datetime as dt
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -211,6 +212,46 @@ def test_get_job_details_returns_404_for_missing_job(matching_db_session):
     try:
         response = client.get("/jobs/999999999/details", headers=API_KEY_HEADERS)
         assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_job_details_includes_occupation_title(matching_db_session):
+    occupation = Occupation(code="ISSUE25-OCC", title="Issue25 Occupation")
+    matching_db_session.add(occupation)
+    matching_db_session.flush()
+    job = _make_job(matching_db_session)
+    job.occupation_id = occupation.id
+    matching_db_session.commit()
+
+    client = _client_bound_to(matching_db_session)
+    try:
+        response = client.get(f"/jobs/{job.id}/details", headers=API_KEY_HEADERS)
+        assert response.status_code == 200
+        assert response.json()["occupation_title"] == "Issue25 Occupation"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_job_details_fires_recommendation_clicked_only_when_viewed_by_candidate(matching_db_session):
+    candidate = _make_candidate(matching_db_session)
+    job = _make_job(matching_db_session)
+    matching_db_session.commit()
+
+    client = _client_bound_to(matching_db_session)
+    try:
+        with patch("app.api.job_routes.log_event") as mock_log_event:
+            client.get(f"/jobs/{job.id}/details", headers=API_KEY_HEADERS)
+            mock_log_event.assert_not_called()
+
+            client.get(
+                f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
+                params={"viewed_by_candidate_id": candidate.id},
+            )
+            mock_log_event.assert_called_once_with(
+                actor_type="candidate", actor_id=candidate.id,
+                event_type="recommendation_clicked", entity_type="job", entity_id=job.id,
+            )
     finally:
         app.dependency_overrides.clear()
 
