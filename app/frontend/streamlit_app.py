@@ -1,9 +1,10 @@
 """Minimal end-to-end web frontend: a thin UI over the existing
 matching/extraction APIs.
 
-Users self-register their identity via Keycloak (issue #14) and pick a
-candidate/employer role on first login, but candidate/job *records* are still
-the already-seeded synthetic dataset, not something users create here: a
+Users self-register their identity via Keycloak (issue #14) and fill in a
+one-time profile form (name, candidate/employer role, company name)
+on first login (issue #15/#16), but candidate/job *records* are still the
+already-seeded synthetic dataset, not something users create here: a
 candidate picks an existing candidate_id, an employer picks an existing
 job_id. See docs/architecture/frontend.md.
 """
@@ -23,6 +24,7 @@ from app.frontend.oidc import (
     exchange_code_for_token,
     is_state_valid,
 )
+from app.frontend.profile_client import create_profile, get_profile
 
 setup_logging("frontend")
 
@@ -97,49 +99,60 @@ def _require_login() -> None:
     st.set_page_config(page_title="Project JME", page_icon="🧩")
     st.title("Talent Matching Platform")
     st.markdown(f"### [Log in]({auth_url})")
-    st.markdown(f"New here? [Register]({registration_url})")
+    st.markdown("### New here?")
+    st.markdown(f"[Register]({registration_url})")
     st.stop()
 
 
-def _require_role() -> str:
-    """Returns the user's candidate/employer realm role. A user with neither
-    role yet (brand-new self-registration, issue #14) is shown a one-time
-    picker that assigns the role via Keycloak's Admin API (keycloak_admin.py)
-    using the jme-admin service account — least-privilege, separate from the
-    end-user OIDC login above. The real role claim then appears automatically
-    on that user's *next* login (ID token protocol mapper, jme-realm.json);
-    this session just uses the freshly-chosen value directly so the user
-    isn't forced to log out and back in immediately."""
-    if "chosen_role" in st.session_state:
-        return st.session_state["chosen_role"]
+def _require_profile() -> str:
+    """Returns the user's candidate/employer role. The app's own user_profiles
+    table (issue #15, app/api/profile_routes.py) is the source of truth for
+    role here, not the Keycloak realm-role claim: a user with no profile yet
+    (brand-new self-registration, issue #14) is shown a one-time form asking
+    for their name, a candidate/employer choice, and (for employers) a
+    company name. Submitting it both creates the profile row and assigns the
+    matching Keycloak realm role via the Admin API (keycloak_admin.py, the
+    jme-admin service account — least-privilege, separate from the end-user
+    OIDC login above) so the realm-role claim stays available for any future
+    backend-enforced authorization, even though the UI itself now reads role
+    from Postgres."""
+    if "profile" in st.session_state:
+        return st.session_state["profile"]["role"]
 
     claims = st.session_state["id_token_claims"]
-    roles = claims.get("realm_access", {}).get("roles", [])
-    for role in ("candidate", "employer"):
-        if role in roles:
-            return role
+    profile = get_profile(claims["sub"])
+    if profile is not None:
+        st.session_state["profile"] = profile
+        return profile["role"]
 
     st.title("Talent Matching Platform")
-    st.subheader("Welcome! Are you a candidate or an employer?")
-    col1, col2 = st.columns(2)
-    chosen = None
-    if col1.button("I'm a Candidate", use_container_width=True):
-        chosen = "candidate"
-    if col2.button("I'm an Employer", use_container_width=True):
-        chosen = "employer"
-    if chosen is None:
-        st.stop()
+    st.subheader("Welcome! Tell us a bit about yourself.")
+    full_name = st.text_input("Full name", value=claims.get("name", ""))
+    chosen_role = st.radio("I am a...", ["Candidate", "Employer"], horizontal=True)
+    company_name = None
+    if chosen_role == "Employer":
+        company_name = st.text_input("Company name")
 
-    admin_token = get_admin_token()
-    assign_realm_role(claims["sub"], chosen, admin_token)
-    st.session_state["chosen_role"] = chosen
-    st.rerun()
+    if st.button("Continue"):
+        role = chosen_role.lower()
+        admin_token = get_admin_token()
+        assign_realm_role(claims["sub"], role, admin_token)
+        profile = create_profile(
+            keycloak_user_id=claims["sub"],
+            role=role,
+            full_name=full_name,
+            email=claims.get("email", ""),
+            company_name=company_name,
+        )
+        st.session_state["profile"] = profile
+        st.rerun()
+    st.stop()
 
 
 _require_login()
 
 st.set_page_config(page_title="Talent Matching Platform", page_icon="🧩", layout="wide")
-role = _require_role()
+role = _require_profile()
 
 st.title("Talent Matching Platform")
 st.caption(

@@ -41,15 +41,16 @@ on first login. See [ingress-and-identity.md](ingress-and-identity.md) Part 2 fo
 about who the user is, not what dataset they operate on.
 
 Issue #15 added real backend storage for that identity: a `user_profiles` table (name, role,
-contact info, linked by the Keycloak `sub` claim) plus a `POST`/`GET /profiles` API — see
-[ingress-and-identity.md](ingress-and-identity.md) Part 2. Issue #16 (frontend, not yet done)
-will replace the one-time role-picker buttons with a form that captures this data and calls that
-API directly at registration time.
+contact info, linked by the Keycloak `sub` claim) plus a `POST`/`GET /profiles` API. Issue #16
+replaced the one-time role-picker buttons with a profile form (name, a candidate/employer radio
+button, company name for employers) that calls that API directly at registration time, and gave
+the logged-out screen explicit "Log in" / "New here?" section headings — see
+[ingress-and-identity.md](ingress-and-identity.md) Part 2.
 
 ## Implementation
 
 `app/frontend/streamlit_app.py`  one script, two modes selected by the user's real
-`candidate`/`employer` realm role (`_require_role()`, see
+`candidate`/`employer` role, sourced from the `user_profiles` table (`_require_profile()`, see
 [ingress-and-identity.md](ingress-and-identity.md) Part 2) rather than an unauthenticated UI toggle:
 - **Candidate**: enter a `candidate_id` → upload a CV (`POST /candidates/{id}/cv` on `extraction`,
   client-side size check mirrors the server's 2MB cap before even sending the request) → click "Get

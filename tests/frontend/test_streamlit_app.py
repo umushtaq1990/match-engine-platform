@@ -26,6 +26,10 @@ def _logged_in_app(role: str = "candidate") -> AppTest:
         "sub": f"user-{role}",
         "realm_access": {"roles": [role]},
     }
+    # Pre-seed a completed profile (issue #15/#16) so these tests exercise the
+    # app UI itself, not the one-time profile-capture form — same bypass
+    # pattern as pre-seeding id_token_claims above to skip the login gate.
+    at.session_state["profile"] = {"role": role, "full_name": f"Demo {role.title()}"}
     return at
 
 
@@ -129,38 +133,80 @@ def test_unauthenticated_user_sees_login_link_not_the_app():
     assert "/protocol/openid-connect/registrations?" in registration_markdown.value
 
 
-# --- Issue #14: first-login role picker for users with no realm role yet --
+# --- Issue #15/#16: first-login profile-capture form for users with no
+# user_profiles row yet ------------------------------------------------------
 
-def _logged_in_app_without_role() -> AppTest:
+def _logged_in_app_without_profile() -> AppTest:
     at = AppTest.from_file(APP_PATH)
     at.session_state["id_token_claims"] = {
         "preferred_username": "newuser",
         "sub": "user-newuser",
+        "email": "newuser@example-synthetic.test",
         "realm_access": {"roles": []},
     }
     return at
 
 
-def test_new_user_with_no_role_sees_role_picker_not_the_app():
-    at = _logged_in_app_without_role().run()
+@patch("app.frontend.profile_client.get_profile")
+def test_new_user_with_no_profile_sees_profile_form_not_the_app(mock_get_profile):
+    mock_get_profile.return_value = None
+    at = _logged_in_app_without_profile().run()
     assert not at.exception
     assert not at.number_input  # neither Candidate nor Employer flow rendered yet
-    assert any("candidate or an employer" in s.value for s in at.subheader)
-    assert any(b.label == "I'm a Candidate" for b in at.button)
-    assert any(b.label == "I'm an Employer" for b in at.button)
+    assert any("Tell us a bit about yourself" in s.value for s in at.subheader)
+    assert at.text_input
+    assert at.radio
+    assert any(b.label == "Continue" for b in at.button)
 
 
+@patch("app.frontend.profile_client.create_profile")
+@patch("app.frontend.profile_client.get_profile")
 @patch("app.frontend.keycloak_admin.assign_realm_role")
 @patch("app.frontend.keycloak_admin.get_admin_token")
-def test_choosing_candidate_role_assigns_it_and_shows_candidate_flow(mock_get_token, mock_assign_role):
+def test_submitting_profile_form_as_candidate_assigns_role_and_shows_candidate_flow(
+    mock_get_token, mock_assign_role, mock_get_profile, mock_create_profile,
+):
     mock_get_token.return_value = "fake-admin-token"
-    at = _logged_in_app_without_role().run()
-    pick_button = next(b for b in at.button if b.label == "I'm a Candidate")
-    at = pick_button.click().run()
+    mock_get_profile.return_value = None
+    mock_create_profile.return_value = {"role": "candidate", "full_name": "Ada Lovelace"}
+    at = _logged_in_app_without_profile().run()
+    at.text_input[0].set_value("Ada Lovelace").run()
+    at.radio[0].set_value("Candidate").run()
+    continue_button = next(b for b in at.button if b.label == "Continue")
+    at = continue_button.click().run()
 
     assert not at.exception
     mock_assign_role.assert_called_once_with("user-newuser", "candidate", "fake-admin-token")
+    mock_create_profile.assert_called_once_with(
+        keycloak_user_id="user-newuser", role="candidate", full_name="Ada Lovelace",
+        email="newuser@example-synthetic.test", company_name=None,
+    )
     assert any("Candidate" in h.value for h in at.header)
+
+
+@patch("app.frontend.profile_client.create_profile")
+@patch("app.frontend.profile_client.get_profile")
+@patch("app.frontend.keycloak_admin.assign_realm_role")
+@patch("app.frontend.keycloak_admin.get_admin_token")
+def test_submitting_profile_form_as_employer_captures_company_name(
+    mock_get_token, mock_assign_role, mock_get_profile, mock_create_profile,
+):
+    mock_get_token.return_value = "fake-admin-token"
+    mock_get_profile.return_value = None
+    mock_create_profile.return_value = {"role": "employer", "full_name": "Grace Hopper"}
+    at = _logged_in_app_without_profile().run()
+    at.text_input[0].set_value("Grace Hopper").run()
+    at.radio[0].set_value("Employer").run()
+    at.text_input[1].set_value("Acme Co").run()
+    continue_button = next(b for b in at.button if b.label == "Continue")
+    at = continue_button.click().run()
+
+    assert not at.exception
+    mock_create_profile.assert_called_once_with(
+        keycloak_user_id="user-newuser", role="employer", full_name="Grace Hopper",
+        email="newuser@example-synthetic.test", company_name="Acme Co",
+    )
+    assert any("Employer" in h.value for h in at.header)
 
 
 def test_logged_in_user_sees_the_real_app_not_the_login_link():
