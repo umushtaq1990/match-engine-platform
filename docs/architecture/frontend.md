@@ -5,11 +5,16 @@
 Every prior phase built a real capability behind an API, but nothing in this project let a human
 actually click through the flow it's built for the platform was API-only. This phase closes that
 one gap with a deliberately minimal web UI: a candidate can upload a CV and see their job matches;
-an employer can see matching candidates for a job. Nothing else. Complicated functionality (real
-registration, editing a profile, posting a new job) is explicitly deferred, see Roadmap.
+an employer can see matching candidates for a job. Nothing else. Complicated functionality (editing
+a profile, posting a new job, creating new candidate/job *records*) is explicitly deferred, see
+Roadmap. Identity registration (signing up a new *user*, as opposed to creating a new candidate/job
+record) is a separate concern, added later via Keycloak self-registration see
+[ingress-and-identity.md](ingress-and-identity.md) Part 2.
 
-**Out of scope, by design**: authentication, candidate/job creation, any new backend logic. This is
-a UI layer over APIs that already exist, not a new feature.
+**Out of scope, by design**: candidate/job *record* creation, any new backend logic. This is
+a UI layer over APIs that already exist, not a new feature. (Authentication was originally out of
+scope too; a real OIDC login gate and self-registration were added later, see
+[ingress-and-identity.md](ingress-and-identity.md).)
 
 ## Architecture & Design
 
@@ -24,16 +29,28 @@ touches Postgres directly, it only calls `api` and `extraction` over HTTP, the s
 external client would. This is also the smallest image in the project: no `app/db.py`, no ORM, no
 `requirements-base.txt` at all.
 
-**Reuses the existing seeded dataset, no registration**: a candidate enters an existing
-`candidate_id`, an employer enters an existing `job_id`. Building real account creation would mean
-inventing a user model this project doesn't otherwise need (same reasoning as assumption A9's
-single static API key), deliberately not built for a UI whose whole point is demonstrating the
-matching flow, not demonstrating auth.
+**Reuses the existing seeded dataset for candidate/job records, no data-entry UI for them**: a
+candidate enters an existing `candidate_id`, an employer enters an existing `job_id`. Building a
+UI to create *new* candidate/job records would mean a real write-path into
+`app/ingestion/source_models.py`'s tables, deliberately not built for a UI whose whole point is
+demonstrating the matching flow, not demonstrating data entry (see Roadmap).
+
+This is distinct from *user* identity, which issue #14 did add a minimal real model for: Keycloak
+self-registration plus a `candidate`/`employer` realm role, assigned via a one-time in-app picker
+on first login. See [ingress-and-identity.md](ingress-and-identity.md) Part 2 for that flow; it's
+about who the user is, not what dataset they operate on.
+
+Issue #15 added real backend storage for that identity: a `user_profiles` table (name, role,
+contact info, linked by the Keycloak `sub` claim) plus a `POST`/`GET /profiles` API — see
+[ingress-and-identity.md](ingress-and-identity.md) Part 2. Issue #16 (frontend, not yet done)
+will replace the one-time role-picker buttons with a form that captures this data and calls that
+API directly at registration time.
 
 ## Implementation
 
-`app/frontend/streamlit_app.py`  one script, two modes via a sidebar radio (`Candidate` /
-`Employer`):
+`app/frontend/streamlit_app.py`  one script, two modes selected by the user's real
+`candidate`/`employer` realm role (`_require_role()`, see
+[ingress-and-identity.md](ingress-and-identity.md) Part 2) rather than an unauthenticated UI toggle:
 - **Candidate**: enter a `candidate_id` → upload a CV (`POST /candidates/{id}/cv` on `extraction`,
   client-side size check mirrors the server's 2MB cap before even sending the request) → click "Get
   My Job Matches" (`GET /candidates/{id}/job-matches` on `api`) → results rendered as a table
@@ -69,7 +86,7 @@ Also confirmed the frontend container reaches `api` over the **internal Docker n
 
 ## Known Limitations
 
-- No authentication : anyone who can reach the frontend can look up any `candidate_id`/`job_id` in the seeded dataset. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
+- Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization doesn't: any logged-in user, regardless of their `candidate`/`employer` role, can still type in any `candidate_id`/`job_id` in the seeded dataset nothing ties a specific Keycloak identity to a specific `candidate_id`. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
 - No candidate/job creation or editing : only the two read-heavy flows (upload CV, view matches) exist. A real portal would need profile management; deliberately out of scope for v1.
 - CV upload and skill extraction are still two separate, un-chained steps (see `docs/architecture/application-services/skill-extraction.md`'s own Known Limitations), uploading a CV here does not automatically extract skills from it or affect the candidate's match scores.
 - `streamlit.testing.v1.AppTest` has no built-in way to simulate an actual file upload, so the "upload succeeds and shows a success message" path is verified only against the live stack, not as an automated unit test.
@@ -77,7 +94,7 @@ Also confirmed the frontend container reaches `api` over the **internal Docker n
 ## Roadmap
 
 - **v2, only if actually useful for the portfolio demo**: parse the uploaded CV's text and run it through `extract_skills` automatically (the same gap `docs/architecture/application-services/skill-extraction.md` already flags), surfacing extracted skills in the UI.
-- Simple registration (create a new candidate/job from the UI instead of picking an existing `candidate_id`/`job_id`), would need a real write-path into `app/ingestion/source_models.py`'s tables, not built yet.
+- Simple data registration (create a new candidate/job *record* from the UI instead of picking an existing `candidate_id`/`job_id`), would need a real write-path into `app/ingestion/source_models.py`'s tables, not built yet. (Not to be confused with *user* registration, which is done issue #14, see [ingress-and-identity.md](ingress-and-identity.md).)
 
 ## Resource Footprint and Scaling
 

@@ -7,6 +7,8 @@ independently without breaking API consumers.
 """
 from pydantic import BaseModel
 
+from app.identity.models import UserRole
+
 
 class ScoreOut(BaseModel):
     skill: float
@@ -66,3 +68,25 @@ class SemanticMatchOut(BaseModel):
     location_score: float
     salary_score: float
     occupation_score: float
+
+
+class ProfileCreate(BaseModel):
+    """Issue #15: identity-profile registration payload — the Keycloak ID
+    token's `sub` claim is trusted as given by the frontend, same trust
+    boundary app/frontend/keycloak_admin.py's Admin-API calls already have.
+    """
+    keycloak_user_id: str
+    role: UserRole
+    full_name: str
+    email: str
+    company_name: str | None = None
+
+
+class ProfileOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    keycloak_user_id: str
+    role: UserRole
+    full_name: str
+    email: str
+    company_name: str | None

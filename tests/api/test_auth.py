@@ -33,6 +33,19 @@ def test_semantic_matching_route_rejects_missing_api_key():
     assert response.status_code == 401
 
 
+def test_profiles_post_route_rejects_missing_api_key():
+    response = client.post("/profiles", json={
+        "keycloak_user_id": "user-1", "role": "candidate",
+        "full_name": "Test User", "email": "test@example-synthetic.test",
+    })
+    assert response.status_code == 401
+
+
+def test_profiles_get_route_rejects_missing_api_key():
+    response = client.get("/profiles/user-1")
+    assert response.status_code == 401
+
+
 def test_matching_route_rejects_wrong_api_key():
     response = client.get("/candidates/1/job-matches", headers={"X-API-Key": "wrong-key"})
     assert response.status_code == 401

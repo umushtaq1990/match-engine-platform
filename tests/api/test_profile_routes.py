@@ -1,0 +1,86 @@
+"""DB-touching tests for app/api/profile_routes.py (issue #15) — mirrors
+tests/api/test_routes_db.py's TestClient + get_db dependency-override
+pattern, bound to the same real-transaction-wrapped fixture session style
+(tests/conftest.py's profile_db_session) so a real request goes through the
+real route and a real (disposable) Postgres transaction.
+"""
+from fastapi.testclient import TestClient
+
+from app.api.deps import get_db
+from app.api.main import app
+
+API_KEY_HEADERS = {"X-API-Key": "dev-local-key-change-me"}
+
+
+def _client_bound_to(session) -> TestClient:
+    app.dependency_overrides[get_db] = lambda: (yield session)
+    return TestClient(app)
+
+
+def test_create_profile_returns_the_created_profile(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.post(
+            "/profiles",
+            headers=API_KEY_HEADERS,
+            json={
+                "keycloak_user_id": "user-abc",
+                "role": "candidate",
+                "full_name": "Ada Lovelace",
+                "email": "ada@example-synthetic.test",
+            },
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["keycloak_user_id"] == "user-abc"
+        assert body["role"] == "candidate"
+        assert body["company_name"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_profile_rejects_duplicate_keycloak_user_id(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        payload = {
+            "keycloak_user_id": "user-dup",
+            "role": "employer",
+            "full_name": "Grace Hopper",
+            "email": "grace@example-synthetic.test",
+            "company_name": "Acme Co",
+        }
+        first = client.post("/profiles", headers=API_KEY_HEADERS, json=payload)
+        assert first.status_code == 201
+        second = client.post("/profiles", headers=API_KEY_HEADERS, json=payload)
+        assert second.status_code == 409
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_profile_returns_existing_profile(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        client.post(
+            "/profiles",
+            headers=API_KEY_HEADERS,
+            json={
+                "keycloak_user_id": "user-xyz",
+                "role": "candidate",
+                "full_name": "Alan Turing",
+                "email": "alan@example-synthetic.test",
+            },
+        )
+        response = client.get("/profiles/user-xyz", headers=API_KEY_HEADERS)
+        assert response.status_code == 200
+        assert response.json()["full_name"] == "Alan Turing"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_profile_returns_404_when_not_found(profile_db_session):
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.get("/profiles/no-such-user", headers=API_KEY_HEADERS)
+        assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()

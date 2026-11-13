@@ -66,6 +66,30 @@ def matching_db_session():
 
 
 @pytest.fixture
+def profile_db_session():
+    """Same real-transaction-wrapped pattern as `matching_db_session`, scoped
+    to the identity service's `user_profiles` table (issue #15) instead of
+    the matching engine's tables.
+    """
+    try:
+        engine = create_engine(DATABASE_URL)
+        connection = engine.connect()
+    except Exception as exc:
+        pytest.skip(f"No reachable database for DB-touching tests: {exc}")
+
+    outer_transaction = connection.begin()
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    session.execute(text("TRUNCATE TABLE user_profiles RESTART IDENTITY CASCADE"))
+    session.commit()
+
+    yield session
+
+    session.close()
+    outer_transaction.rollback()
+    connection.close()
+
+
+@pytest.fixture
 def analytics_db_session():
     """Same real-transaction-wrapped pattern as `matching_db_session`, scoped
     to the analytics service's own `analytics.behavioral_events` table
