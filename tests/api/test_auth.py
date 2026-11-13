@@ -78,6 +78,32 @@ def test_create_skill_route_rejects_missing_api_key():
     assert response.status_code == 401
 
 
+def test_create_job_route_rejects_missing_api_key():
+    response = client.post("/jobs", json={
+        "posted_by_keycloak_user_id": "employer-1", "title": "X", "company_name": "Y",
+        "description": "Z", "location_city": "Austin", "location_region": "TX",
+    })
+    assert response.status_code == 401
+
+
+def test_list_employer_jobs_route_rejects_missing_api_key():
+    response = client.get("/employers/employer-1/jobs")
+    assert response.status_code == 401
+
+
+def test_job_details_get_route_rejects_missing_api_key():
+    response = client.get("/jobs/1/details")
+    assert response.status_code == 401
+
+
+def test_job_details_patch_route_rejects_missing_api_key():
+    response = client.patch("/jobs/1/details", json={
+        "title": "X", "company_name": "Y", "description": "Z",
+        "location_city": "Austin", "location_region": "TX",
+    })
+    assert response.status_code == 401
+
+
 def test_matching_route_rejects_wrong_api_key():
     response = client.get("/candidates/1/job-matches", headers={"X-API-Key": "wrong-key"})
     assert response.status_code == 401

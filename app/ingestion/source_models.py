@@ -220,6 +220,14 @@ class Job(Base):
     salary_max: Mapped[int | None] = mapped_column(nullable=True)
     employment_type: Mapped[EmploymentType] = mapped_column(Enum(EmploymentType))
     posted_at: Mapped[datetime] = mapped_column()
+    # Issue #22: ownership link for jobs posted via the frontend (nullable --
+    # the 1000-row seeded dataset's jobs have none, same
+    # keycloak_user_id-based trust boundary as app/api/profile_routes.py's
+    # candidate-details endpoints, no JWT verification).
+    posted_by_keycloak_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Display-only, like Candidate.years_experience/experience_level (issue
+    # #20) -- not read by app/matching/scoring.py.
+    min_years_experience: Mapped[int | None] = mapped_column(nullable=True)
 
     requirements: Mapped[list["JobSkill"]] = relationship(back_populates="job")
 

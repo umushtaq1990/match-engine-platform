@@ -146,3 +146,64 @@ class SkillOut(BaseModel):
 
 class SkillCreate(BaseModel):
     name: str
+
+
+class JobCreate(BaseModel):
+    """Issue #22: an employer-posted job, owned by the posting Keycloak user
+    (trusted as given by the frontend, same boundary as ProfileCreate above).
+    """
+    posted_by_keycloak_user_id: str
+    title: str
+    company_name: str
+    description: str
+    location_city: str
+    location_region: str
+    salary_min: int | None = None
+    salary_max: int | None = None
+    primary_occupation_id: int | None = None
+    experience_level: str | None = None
+    required_skill_ids: list[int] = Field(default_factory=list, max_length=10)
+    preferred_skill_ids: list[int] = Field(default_factory=list, max_length=10)
+
+
+class JobListingOut(BaseModel):
+    """Issue #22: one row of an employer's "pick a job" list."""
+    model_config = {"from_attributes": True}
+
+    id: int
+    title: str
+    company_name: str
+    location_city: str
+    posted_at: str
+
+
+class JobDetailsOut(BaseModel):
+    """Issue #22: full job detail for the edit form -- same shape as
+    JobCreate's editable fields, plus the server-assigned id.
+    """
+    id: int
+    title: str
+    company_name: str
+    description: str
+    location_city: str
+    location_region: str
+    salary_min: int | None
+    salary_max: int | None
+    primary_occupation_id: int | None
+    experience_level: str | None
+    required_skill_ids: list[int]
+    preferred_skill_ids: list[int]
+
+
+class JobDetailsUpdate(BaseModel):
+    title: str
+    company_name: str
+    description: str
+    location_city: str
+    location_region: str
+    salary_min: int | None = None
+    salary_max: int | None = None
+    primary_occupation_id: int | None = None
+    experience_level: str | None = None
+    required_skill_ids: list[int] = Field(default_factory=list, max_length=10)
+    preferred_skill_ids: list[int] = Field(default_factory=list, max_length=10)

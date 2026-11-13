@@ -97,11 +97,43 @@ def test_candidate_role_claim_shows_candidate_flow(mock_get):
     assert any(b.label == "Show Job Matches" for b in at.button)
 
 
-def test_employer_role_claim_shows_job_id_input():
+def _default_job_details() -> dict:
+    return {
+        "title": "", "company_name": "", "description": "",
+        "location_city": "", "location_region": "",
+        "salary_min": None, "salary_max": None, "primary_occupation_id": None,
+        "experience_level": "entry_level", "required_skill_ids": [], "preferred_skill_ids": [],
+    }
+
+
+def _employer_support_endpoint_response(url: str):
+    """Issue #22: the employer branch unconditionally fetches the employer's
+    job list plus occupations/skills on every render -- every employer-flow
+    test's mocked `requests.get` must answer these. Returns `None` for any
+    other URL so callers can fall through to their own logic.
+    """
+    if url.endswith("/jobs") and "/employers/" in url:
+        return MagicMock(status_code=200, json=lambda: [])
+    return _candidate_support_endpoint_response(url)
+
+
+def _no_employer_jobs(url, *args, **kwargs):
+    return _employer_support_endpoint_response(url) or MagicMock(status_code=404)
+
+
+@patch("requests.get")
+def test_employer_role_claim_shows_job_posting_flow(mock_get):
+    mock_get.side_effect = _no_employer_jobs
     at = _logged_in_app(role="employer").run()
     assert not at.exception
     assert any("Employer" in h.value for h in at.header)
-    assert any("Job ID" in ni.label for ni in at.number_input)
+    assert not any("Job ID" in ni.label for ni in at.number_input)
+    assert any(sb.label == "Your jobs" for sb in at.selectbox)
+    assert next(sb for sb in at.selectbox if sb.label == "Your jobs").value == "+ Post a new job"
+    assert any("Job details" in s.value for s in at.subheader)
+    assert any(ti.label == "Job title" for ti in at.text_input)
+    assert any(b.label == "Save job" for b in at.button)
+    assert not any(b.label == "Get Matching Candidates" for b in at.button)
 
 
 @patch("requests.get")
@@ -288,15 +320,47 @@ def test_saving_profile_details_calls_patch_with_expected_payload(mock_get, mock
 
 @patch("requests.get")
 def test_employer_get_candidate_matches_calls_correct_endpoint(mock_get):
-    mock_get.return_value = MagicMock(status_code=200, headers={}, json=lambda: [])
+    def side_effect(url, *args, **kwargs):
+        if url.endswith("/jobs") and "/employers/" in url:
+            return MagicMock(status_code=200, json=lambda: [
+                {"id": 1, "title": "Backend Engineer", "company_name": "Acme Co",
+                 "location_city": "Austin", "posted_at": "2026-01-01T00:00:00Z"},
+            ])
+        if url.endswith("/jobs/1/details"):
+            return MagicMock(status_code=200, json=_default_job_details)
+        support = _candidate_support_endpoint_response(url)
+        if support is not None:
+            return support
+        return MagicMock(status_code=200, headers={}, json=lambda: [])
+    mock_get.side_effect = side_effect
+
     at = _logged_in_app(role="employer").run()
     get_button = next(b for b in at.button if b.label == "Get Matching Candidates")
     get_button.click().run(timeout=10)
 
     assert not at.exception
-    mock_get.assert_called_once()
-    called_url = mock_get.call_args[0][0]
+    called_url = mock_get.call_args_list[-1].args[0]
     assert called_url.endswith("/jobs/1/candidate-matches")
+
+
+@patch("app.frontend.job_client.requests.post")
+@patch("requests.get")
+def test_posting_a_new_job_calls_create_job_with_expected_payload(mock_get, mock_post):
+    mock_get.side_effect = _no_employer_jobs
+    mock_post.return_value = MagicMock(status_code=201, json=lambda: {**_default_job_details(), "id": 55})
+
+    at = _logged_in_app(role="employer").run()
+    next(ti for ti in at.text_input if ti.label == "Job title").set_value("Backend Engineer").run()
+    next(ti for ti in at.text_input if ti.label == "Company name").set_value("Acme Co").run()
+    next(ms for ms in at.multiselect if ms.label == "Required skills (up to 10)").set_value(["Python"]).run()
+    save_button = next(b for b in at.button if b.label == "Save job")
+    at = save_button.click().run()
+
+    assert not at.exception
+    called_kwargs = mock_post.call_args.kwargs
+    assert called_kwargs["json"]["title"] == "Backend Engineer"
+    assert called_kwargs["json"]["company_name"] == "Acme Co"
+    assert called_kwargs["json"]["required_skill_ids"] == [1]
 
 
 # --- Login/registration gate (_require_login) ------------------------------
@@ -497,16 +561,18 @@ def test_submitting_profile_form_as_candidate_assigns_role_and_shows_candidate_f
     assert any("Upload your CV" in s.value for s in at.subheader)
 
 
+@patch("requests.get")
 @patch("app.frontend.profile_client.create_profile")
 @patch("app.frontend.profile_client.get_profile")
 @patch("app.frontend.keycloak_admin.assign_realm_role")
 @patch("app.frontend.keycloak_admin.get_admin_token")
 def test_submitting_profile_form_as_employer_captures_company_name(
-    mock_get_token, mock_assign_role, mock_get_profile, mock_create_profile,
+    mock_get_token, mock_assign_role, mock_get_profile, mock_create_profile, mock_get,
 ):
     mock_get_token.return_value = "fake-admin-token"
     mock_get_profile.return_value = None
-    mock_create_profile.return_value = {"role": "employer", "full_name": "Grace Hopper"}
+    mock_create_profile.return_value = {"role": "employer", "full_name": "Grace Hopper", "company_name": "Acme Co"}
+    mock_get.side_effect = _no_employer_jobs
     at = _logged_in_app_without_profile().run()
     at.text_input[0].set_value("Grace Hopper").run()
     at.radio[0].set_value("Employer").run()

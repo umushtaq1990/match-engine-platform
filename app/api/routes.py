@@ -152,10 +152,11 @@ def get_candidate_matches_for_job(
 ):
     """Use Case B: rank candidates for a job.
 
-    No Employer entity exists yet in this domain model (jobs only have a
-    `company_name` string) — job_id stands in for the acting employer's
-    identity in the logged event, a documented v1 limitation, not an
-    oversight. See docs/behavioral-analytics.md.
+    Issue #22 added a lightweight ownership link (`Job.posted_by_keycloak_user_id`,
+    see app/api/job_routes.py) for jobs created via the frontend, but there's
+    still no real Employer entity/table — job_id continues to stand in for
+    the acting employer's identity in the logged event below, a documented
+    v1 limitation, not an oversight. See docs/behavioral-analytics.md.
     """
     try:
         results = rank_candidates_for_job(db, job_id, top_k=top_k, include_ineligible=include_ineligible)

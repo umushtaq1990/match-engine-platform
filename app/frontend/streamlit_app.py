@@ -28,6 +28,7 @@ from app.frontend.candidate_client import (
     list_skills,
     update_candidate_details,
 )
+from app.frontend.job_client import create_job, get_job_details, list_employer_jobs, update_job_details
 from app.frontend.profile_client import create_profile, get_profile
 
 setup_logging("frontend")
@@ -322,11 +323,138 @@ if role == "candidate":
             st.error(f"Request failed ({response.status_code}): {response.text}")
 
 else:
+    # Issue #22: an employer's own job postings, created/edited here instead
+    # of picking a raw job_id from the seeded dataset. Ownership is tracked
+    # by Job.posted_by_keycloak_user_id -- see app/api/job_routes.py.
     st.header("Employer")
-    job_id = st.number_input("Job ID (from the seeded dataset)", min_value=1, value=1, step=1)
+    keycloak_user_id = st.session_state["id_token_claims"]["sub"]
+    jobs = list_employer_jobs(keycloak_user_id)
+    occupations = list_occupations()
+    skills = list_skills()
+    skill_name_by_id = {s["id"]: s["name"] for s in skills}
+
+    POST_NEW_JOB = "+ Post a new job"
+    job_label_by_id = {j["id"]: f"{j['title']} — {j['company_name']}" for j in jobs}
+    job_labels = list(job_label_by_id.values()) + [POST_NEW_JOB]
+    job_id_by_label = {label: job_id for job_id, label in job_label_by_id.items()}
+
+    default_index = 0
+    selected_label = job_label_by_id.get(st.session_state.get("selected_job_id"))
+    if selected_label in job_labels:
+        default_index = job_labels.index(selected_label)
+    chosen_job_label = st.selectbox("Your jobs", job_labels, index=default_index)
+
+    if chosen_job_label == POST_NEW_JOB:
+        job_id = None
+        details = {
+            "title": "", "company_name": st.session_state["profile"].get("company_name") or "",
+            "description": "", "location_city": "", "location_region": "",
+            "salary_min": None, "salary_max": None, "primary_occupation_id": None,
+            "experience_level": "entry_level", "required_skill_ids": [], "preferred_skill_ids": [],
+        }
+    else:
+        job_id = job_id_by_label[chosen_job_label]
+        details = get_job_details(job_id)
+
+    st.subheader("Job details")
+    title = st.text_input("Job title", value=details["title"])
+    company_name = st.text_input("Company name", value=details["company_name"])
+    description = st.text_area("Job description", value=details["description"])
+
+    city_col, region_col = st.columns(2)
+    with city_col:
+        location_city = st.text_input("City", value=details["location_city"], key="job_city")
+    with region_col:
+        location_region = st.text_input("Region/State", value=details["location_region"], key="job_region")
+
+    salary_col1, salary_col2 = st.columns(2)
+    with salary_col1:
+        salary_min = st.number_input(
+            "Salary (min) ($)", min_value=0, step=1000, value=details["salary_min"] or 0, key="job_salary_min",
+        )
+    with salary_col2:
+        salary_max = st.number_input(
+            "Salary (max) ($)", min_value=0, step=1000, value=details["salary_max"] or 0, key="job_salary_max",
+        )
+
+    JOB_EXPERIENCE_LEVELS = {
+        "Entry Level": "entry_level", "Mid-Level": "mid_level",
+        "Senior": "senior", "Expert": "expert",
+    }
+    job_level_labels = list(JOB_EXPERIENCE_LEVELS.keys())
+    job_level_by_value = {v: k for k, v in JOB_EXPERIENCE_LEVELS.items()}
+    current_job_level_label = job_level_by_value.get(details["experience_level"], job_level_labels[0])
+    experience_label = st.selectbox(
+        "Minimum experience required", job_level_labels,
+        index=job_level_labels.index(current_job_level_label), key="job_experience",
+    )
+
+    JOB_ADD_NEW_OCCUPATION = "+ Add a new occupation"
+    job_occupation_titles = [o["title"] for o in occupations] + [JOB_ADD_NEW_OCCUPATION]
+    current_job_occupation = next(
+        (o["title"] for o in occupations if o["id"] == details["primary_occupation_id"]), None,
+    )
+    job_occupation_title = st.selectbox(
+        "Occupation", job_occupation_titles,
+        index=job_occupation_titles.index(current_job_occupation)
+        if current_job_occupation in job_occupation_titles else 0,
+        key="job_occupation",
+    )
+    new_job_occupation_title = ""
+    if job_occupation_title == JOB_ADD_NEW_OCCUPATION:
+        new_job_occupation_title = st.text_input("New occupation title", key="job_new_occupation")
+
+    skill_options = [s["name"] for s in skills]
+    default_required_names = [
+        skill_name_by_id[sid] for sid in details["required_skill_ids"] if sid in skill_name_by_id
+    ]
+    default_preferred_names = [
+        skill_name_by_id[sid] for sid in details["preferred_skill_ids"] if sid in skill_name_by_id
+    ]
+    chosen_required_names = st.multiselect(
+        "Required skills (up to 10)", skill_options, default=default_required_names,
+        max_selections=10, key="job_required_skills",
+    )
+    chosen_preferred_names = st.multiselect(
+        "Preferred skills (up to 10)", skill_options, default=default_preferred_names,
+        max_selections=10, key="job_preferred_skills",
+    )
+    new_job_skill_name = st.text_input("Add a new skill (optional)", key="job_new_skill")
+
+    if st.button("Save job"):
+        skill_id_by_name = {s["name"]: s["id"] for s in skills}
+        occupation_id_by_title = {o["title"]: o["id"] for o in occupations}
+
+        if job_occupation_title == JOB_ADD_NEW_OCCUPATION and new_job_occupation_title.strip():
+            occupation_id = create_occupation(new_job_occupation_title.strip())["id"]
+        else:
+            occupation_id = occupation_id_by_title.get(job_occupation_title)
+
+        required_skill_ids = [skill_id_by_name[name] for name in chosen_required_names]
+        preferred_skill_ids = [skill_id_by_name[name] for name in chosen_preferred_names]
+        if new_job_skill_name.strip():
+            new_skill_id = create_skill(new_job_skill_name.strip())["id"]
+            if new_skill_id not in required_skill_ids and new_skill_id not in preferred_skill_ids:
+                required_skill_ids.append(new_skill_id)
+
+        if job_id is None:
+            saved = create_job(
+                keycloak_user_id, title, company_name, description, location_city, location_region,
+                salary_min or None, salary_max or None, occupation_id,
+                JOB_EXPERIENCE_LEVELS[experience_label], required_skill_ids, preferred_skill_ids,
+            )
+        else:
+            saved = update_job_details(
+                job_id, title, company_name, description, location_city, location_region,
+                salary_min or None, salary_max or None, occupation_id,
+                JOB_EXPERIENCE_LEVELS[experience_label], required_skill_ids, preferred_skill_ids,
+            )
+        st.success("Job saved.")
+        st.session_state["selected_job_id"] = saved["id"]
+        st.rerun()
 
     st.subheader("Matching candidates")
-    if st.button("Get Matching Candidates"):
+    if job_id is not None and st.button("Get Matching Candidates"):
         response = requests.get(
             f"{API_URL}/jobs/{job_id}/candidate-matches", headers=HEADERS, timeout=10,
         )

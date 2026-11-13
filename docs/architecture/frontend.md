@@ -29,13 +29,13 @@ touches Postgres directly, it only calls `api` and `extraction` over HTTP, the s
 external client would. This is also the smallest image in the project: no `app/db.py`, no ORM, no
 `requirements-base.txt` at all.
 
-**Reuses the existing seeded dataset for job records, no data-entry UI for them**: an employer
-enters an existing `job_id`. Building a UI to create *new* job records would mean a real write-path
-into `app/ingestion/source_models.py`'s tables, deliberately not built for a UI whose whole point is
-demonstrating the matching flow, not demonstrating data entry (see Roadmap). The Candidate side no
-longer picks from the seeded dataset at all (issue #17): registering as a Candidate creates a real,
-brand-new `candidates` row for that person (see Implementation), so there's no `candidate_id` input
-to show — each candidate's CV/matches are already their own.
+**Neither side picks from the seeded dataset anymore.** The Candidate side stopped first (issue
+#17): registering as a Candidate creates a real, brand-new `candidates` row for that person (see
+Implementation), so there's no `candidate_id` input to show — each candidate's CV/matches are
+already their own. Issue #22 closed the same gap on the Employer side: an employer now creates and
+owns real `jobs` rows (`Job.posted_by_keycloak_user_id`) instead of typing a raw `job_id` from the
+1,000-row seeded dataset — that dataset still exists and is still what candidates get ranked
+against/from, it's just no longer the *only* source of job records a real logged-in user can act on.
 
 This is distinct from *user* identity, which issue #14 did add a minimal real model for: Keycloak
 self-registration plus a `candidate`/`employer` realm role, assigned via a one-time in-app picker
@@ -104,8 +104,17 @@ display reads this value as anything but an int.
   `PATCH /candidates/{id}/details`, which replaces that candidate's skill rows wholesale and
   updates the `Candidate` columns directly, then reruns the page so the form reflects the saved
   state.
-- **Employer**: enter a `job_id` → click "Get Matching Candidates" (`GET /jobs/{id}/candidate-matches`
-  on `api`) → same results table.
+- **Employer** (issue #22, `app/frontend/job_client.py`): a "Your jobs" selectbox lists that
+  employer's own postings (`GET /employers/{keycloak_user_id}/jobs`) plus a "+ Post a new job"
+  option — no more raw `job_id` input. Picking an existing job loads its full detail
+  (`GET /jobs/{id}/details`) into an edit form below: title, description, company name,
+  city/region, salary min/max, occupation (+ add-new), required/preferred skill multiselects
+  (+ add-new skill) and a minimum-experience bucket, mirroring the candidate profile form. "Save
+  job" calls `POST /jobs` (new) or `PATCH /jobs/{id}/details` (existing), replacing that job's
+  `JobSkill` rows split by `requirement_level` — required/preferred skills plug directly into the
+  existing 70/30 split `scoring.py`'s `_skill_component` already uses, no scoring changes needed.
+  "Get Matching Candidates" (`GET /jobs/{id}/candidate-matches`, unchanged, already `top_k=10` by
+  default) operates on whichever job is selected.
 
 `docker/Dockerfile.frontend` / `app/requirements-frontend.txt` just `streamlit` and `requests`,
 nothing else. `docker-compose.yml`'s `frontend` service depends on `api` and `extraction` being
@@ -160,20 +169,30 @@ round-trips the experience bucket ("senior" in → "senior" back out, mapped thr
 each boundary (0, 2, 3, 5, 6, 10, 11 years) and confirms a PATCH that omits `location_region`
 never overwrites it.
 
+**Issue #22** (employer-owned job postings): verified live — created a real job via the employer
+account created this session (`ai-tech@gmail.com`) with real required/preferred skills, salary,
+location, occupation, and experience; confirmed via `psql` that `Job.posted_by_keycloak_user_id`
+and the split `JobSkill` rows (`required`/`preferred`) landed correctly; confirmed the job appears
+in `GET /employers/{id}/jobs`; confirmed `GET /jobs/{id}/candidate-matches` returns real ranked
+results (10, non-neutral scores) unchanged from before. `tests/api/test_job_routes.py` covers
+create/list/get/patch and the skill-count cap; `tests/frontend/test_streamlit_app.py` covers the
+job-picker rendering, posting a new job, and the existing "Get Matching Candidates" flow still
+working against a selected job.
+
 ## Known Limitations
 
-- Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization only partly does now: each candidate has their own real `candidate_id` (issue #17), so one candidate can no longer see or overwrite another's CV/matches — but an employer can still type in any `job_id` in the seeded dataset, nothing ties a specific Keycloak identity to a specific `job_id` yet. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
+- Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization only partly does now: each candidate has their own real `candidate_id` (issue #17) and each job is tied to the employer who posted it (`Job.posted_by_keycloak_user_id`, issue #22) — but `GET /jobs/{id}/details`/`PATCH /jobs/{id}/details` don't actually check that the caller owns the job before returning/editing it (same no-JWT-verification trust boundary as every other route here, not enforced authorization), and an employer can still type a seeded dataset's `job_id` directly against the API (not the UI) to view/edit a job they didn't post. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
 - The `candidates` row created at Candidate registration (issue #17) still starts with placeholder `location_city`/`location_region` (`"Unknown"`) and `null` salary/occupation/skills — but issue #18's "Your profile" form now lets the candidate fill in real values themselves post-registration, closing most of that gap (years_experience remains uncollected by any UI).
 - Skills set via "Your profile" (issue #18) are always recorded as `proficiency=intermediate`/`evidence_source=self_reported` — there's no UI for a candidate to claim a different proficiency level, a simplification since CV-extraction-sourced skills (the other `evidence_source`) aren't chained in yet either (see below).
 - Saving "Your profile" does not invalidate the `GET /candidates/{id}/job-matches` Redis cache (`docs/redis-infrastructure.md`'s 1-hour TTL) — a candidate who saves new details and immediately re-checks matches within that hour can see a stale, pre-save score until the cache entry expires. Acceptable for a demo; a real system would bust the cache key on profile save.
-- No candidate/job *record* creation beyond what issue #18 added (editing is now possible for a candidate's own scoring fields; creating new candidate/job rows from the UI, or any employer-side self-service, is still out of scope for v1).
+- Job skills set via "Your jobs" (issue #22) have no equivalent of the candidate side's `proficiency`/`evidence_source` nuance — `JobSkill.requirement_level` (required/preferred) is the only distinction captured, consistent with what the form actually asks for.
 - CV upload and skill extraction are still two separate, un-chained steps (see `docs/architecture/application-services/skill-extraction.md`'s own Known Limitations), uploading a CV here does not automatically extract skills from it or affect the candidate's match scores.
 - `streamlit.testing.v1.AppTest` has no built-in way to simulate an actual file upload, so the "upload succeeds and shows a success message" path is verified only against the live stack, not as an automated unit test.
 
 ## Roadmap
 
 - **v2, only if actually useful for the portfolio demo**: parse the uploaded CV's text and run it through `extract_skills` automatically (the same gap `docs/architecture/application-services/skill-extraction.md` already flags), surfacing extracted skills in the UI.
-- Simple data registration (create a new candidate/job *record* from the UI instead of picking an existing `candidate_id`/`job_id`), would need a real write-path into `app/ingestion/source_models.py`'s tables, not built yet. (Not to be confused with *user* registration, which is done issue #14, see [ingress-and-identity.md](ingress-and-identity.md).)
+- Simple data registration (create a new candidate/job *record* from the UI instead of picking an existing `candidate_id`/`job_id`) is now done on both sides (issue #17 for candidates, issue #22 for jobs). (Not to be confused with *user* registration, which is done issue #14, see [ingress-and-identity.md](ingress-and-identity.md).)
 - **Issue #21**: simplify matching to score on skills + education only (location/salary/experience become filter/analysis-only data, per the user's explicit direction while scoping issue #20) — needs a new "education" data concept (nothing in the schema represents it today) and a re-evaluation of the embeddings-blended ranker's documented NDCG numbers (`docs/embedding-matching.md`), which are keyed to the current rule-based weights. Not started.
 
 ## Resource Footprint and Scaling

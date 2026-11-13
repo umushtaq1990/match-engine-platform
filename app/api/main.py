@@ -7,6 +7,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import Response
 
+from app.api.job_routes import router as job_router
 from app.api.profile_routes import router as profile_router
 from app.api.rate_limit import limiter
 from app.api.routes import router as matching_router
@@ -22,6 +23,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 app.include_router(matching_router)
 app.include_router(profile_router)
+app.include_router(job_router)
 
 # Exposes /metrics (request count, latency histograms, in-progress requests,
 # all labeled by path/method/status) for Prometheus to scrape - the

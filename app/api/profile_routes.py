@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbSession, RequireApiKey
+from app.api.experience_levels import EXPERIENCE_LEVEL_TO_YEARS, years_experience_to_level
 from app.api.schemas import (
     CandidateDetailsOut,
     CandidateDetailsUpdate,
@@ -28,24 +29,6 @@ from app.identity.models import UserProfile, UserRole
 from app.ingestion.source_models import Candidate, CandidateSkill, EvidenceSource, Occupation, ProficiencyLevel, Skill
 
 router = APIRouter(dependencies=[RequireApiKey])
-
-# Issue #20: a 4-bucket experience selector in the UI instead of a raw
-# years-of-experience number. Still stored in the existing
-# Candidate.years_experience column -- nothing reads this as anything but an
-# int today (app/matching/scoring.py doesn't score on it at all), so the
-# bucket is purely a display/UX convenience over that one column, not a new
-# data concept.
-_EXPERIENCE_LEVEL_TO_YEARS = {"entry_level": 1, "mid_level": 4, "senior": 8, "expert": 15}
-_EXPERIENCE_LEVEL_THRESHOLDS = (
-    (2, "entry_level"), (5, "mid_level"), (10, "senior"),
-)
-
-
-def _years_experience_to_level(years: int) -> str:
-    for max_years, level in _EXPERIENCE_LEVEL_THRESHOLDS:
-        if years <= max_years:
-            return level
-    return "expert"
 
 
 def _get_or_create_candidate(db: Session, full_name: str, email: str) -> int:
@@ -121,7 +104,7 @@ def get_candidate_details(candidate_id: int, db: Session = DbSession):
         desired_salary_min=candidate.desired_salary_min,
         desired_salary_max=candidate.desired_salary_max,
         primary_occupation_id=candidate.primary_occupation_id,
-        experience_level=_years_experience_to_level(candidate.years_experience),
+        experience_level=years_experience_to_level(candidate.years_experience),
         skill_ids=skill_ids,
     )
 
@@ -147,7 +130,7 @@ def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate,
     candidate.desired_salary_max = payload.desired_salary_max
     candidate.primary_occupation_id = payload.primary_occupation_id
     if payload.experience_level is not None:
-        candidate.years_experience = _EXPERIENCE_LEVEL_TO_YEARS[payload.experience_level]
+        candidate.years_experience = EXPERIENCE_LEVEL_TO_YEARS[payload.experience_level]
 
     db.query(CandidateSkill).filter_by(candidate_id=candidate_id).delete()
     for skill_id in payload.skill_ids:
@@ -166,7 +149,7 @@ def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate,
         desired_salary_min=candidate.desired_salary_min,
         desired_salary_max=candidate.desired_salary_max,
         primary_occupation_id=candidate.primary_occupation_id,
-        experience_level=_years_experience_to_level(candidate.years_experience),
+        experience_level=years_experience_to_level(candidate.years_experience),
         skill_ids=payload.skill_ids,
     )
 
