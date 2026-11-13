@@ -12,11 +12,19 @@ own behavior is covered separately below, and the real Authorization Code
 exchange against a live Keycloak is verified manually (docs/sso.md
 Verification & Results), not mocked here.
 """
+import base64
 from unittest.mock import MagicMock, patch
 
 from streamlit.testing.v1 import AppTest
 
 APP_PATH = "app/frontend/streamlit_app.py"
+
+
+def _fake_id_token(preferred_username: str, sub: str = "user-1") -> str:
+    payload = base64.urlsafe_b64encode(
+        f'{{"preferred_username": "{preferred_username}", "sub": "{sub}", "realm_access": {{"roles": []}}}}'.encode()
+    ).rstrip(b"=")
+    return f"header.{payload.decode()}.signature"
 
 
 def _logged_in_app(role: str = "candidate") -> AppTest:
@@ -113,24 +121,60 @@ def test_employer_get_candidate_matches_calls_correct_endpoint(mock_get):
     assert called_url.endswith("/jobs/1/candidate-matches")
 
 
-# --- Phase 29: OIDC login gate (_require_login) ---------------------------
-# The real Authorization Code exchange against a live Keycloak (correct vs.
-# wrong password, real redirect, real token response) is verified manually
-# against the running stack — see docs/sso.md Verification & Results. These
+# --- OIDC login gate (_require_login) --------------------------------------
+# Login uses a direct Resource Owner Password grant rendered inline on this
+# page (text_input fields, see _require_login's docstring); registration
+# still redirects to Keycloak's own hosted form and back via the
+# Authorization Code flow. The real Keycloak calls (correct vs. wrong
+# password, real registration redirect, real token response) are verified
+# manually against the running stack — see
+# docs/architecture/ingress-and-identity.md Verification & Results. These
 # tests cover what AppTest *can* exercise headlessly: the gate blocking
-# access and generating a correct auth_url when logged out, and not blocking
-# access once a session exists.
+# access, the inline login form's username/password submission, and not
+# blocking access once a session exists.
 
-def test_unauthenticated_user_sees_login_link_not_the_app():
+def test_unauthenticated_user_sees_login_form_not_the_app():
     at = AppTest.from_file(APP_PATH).run()
     assert not at.exception
     assert not at.number_input  # _require_login() st.stop()s before the rest of the app ever renders
-    login_markdown = next(m for m in at.markdown if "Log in" in m.value)
-    assert "client_id=jme-frontend" in login_markdown.value
-    assert "response_type=code" in login_markdown.value
-    assert "redirect_uri=http://localhost:8080/" in login_markdown.value
+    assert any("Log in" in m.value for m in at.markdown)
+    assert len(at.text_input) == 2
+    assert any(b.label == "Log in" for b in at.button)
     registration_markdown = next(m for m in at.markdown if "Register" in m.value)
     assert "/protocol/openid-connect/registrations?" in registration_markdown.value
+
+
+@patch("app.frontend.profile_client.get_profile")
+@patch("app.frontend.oidc.requests.post")
+def test_submitting_valid_credentials_logs_in(mock_token_post, mock_get_profile):
+    mock_token_post.return_value = MagicMock(
+        status_code=200, json=lambda: {"id_token": _fake_id_token("candidate", sub="user-candidate")},
+    )
+    mock_get_profile.return_value = None
+    at = AppTest.from_file(APP_PATH).run()
+    at.text_input[0].set_value("candidate").run()
+    at.text_input[1].set_value("candidate-dev-pw").run()
+    login_button = next(b for b in at.button if b.label == "Log in")
+    at = login_button.click().run()
+
+    assert not at.exception
+    assert at.session_state["id_token_claims"]["preferred_username"] == "candidate"
+    # Past the login gate now, straight into the first-login profile form.
+    assert any("Tell us a bit about yourself" in s.value for s in at.subheader)
+
+
+@patch("app.frontend.oidc.requests.post")
+def test_submitting_invalid_credentials_shows_error_and_stays_on_login(mock_token_post):
+    mock_token_post.return_value = MagicMock(status_code=401)
+    at = AppTest.from_file(APP_PATH).run()
+    at.text_input[0].set_value("candidate").run()
+    at.text_input[1].set_value("wrong-password").run()
+    login_button = next(b for b in at.button if b.label == "Log in")
+    at = login_button.click().run()
+
+    assert not at.exception
+    assert "id_token_claims" not in at.session_state
+    assert any("Invalid username or password" in e.value for e in at.error)
 
 
 # --- Issue #15/#16: first-login profile-capture form for users with no

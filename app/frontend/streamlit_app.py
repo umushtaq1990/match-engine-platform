@@ -18,11 +18,11 @@ import streamlit as st
 from app.common.logging import setup_logging
 from app.frontend.keycloak_admin import assign_realm_role, get_admin_token
 from app.frontend.oidc import (
-    build_auth_url,
     build_registration_url,
     decode_id_token,
     exchange_code_for_token,
     is_state_valid,
+    password_grant_login,
 )
 from app.frontend.profile_client import create_profile, get_profile
 
@@ -60,14 +60,18 @@ def _prune_stale_oidc_states() -> None:
 
 
 def _require_login() -> None:
-    """Hand-rolled Authorization Code flow with `requests`, not a framework —
-    matches this project's existing os.environ + requests convention (e.g.
-    app/api/analytics_client.py) rather than pulling in authlib, which
-    assumes a traditional request/response web framework Streamlit doesn't
-    have. See docs/architecture/ingress-and-identity.md Known Limitations for
-    what this does and doesn't protect (no PKCE, no signature verification on
-    the ID token — fine for a local demo, not a hardened session
-    architecture).
+    """Login uses a direct Resource Owner Password grant (`password_grant_login`
+    in oidc.py), not a redirect to Keycloak's own hosted login page — the
+    username/password fields render on this page, under this app's own
+    heading, not a separate window. See docs/architecture/ingress-and-identity.md
+    Known Limitations for the tradeoff this accepts (the app itself handles
+    the raw password, unlike the redirect-based Authorization Code flow
+    below). Self-registration still redirects to Keycloak's own hosted
+    registration form and back (same hand-rolled Authorization Code
+    exchange, matching this project's existing os.environ + requests
+    convention, e.g. app/api/analytics_client.py, rather than pulling in
+    authlib) since collecting a brand-new account's details inline wasn't
+    asked for, only login was.
     """
     if "id_token_claims" in st.session_state:
         return
@@ -94,11 +98,23 @@ def _require_login() -> None:
     _prune_stale_oidc_states()
     state = secrets.token_urlsafe(16)
     _pending_oidc_states()[state] = time.time()
-    auth_url = build_auth_url(state)
     registration_url = build_registration_url(state)
+
     st.set_page_config(page_title="Project JME", page_icon="🧩")
     st.title("Talent Matching Platform")
-    st.markdown(f"### [Log in]({auth_url})")
+
+    st.markdown("### Log in")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Log in"):
+        try:
+            token_json = password_grant_login(username, password)
+        except ValueError as exc:
+            st.error(str(exc))
+        else:
+            st.session_state["id_token_claims"] = decode_id_token(token_json["id_token"])
+            st.rerun()
+
     st.markdown("### New here?")
     st.markdown(f"[Register]({registration_url})")
     st.stop()

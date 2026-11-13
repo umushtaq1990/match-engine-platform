@@ -22,14 +22,6 @@ def is_state_valid(returned_state: str | None, pending: dict[str, float]) -> boo
     return returned_state in pending
 
 
-def build_auth_url(state: str) -> str:
-    return (
-        f"{OIDC_PUBLIC_ISSUER}/protocol/openid-connect/auth"
-        f"?client_id={OIDC_CLIENT_ID}&response_type=code&scope=openid"
-        f"&redirect_uri={OIDC_REDIRECT_URI}&state={state}"
-    )
-
-
 def build_registration_url(state: str) -> str:
     """Same params as build_auth_url, against Keycloak's registration endpoint
     instead of its login endpoint — redirects back through the exact same
@@ -56,6 +48,33 @@ def exchange_code_for_token(code: str) -> dict:
     )
     if token_resp.status_code != 200:
         raise ValueError(f"Login failed: {token_resp.text}")
+    return token_resp.json()
+
+
+def password_grant_login(username: str, password: str) -> dict:
+    """Resource Owner Password grant: the app itself collects the username/
+    password (text_input fields on the main page, see streamlit_app.py's
+    _require_login) and exchanges them directly for tokens — no redirect to
+    Keycloak's own hosted login page. OAuth2/Keycloak discourage this
+    pattern for browser apps (the app sees the raw password, instead of
+    never seeing it); accepted here as a known tradeoff so the login form
+    renders on the same page under the app's own heading, not a separate
+    window. See docs/architecture/ingress-and-identity.md Known
+    Limitations. Raises ValueError on a non-200 response.
+    """
+    token_resp = requests.post(
+        f"{OIDC_INTERNAL_ISSUER}/protocol/openid-connect/token",
+        data={
+            "grant_type": "password",
+            "client_id": OIDC_CLIENT_ID,
+            "username": username,
+            "password": password,
+            "scope": "openid",
+        },
+        timeout=10,
+    )
+    if token_resp.status_code != 200:
+        raise ValueError("Invalid username or password.")
     return token_resp.json()
 
 

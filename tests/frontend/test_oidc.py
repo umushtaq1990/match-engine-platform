@@ -4,21 +4,39 @@ vs. wrong password, real redirect, real token response) is verified manually
 against the running stack, not mocked here — see
 docs/architecture/ingress-and-identity.md Verification & Results."""
 import base64
+from unittest.mock import MagicMock, patch
 
 from app.frontend.oidc import (
-    build_auth_url,
     build_registration_url,
     decode_id_token,
     is_state_valid,
+    password_grant_login,
 )
 
 
-def test_build_auth_url_includes_state_and_client_id():
-    url = build_auth_url("abc123")
-    assert "state=abc123" in url
-    assert "client_id=jme-frontend" in url
-    assert "response_type=code" in url
-    assert "scope=openid" in url
+@patch("app.frontend.oidc.requests.post")
+def test_password_grant_login_returns_token_json_on_success(mock_post):
+    mock_post.return_value = MagicMock(status_code=200, json=lambda: {"id_token": "fake.jwt.token"})
+
+    token_json = password_grant_login("candidate", "candidate-dev-pw")
+
+    assert token_json == {"id_token": "fake.jwt.token"}
+    called_kwargs = mock_post.call_args.kwargs
+    assert called_kwargs["data"]["grant_type"] == "password"
+    assert called_kwargs["data"]["username"] == "candidate"
+    assert called_kwargs["data"]["password"] == "candidate-dev-pw"
+    assert called_kwargs["data"]["scope"] == "openid"
+
+
+@patch("app.frontend.oidc.requests.post")
+def test_password_grant_login_raises_value_error_on_failure(mock_post):
+    mock_post.return_value = MagicMock(status_code=401)
+
+    try:
+        password_grant_login("candidate", "wrong-password")
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "Invalid username or password" in str(exc)
 
 
 def test_build_registration_url_hits_registrations_endpoint():
