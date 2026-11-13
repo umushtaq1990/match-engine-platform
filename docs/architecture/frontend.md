@@ -108,13 +108,17 @@ display reads this value as anything but an int.
   employer's own postings (`GET /employers/{keycloak_user_id}/jobs`) plus a "+ Post a new job"
   option — no more raw `job_id` input. Picking an existing job loads its full detail
   (`GET /jobs/{id}/details`) into an edit form below: title, description, company name,
-  city/region, salary min/max, occupation (+ add-new), required/preferred skill multiselects
-  (+ add-new skill) and a minimum-experience bucket, mirroring the candidate profile form. "Save
-  job" calls `POST /jobs` (new) or `PATCH /jobs/{id}/details` (existing), replacing that job's
-  `JobSkill` rows split by `requirement_level` — required/preferred skills plug directly into the
-  existing 70/30 split `scoring.py`'s `_skill_component` already uses, no scoring changes needed.
-  "Get Matching Candidates" (`GET /jobs/{id}/candidate-matches`, unchanged, already `top_k=10` by
-  default) operates on whichever job is selected.
+  City/Postal code/Country (issue #23, same pattern as the candidate side's issue #20 —
+  `location_region` stays on the `Job` row, still read by `_location_component`, but is no longer
+  collected from the user), salary min/max, occupation (+ add-new), required/preferred skill
+  multiselects (+ add-new skill) and a minimum-experience bucket, mirroring the candidate profile
+  form. "Save job" calls `POST /jobs` (new) or `PATCH /jobs/{id}/details` (existing), replacing
+  that job's `JobSkill` rows split by `requirement_level` — required/preferred skills plug
+  directly into the existing 70/30 split `scoring.py`'s `_skill_component` already uses, no
+  scoring changes needed. A skill picked as both required and preferred is deduped server-side
+  (required wins) rather than violating `job_skills`' unique constraint. "Get Matching Candidates"
+  (`GET /jobs/{id}/candidate-matches`, unchanged, already `top_k=10` by default) operates on
+  whichever job is selected.
 
 `docker/Dockerfile.frontend` / `app/requirements-frontend.txt` just `streamlit` and `requests`,
 nothing else. `docker-compose.yml`'s `frontend` service depends on `api` and `extraction` being
@@ -178,6 +182,15 @@ results (10, non-neutral scores) unchanged from before. `tests/api/test_job_rout
 create/list/get/patch and the skill-count cap; `tests/frontend/test_streamlit_app.py` covers the
 job-picker rendering, posting a new job, and the existing "Get Matching Candidates" flow still
 working against a selected job.
+
+**Issue #23** (job location: city/postal code/country, overlapping-skill fix): verified live
+against the real job created in issue #22's verification — PATCHed real postal code/country onto
+it and confirmed via `psql` that `location_region` (set at creation) was untouched while
+`postal_code`/`country` persisted; also reproduced and fixed the original crash where picking the
+same skill as both required and preferred violated `job_skills`' unique constraint (required now
+wins silently). `tests/api/test_job_routes.py` covers the postal/country round-trip, the
+`location_region` preservation, the "Unknown" placeholder default for a brand-new job, and the
+overlapping-skill dedup.
 
 ## Known Limitations
 

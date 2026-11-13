@@ -25,7 +25,8 @@ def get_job_details(job_id: int) -> dict:
 
 def create_job(
     posted_by_keycloak_user_id: str, title: str, company_name: str, description: str,
-    location_city: str, location_region: str, salary_min: int | None, salary_max: int | None,
+    location_city: str, postal_code: str | None, country: str | None,
+    salary_min: int | None, salary_max: int | None,
     primary_occupation_id: int | None, experience_level: str | None,
     required_skill_ids: list[int], preferred_skill_ids: list[int],
 ) -> dict:
@@ -35,7 +36,7 @@ def create_job(
         json={
             "posted_by_keycloak_user_id": posted_by_keycloak_user_id,
             "title": title, "company_name": company_name, "description": description,
-            "location_city": location_city, "location_region": location_region,
+            "location_city": location_city, "postal_code": postal_code, "country": country,
             "salary_min": salary_min, "salary_max": salary_max,
             "primary_occupation_id": primary_occupation_id, "experience_level": experience_level,
             "required_skill_ids": required_skill_ids, "preferred_skill_ids": preferred_skill_ids,
@@ -48,7 +49,8 @@ def create_job(
 
 def update_job_details(
     job_id: int, title: str, company_name: str, description: str,
-    location_city: str, location_region: str, salary_min: int | None, salary_max: int | None,
+    location_city: str, postal_code: str | None, country: str | None,
+    salary_min: int | None, salary_max: int | None,
     primary_occupation_id: int | None, experience_level: str | None,
     required_skill_ids: list[int], preferred_skill_ids: list[int],
 ) -> dict:
@@ -57,7 +59,7 @@ def update_job_details(
         headers=_HEADERS,
         json={
             "title": title, "company_name": company_name, "description": description,
-            "location_city": location_city, "location_region": location_region,
+            "location_city": location_city, "postal_code": postal_code, "country": country,
             "salary_min": salary_min, "salary_max": salary_max,
             "primary_occupation_id": primary_occupation_id, "experience_level": experience_level,
             "required_skill_ids": required_skill_ids, "preferred_skill_ids": preferred_skill_ids,

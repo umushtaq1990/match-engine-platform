@@ -216,6 +216,12 @@ class Job(Base):
     description_raw: Mapped[str] = mapped_column(Text)
     location_city: Mapped[str] = mapped_column(String(100))
     location_region: Mapped[str] = mapped_column(String(100))
+    # Issue #23: collected for later filtering/analysis, not read by
+    # app/matching/scoring.py's _location_component (that still uses
+    # location_city/location_region above) -- same pattern as
+    # Candidate.postal_code/.country (issue #20).
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     salary_min: Mapped[int | None] = mapped_column(nullable=True)
     salary_max: Mapped[int | None] = mapped_column(nullable=True)
     employment_type: Mapped[EmploymentType] = mapped_column(Enum(EmploymentType))

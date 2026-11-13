@@ -100,7 +100,7 @@ def test_candidate_role_claim_shows_candidate_flow(mock_get):
 def _default_job_details() -> dict:
     return {
         "title": "", "company_name": "", "description": "",
-        "location_city": "", "location_region": "",
+        "location_city": "", "postal_code": None, "country": None,
         "salary_min": None, "salary_max": None, "primary_occupation_id": None,
         "experience_level": "entry_level", "required_skill_ids": [], "preferred_skill_ids": [],
     }

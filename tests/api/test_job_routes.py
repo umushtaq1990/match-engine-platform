@@ -46,7 +46,7 @@ def test_create_job_creates_job_and_split_skills(matching_db_session):
             json={
                 "posted_by_keycloak_user_id": "employer-abc",
                 "title": "Backend Engineer", "company_name": "Acme Co",
-                "description": "Build things", "location_city": "Austin", "location_region": "TX",
+                "description": "Build things", "location_city": "Austin",
                 "salary_min": 90000, "salary_max": 130000,
                 "primary_occupation_id": occupation.id, "experience_level": "senior",
                 "required_skill_ids": [required_skill.id], "preferred_skill_ids": [preferred_skill.id],
@@ -101,7 +101,7 @@ def test_patch_job_details_updates_fields_and_replaces_skills(matching_db_sessio
             f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
             json={
                 "title": "Senior Backend Engineer", "company_name": "Acme Co",
-                "description": "Updated desc", "location_city": "Dallas", "location_region": "TX",
+                "description": "Updated desc", "location_city": "Dallas",
                 "salary_min": 100000, "salary_max": 150000, "experience_level": "expert",
                 "required_skill_ids": [new_required.id], "preferred_skill_ids": [new_preferred.id],
             },
@@ -117,6 +117,60 @@ def test_patch_job_details_updates_fields_and_replaces_skills(matching_db_sessio
         app.dependency_overrides.clear()
 
 
+def test_patch_job_details_sets_postal_code_and_country(matching_db_session):
+    job = _make_job(matching_db_session)
+    matching_db_session.commit()
+    client = _client_bound_to(matching_db_session)
+    try:
+        response = client.patch(
+            f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
+            json={
+                "title": job.title, "company_name": job.company_name, "description": "desc",
+                "location_city": "Austin", "postal_code": "78701", "country": "USA",
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["postal_code"] == "78701"
+        assert body["country"] == "USA"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_job_details_does_not_overwrite_location_region(matching_db_session):
+    job = _make_job(matching_db_session)
+    matching_db_session.commit()
+    client = _client_bound_to(matching_db_session)
+    try:
+        response = client.patch(
+            f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
+            json={"title": job.title, "company_name": job.company_name, "description": "desc", "location_city": "Dallas"},
+        )
+        assert response.status_code == 200
+        matching_db_session.refresh(job)
+        assert job.location_region == "TX"
+        assert job.location_city == "Dallas"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_job_defaults_location_region_to_unknown_placeholder(matching_db_session):
+    client = _client_bound_to(matching_db_session)
+    try:
+        response = client.post(
+            "/jobs", headers=API_KEY_HEADERS,
+            json={
+                "posted_by_keycloak_user_id": "employer-placeholder",
+                "title": "X", "company_name": "Y", "description": "Z", "location_city": "Austin",
+            },
+        )
+        assert response.status_code == 201
+        job = matching_db_session.get(Job, response.json()["id"])
+        assert job.location_region == "Unknown"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_patch_job_details_returns_404_for_missing_job(matching_db_session):
     client = _client_bound_to(matching_db_session)
     try:
@@ -124,7 +178,7 @@ def test_patch_job_details_returns_404_for_missing_job(matching_db_session):
             "/jobs/999999999/details", headers=API_KEY_HEADERS,
             json={
                 "title": "X", "company_name": "Y", "description": "Z",
-                "location_city": "Austin", "location_region": "TX",
+                "location_city": "Austin",
             },
         )
         assert response.status_code == 404
@@ -145,7 +199,7 @@ def test_patch_job_details_dedupes_a_skill_listed_as_both_required_and_preferred
             f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
             json={
                 "title": "X", "company_name": "Y", "description": "Z",
-                "location_city": "Austin", "location_region": "TX",
+                "location_city": "Austin",
                 "required_skill_ids": [shared_skill.id], "preferred_skill_ids": [shared_skill.id],
             },
         )
@@ -165,7 +219,7 @@ def test_create_job_rejects_more_than_ten_required_skills(matching_db_session):
             json={
                 "posted_by_keycloak_user_id": "employer-abc",
                 "title": "X", "company_name": "Y", "description": "Z",
-                "location_city": "Austin", "location_region": "TX",
+                "location_city": "Austin",
                 "required_skill_ids": list(range(1, 12)),
             },
         )

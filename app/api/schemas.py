@@ -151,13 +151,18 @@ class SkillCreate(BaseModel):
 class JobCreate(BaseModel):
     """Issue #22: an employer-posted job, owned by the posting Keycloak user
     (trusted as given by the frontend, same boundary as ProfileCreate above).
+    Issue #23: `location_region` is deliberately absent -- still read by
+    app/matching/scoring.py's _location_component, but the frontend no
+    longer collects it, so a new job gets the same "Unknown" placeholder
+    convention as Candidate registration (see app/api/job_routes.py).
     """
     posted_by_keycloak_user_id: str
     title: str
     company_name: str
     description: str
     location_city: str
-    location_region: str
+    postal_code: str | None = None
+    country: str | None = None
     salary_min: int | None = None
     salary_max: int | None = None
     primary_occupation_id: int | None = None
@@ -186,7 +191,8 @@ class JobDetailsOut(BaseModel):
     company_name: str
     description: str
     location_city: str
-    location_region: str
+    postal_code: str | None
+    country: str | None
     salary_min: int | None
     salary_max: int | None
     primary_occupation_id: int | None
@@ -196,11 +202,14 @@ class JobDetailsOut(BaseModel):
 
 
 class JobDetailsUpdate(BaseModel):
+    """Issue #23: `location_region` is deliberately absent -- see
+    JobCreate's docstring; the PATCH handler leaves it untouched."""
     title: str
     company_name: str
     description: str
     location_city: str
-    location_region: str
+    postal_code: str | None = None
+    country: str | None = None
     salary_min: int | None = None
     salary_max: int | None = None
     primary_occupation_id: int | None = None

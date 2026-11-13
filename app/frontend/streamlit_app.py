@@ -348,7 +348,7 @@ else:
         job_id = None
         details = {
             "title": "", "company_name": st.session_state["profile"].get("company_name") or "",
-            "description": "", "location_city": "", "location_region": "",
+            "description": "", "location_city": "", "postal_code": "", "country": "",
             "salary_min": None, "salary_max": None, "primary_occupation_id": None,
             "experience_level": "entry_level", "required_skill_ids": [], "preferred_skill_ids": [],
         }
@@ -361,11 +361,13 @@ else:
     company_name = st.text_input("Company name", value=details["company_name"])
     description = st.text_area("Job description", value=details["description"])
 
-    city_col, region_col = st.columns(2)
-    with city_col:
+    job_city_col, job_postal_col, job_country_col = st.columns(3)
+    with job_city_col:
         location_city = st.text_input("City", value=details["location_city"], key="job_city")
-    with region_col:
-        location_region = st.text_input("Region/State", value=details["location_region"], key="job_region")
+    with job_postal_col:
+        postal_code = st.text_input("Postal code", value=details["postal_code"] or "", key="job_postal_code")
+    with job_country_col:
+        country = st.text_input("Country", value=details["country"] or "", key="job_country")
 
     salary_col1, salary_col2 = st.columns(2)
     with salary_col1:
@@ -439,13 +441,15 @@ else:
 
         if job_id is None:
             saved = create_job(
-                keycloak_user_id, title, company_name, description, location_city, location_region,
+                keycloak_user_id, title, company_name, description, location_city,
+                postal_code or None, country or None,
                 salary_min or None, salary_max or None, occupation_id,
                 JOB_EXPERIENCE_LEVELS[experience_label], required_skill_ids, preferred_skill_ids,
             )
         else:
             saved = update_job_details(
-                job_id, title, company_name, description, location_city, location_region,
+                job_id, title, company_name, description, location_city,
+                postal_code or None, country or None,
                 salary_min or None, salary_max or None, occupation_id,
                 JOB_EXPERIENCE_LEVELS[experience_label], required_skill_ids, preferred_skill_ids,
             )

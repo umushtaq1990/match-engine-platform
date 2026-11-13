@@ -51,7 +51,8 @@ def _to_job_details_out(db: Session, job: Job) -> JobDetailsOut:
         company_name=job.company_name,
         description=job.description_raw,
         location_city=job.location_city,
-        location_region=job.location_region,
+        postal_code=job.postal_code,
+        country=job.country,
         salary_min=job.salary_min,
         salary_max=job.salary_max,
         primary_occupation_id=job.occupation_id,
@@ -70,7 +71,11 @@ def create_job(payload: JobCreate, db: Session = DbSession):
         company_name=payload.company_name,
         description_raw=payload.description,
         location_city=payload.location_city,
-        location_region=payload.location_region,
+        # Issue #23: not collected by the form -- same "Unknown" placeholder
+        # convention as _get_or_create_candidate in profile_routes.py.
+        location_region="Unknown",
+        postal_code=payload.postal_code,
+        country=payload.country,
         salary_min=payload.salary_min,
         salary_max=payload.salary_max,
         occupation_id=payload.primary_occupation_id,
@@ -121,7 +126,8 @@ def update_job_details(job_id: int, payload: JobDetailsUpdate, db: Session = DbS
     job.company_name = payload.company_name
     job.description_raw = payload.description
     job.location_city = payload.location_city
-    job.location_region = payload.location_region
+    job.postal_code = payload.postal_code
+    job.country = payload.country
     job.salary_min = payload.salary_min
     job.salary_max = payload.salary_max
     job.occupation_id = payload.primary_occupation_id
