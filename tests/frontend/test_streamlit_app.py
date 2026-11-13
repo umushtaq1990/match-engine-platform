@@ -122,29 +122,50 @@ def test_employer_get_candidate_matches_calls_correct_endpoint(mock_get):
 
 
 # --- Login/registration gate (_require_login) ------------------------------
-# Both login and registration are inline forms on this page (text_input
-# fields, see _require_login's docstring) — no redirect to a separate
-# Keycloak-hosted page for either one. The real Keycloak calls (correct vs.
-# wrong password, real user creation, real token response) are verified
-# manually against the running stack — see
+# Login and registration are two separate screens on this page (toggled via
+# session_state["auth_view"], see _require_login's docstring) — no redirect
+# to a separate Keycloak-hosted page for either one. The real Keycloak calls
+# (correct vs. wrong password, real user creation, real token response) are
+# verified manually against the running stack — see
 # docs/architecture/ingress-and-identity.md Verification & Results. These
 # tests cover what AppTest *can* exercise headlessly: the gate blocking
-# access, both forms' submission, and not blocking access once a session
-# exists.
-#
-# Field order on the logged-out screen: [0] login username, [1] login
-# password, [2] registration full name, [3] registration email,
-# [4] registration password.
+# access, switching between the two screens, both forms' submission, and
+# not blocking access once a session exists.
 
-def test_unauthenticated_user_sees_login_and_registration_forms_not_the_app():
+def _register_screen() -> AppTest:
+    at = AppTest.from_file(APP_PATH).run()
+    toggle_button = next(b for b in at.button if "Register" in b.label and b.label != "Register")
+    return toggle_button.click().run()
+
+
+def test_unauthenticated_user_sees_only_the_login_screen_not_the_app():
     at = AppTest.from_file(APP_PATH).run()
     assert not at.exception
     assert not at.number_input  # _require_login() st.stop()s before the rest of the app ever renders
-    assert any("Log in" in m.value for m in at.markdown)
-    assert any("New here" in m.value for m in at.markdown)
-    assert len(at.text_input) == 5
+    assert "Talent Matching Platform" in at.title[0].value
+    assert len(at.text_input) == 2
     assert any(b.label == "Log in" for b in at.button)
+    assert any(b.label == "New here? Register" for b in at.button)
+    assert not any(ti.label == "Full name" for ti in at.text_input)
+
+
+def test_clicking_register_toggle_shows_only_the_registration_screen():
+    at = _register_screen()
+    assert not at.exception
+    assert len(at.text_input) == 4
+    assert [ti.label for ti in at.text_input] == ["Full name", "Email", "Password", "Confirm password"]
     assert any(b.label == "Register" for b in at.button)
+    assert any(b.label == "Already have an account? Log in" for b in at.button)
+    assert not any(ti.label == "Username" for ti in at.text_input)
+
+
+def test_clicking_log_in_toggle_from_registration_returns_to_login_screen():
+    at = _register_screen()
+    back_button = next(b for b in at.button if "Log in" in b.label and b.label != "Log in")
+    at = back_button.click().run()
+    assert not at.exception
+    assert len(at.text_input) == 2
+    assert any(b.label == "Log in" for b in at.button)
 
 
 @patch("app.frontend.profile_client.get_profile")
@@ -180,6 +201,20 @@ def test_submitting_invalid_login_credentials_shows_error_and_stays_on_login(moc
     assert any("Invalid username or password" in e.value for e in at.error)
 
 
+def test_submitting_registration_form_with_mismatched_passwords_shows_error():
+    at = _register_screen()
+    at.text_input[0].set_value("Ada Lovelace").run()
+    at.text_input[1].set_value("ada@example-synthetic.test").run()
+    at.text_input[2].set_value("s3cret-pw").run()
+    at.text_input[3].set_value("different-pw").run()
+    register_button = next(b for b in at.button if b.label == "Register")
+    at = register_button.click().run()
+
+    assert not at.exception
+    assert "id_token_claims" not in at.session_state
+    assert any("do not match" in e.value for e in at.error)
+
+
 @patch("app.frontend.profile_client.get_profile")
 @patch("app.frontend.oidc.requests.post")
 @patch("app.frontend.keycloak_admin.create_user")
@@ -194,10 +229,11 @@ def test_submitting_registration_form_creates_user_and_logs_in(
         json=lambda: {"id_token": _fake_id_token("ada@example-synthetic.test", sub="user-newuser")},
     )
     mock_get_profile.return_value = None
-    at = AppTest.from_file(APP_PATH).run()
-    at.text_input[2].set_value("Ada Lovelace").run()
-    at.text_input[3].set_value("ada@example-synthetic.test").run()
-    at.text_input[4].set_value("s3cret-pw").run()
+    at = _register_screen()
+    at.text_input[0].set_value("Ada Lovelace").run()
+    at.text_input[1].set_value("ada@example-synthetic.test").run()
+    at.text_input[2].set_value("s3cret-pw").run()
+    at.text_input[3].set_value("s3cret-pw").run()
     register_button = next(b for b in at.button if b.label == "Register")
     at = register_button.click().run()
 
@@ -217,10 +253,11 @@ def test_submitting_registration_form_creates_user_and_logs_in(
 def test_submitting_registration_form_with_duplicate_email_shows_error(mock_get_token, mock_create_user):
     mock_get_token.return_value = "fake-admin-token"
     mock_create_user.side_effect = ValueError("An account with that email already exists.")
-    at = AppTest.from_file(APP_PATH).run()
-    at.text_input[2].set_value("Ada Lovelace").run()
-    at.text_input[3].set_value("ada@example-synthetic.test").run()
-    at.text_input[4].set_value("s3cret-pw").run()
+    at = _register_screen()
+    at.text_input[0].set_value("Ada Lovelace").run()
+    at.text_input[1].set_value("ada@example-synthetic.test").run()
+    at.text_input[2].set_value("s3cret-pw").run()
+    at.text_input[3].set_value("s3cret-pw").run()
     register_button = next(b for b in at.button if b.label == "Register")
     at = register_button.click().run()
 
@@ -309,7 +346,7 @@ def test_logged_in_user_sees_the_real_app_not_the_login_link():
     at = _logged_in_app().run()
     assert not at.exception
     assert "Talent Matching Platform" in at.title[0].value
-    assert not any("Log in" in m.value for m in at.markdown)
+    assert not any(b.label == "Log in" for b in at.button)
     assert any("candidate" in b.label for b in at.sidebar.button)
 
 
@@ -318,4 +355,4 @@ def test_logout_button_clears_session_and_shows_login_link_again():
     logout_button = next(b for b in at.sidebar.button if "Log out" in b.label)
     at = logout_button.click().run()
     assert not at.exception
-    assert any("Log in" in m.value for m in at.markdown)
+    assert any(b.label == "Log in" for b in at.button)

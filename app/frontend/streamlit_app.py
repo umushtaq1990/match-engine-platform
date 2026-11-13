@@ -1,13 +1,14 @@
 """Minimal end-to-end web frontend: a thin UI over the existing
 matching/extraction APIs.
 
-Users register and log in directly on this page (full name/email/password
-to register, username/password to log in — no redirect to a separate
-Keycloak-hosted page) and fill in a one-time profile form (name,
-candidate/employer role, company name) on first login (issue #15/#16), but
-candidate/job *records* are still the already-seeded synthetic dataset, not
-something users create here: a candidate picks an existing candidate_id, an
-employer picks an existing job_id. See docs/architecture/frontend.md.
+Users register and log in on this own page as two separate screens (a
+"New here? Register"/"Already have an account?" toggle switches between
+them) — no redirect to a separate Keycloak-hosted page for either one —
+then fill in a one-time profile form (name, candidate/employer role,
+company name) on first login (issue #15/#16), but candidate/job *records*
+are still the already-seeded synthetic dataset, not something users create
+here: a candidate picks an existing candidate_id, an employer picks an
+existing job_id. See docs/architecture/frontend.md.
 """
 import os
 
@@ -31,23 +32,8 @@ HEADERS = {"X-API-Key": API_KEY}
 MAX_CV_SIZE_BYTES = 2 * 1024 * 1024
 
 
-def _require_login() -> None:
-    """Both login and registration happen inline on this page — no redirect
-    to a separate Keycloak-hosted page. Login is a Resource Owner Password
-    grant (`password_grant_login` in oidc.py); registration creates the user
-    directly via the Keycloak Admin API (`create_user` in keycloak_admin.py)
-    and then immediately logs them in the same way. See
-    docs/architecture/ingress-and-identity.md Known Limitations for the
-    tradeoff this accepts (the app itself handles the raw password, rather
-    than never seeing it).
-    """
-    if "id_token_claims" in st.session_state:
-        return
-
-    st.set_page_config(page_title="Project JME", page_icon="🧩")
+def _render_login_screen() -> None:
     st.title("Talent Matching Platform")
-
-    st.markdown("### Log in")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password", key="login_password")
     if st.button("Log in"):
@@ -59,21 +45,57 @@ def _require_login() -> None:
             st.session_state["id_token_claims"] = decode_id_token(token_json["id_token"])
             st.rerun()
 
-    st.markdown("### New here?")
+    if st.button("New here? Register"):
+        st.session_state["auth_view"] = "register"
+        st.rerun()
+
+
+def _render_registration_screen() -> None:
+    st.title("Talent Matching Platform")
     full_name = st.text_input("Full name")
     email = st.text_input("Email")
     new_password = st.text_input("Password", type="password", key="register_password")
+    confirm_password = st.text_input("Confirm password", type="password", key="register_password_confirm")
     if st.button("Register"):
-        try:
-            admin_token = get_admin_token()
-            create_user(email, full_name, new_password, admin_token)
-            token_json = password_grant_login(email, new_password)
-        except ValueError as exc:
-            st.error(str(exc))
+        if new_password != confirm_password:
+            st.error("Passwords do not match.")
         else:
-            st.session_state["id_token_claims"] = decode_id_token(token_json["id_token"])
-            st.session_state["pending_full_name"] = full_name
-            st.rerun()
+            try:
+                admin_token = get_admin_token()
+                create_user(email, full_name, new_password, admin_token)
+                token_json = password_grant_login(email, new_password)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                st.session_state["id_token_claims"] = decode_id_token(token_json["id_token"])
+                st.session_state["pending_full_name"] = full_name
+                st.rerun()
+
+    if st.button("Already have an account? Log in"):
+        st.session_state["auth_view"] = "login"
+        st.rerun()
+
+
+def _require_login() -> None:
+    """Both login and registration happen inline on this page as separate
+    screens (toggled via `session_state["auth_view"]`) — no redirect to a
+    separate Keycloak-hosted page. Login is a Resource Owner Password grant
+    (`password_grant_login` in oidc.py); registration creates the user
+    directly via the Keycloak Admin API (`create_user` in keycloak_admin.py)
+    and then immediately logs them in the same way. See
+    docs/architecture/ingress-and-identity.md Known Limitations for the
+    tradeoff this accepts (the app itself handles the raw password, rather
+    than never seeing it).
+    """
+    if "id_token_claims" in st.session_state:
+        return
+
+    st.set_page_config(page_title="Project JME", page_icon="🧩")
+
+    if st.session_state.get("auth_view") == "register":
+        _render_registration_screen()
+    else:
+        _render_login_screen()
 
     st.stop()
 
