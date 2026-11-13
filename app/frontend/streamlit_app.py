@@ -1,15 +1,12 @@
-"""Minimal end-to-end web frontend (Phase 27): a thin UI over the existing
-matching/extraction APIs, nothing more. Deliberately basic per the brief —
-no auth, no new backend logic, no candidate/job creation — this closes the
-one real gap every prior phase left open: the whole platform was API-only,
-with no way for a human to actually click through the flow it's built for.
+"""Minimal end-to-end web frontend: a thin UI over the existing
+matching/extraction APIs.
 
-Reuses the already-seeded synthetic dataset rather than registration: a
+Users self-register their identity via Keycloak (issue #14) and pick a
+candidate/employer role on first login, but candidate/job *records* are still
+the already-seeded synthetic dataset, not something users create here: a
 candidate picks an existing candidate_id, an employer picks an existing
 job_id. See docs/architecture/frontend.md.
 """
-import base64
-import json
 import os
 import secrets
 import time
@@ -18,10 +15,18 @@ import requests
 import streamlit as st
 
 from app.common.logging import setup_logging
+from app.frontend.keycloak_admin import assign_realm_role, get_admin_token
+from app.frontend.oidc import (
+    build_auth_url,
+    build_registration_url,
+    decode_id_token,
+    exchange_code_for_token,
+    is_state_valid,
+)
 
 setup_logging("frontend")
 
-# Phase 28: routed through the API Gateway (docker/nginx-gateway/nginx.conf),
+# routed through the API Gateway (docker/nginx-gateway/nginx.conf),
 # not called directly — api/extraction still see identical paths, the
 # Gateway strips its routing prefix. See docs/architecture/ingress-and-identity.md.
 API_URL = os.environ.get("API_URL", "http://gateway/matching")
@@ -30,34 +35,12 @@ API_KEY = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
 HEADERS = {"X-API-Key": API_KEY}
 MAX_CV_SIZE_BYTES = 2 * 1024 * 1024
 
-# Phase 29: OIDC login gate (Keycloak). Two issuer URLs: the browser follows
+# OIDC login gate (Keycloak). Two issuer URLs: the browser follows
 # the public one, token exchange happens server-side against the internal
 # one — see docs/architecture/ingress-and-identity.md for why both are needed. This is a human/browser
 # login gate only; JME_API_KEY above is unchanged and still what the APIs
-# themselves check.
-OIDC_CLIENT_ID = "jme-frontend"
-OIDC_PUBLIC_ISSUER = os.environ.get("OIDC_PUBLIC_ISSUER", "http://localhost:8180/realms/jme")
-OIDC_INTERNAL_ISSUER = os.environ.get("OIDC_INTERNAL_ISSUER", "http://keycloak:8080/realms/jme")
-OIDC_REDIRECT_URI = os.environ.get("OIDC_REDIRECT_URI", "http://localhost:8080/")
-
-# A real bug, found by actually clicking through the login in a browser (not
-# just a scripted HTTP client): clicking the "Log in with SSO" link navigates
-# the browser away to Keycloak's own page, and Keycloak's redirect back is a
-# fresh pageload — Streamlit gives that a brand-new session with empty
-# st.session_state, so a `state` value stored in st.session_state before the
-# redirect is always gone by the time the callback arrives.
-#
-# A first fix attempt moved the state into a plain module-level dict, assuming
-# that — since `frontend` runs as a single process — it would survive the
-# round trip. It didn't: confirmed live (via temporary debug logging) that the
-# dict was empty again on the very next check, immediately after being
-# populated. Root cause: Streamlit re-executes the *entire script file*
-# top-to-bottom on every rerun (that's its execution model), so a plain
-# `= {}` module-level assignment resets the dict to empty on every single
-# rerun, not just across the external redirect. `st.cache_resource` is
-# Streamlit's actual mechanism for a value that survives reruns within one
-# process — the factory function below only actually runs once; every rerun
-# gets back the same dict object.
+# themselves check. Pure OIDC helpers live in app/frontend/oidc.py so they're
+# importable and unit-testable without running this whole script.
 _OIDC_STATE_TTL_SECONDS = 600
 
 
@@ -91,60 +74,84 @@ def _require_login() -> None:
     if "code" in params and "state" in params:
         returned_state = params.get("state")
         pending = _pending_oidc_states()
-        if returned_state not in pending:
+        if not is_state_valid(returned_state, pending):
             st.error("OIDC state mismatch — possible CSRF, please log in again.")
             st.query_params.clear()
             st.stop()
         del pending[returned_state]
-        token_resp = requests.post(
-            f"{OIDC_INTERNAL_ISSUER}/protocol/openid-connect/token",
-            data={
-                "grant_type": "authorization_code",
-                "code": params["code"],
-                "redirect_uri": OIDC_REDIRECT_URI,
-                "client_id": OIDC_CLIENT_ID,
-            },
-            timeout=10,
-        )
-        st.query_params.clear()
-        if token_resp.status_code != 200:
-            st.error(f"Login failed: {token_resp.text}")
+        try:
+            token_json = exchange_code_for_token(params["code"])
+        except ValueError as exc:
+            st.query_params.clear()
+            st.error(str(exc))
             st.stop()
-        id_token = token_resp.json()["id_token"]
-        payload_b64 = id_token.split(".")[1]
-        payload_b64 += "=" * (-len(payload_b64) % 4)
-        st.session_state["id_token_claims"] = json.loads(base64.urlsafe_b64decode(payload_b64))
+        st.query_params.clear()
+        st.session_state["id_token_claims"] = decode_id_token(token_json["id_token"])
         st.rerun()
 
     _prune_stale_oidc_states()
     state = secrets.token_urlsafe(16)
     _pending_oidc_states()[state] = time.time()
-    auth_url = (
-        f"{OIDC_PUBLIC_ISSUER}/protocol/openid-connect/auth"
-        f"?client_id={OIDC_CLIENT_ID}&response_type=code&scope=openid"
-        f"&redirect_uri={OIDC_REDIRECT_URI}&state={state}"
-    )
+    auth_url = build_auth_url(state)
+    registration_url = build_registration_url(state)
     st.set_page_config(page_title="Project JME", page_icon="🧩")
-    st.title("Project JME — Talent Matching Platform")
-    st.markdown(f"### [Log in with SSO]({auth_url})")
-    st.caption("Authentication via Keycloak. See docs/architecture/ingress-and-identity.md.")
+    st.title("Talent Matching Platform")
+    st.markdown(f"### [Log in]({auth_url})")
+    st.markdown(f"New here? [Register]({registration_url})")
     st.stop()
+
+
+def _require_role() -> str:
+    """Returns the user's candidate/employer realm role. A user with neither
+    role yet (brand-new self-registration, issue #14) is shown a one-time
+    picker that assigns the role via Keycloak's Admin API (keycloak_admin.py)
+    using the jme-admin service account — least-privilege, separate from the
+    end-user OIDC login above. The real role claim then appears automatically
+    on that user's *next* login (ID token protocol mapper, jme-realm.json);
+    this session just uses the freshly-chosen value directly so the user
+    isn't forced to log out and back in immediately."""
+    if "chosen_role" in st.session_state:
+        return st.session_state["chosen_role"]
+
+    claims = st.session_state["id_token_claims"]
+    roles = claims.get("realm_access", {}).get("roles", [])
+    for role in ("candidate", "employer"):
+        if role in roles:
+            return role
+
+    st.title("Talent Matching Platform")
+    st.subheader("Welcome! Are you a candidate or an employer?")
+    col1, col2 = st.columns(2)
+    chosen = None
+    if col1.button("I'm a Candidate", use_container_width=True):
+        chosen = "candidate"
+    if col2.button("I'm an Employer", use_container_width=True):
+        chosen = "employer"
+    if chosen is None:
+        st.stop()
+
+    admin_token = get_admin_token()
+    assign_realm_role(claims["sub"], chosen, admin_token)
+    st.session_state["chosen_role"] = chosen
+    st.rerun()
 
 
 _require_login()
 
-st.set_page_config(page_title="Project JME", page_icon="🧩", layout="wide")
-st.title("Project JME — Talent Matching Platform")
+st.set_page_config(page_title="Talent Matching Platform", page_icon="🧩", layout="wide")
+role = _require_role()
+
+st.title("Talent Matching Platform")
 st.caption(
     "A thin demo UI over the real matching/extraction APIs — reuses the existing synthetic "
-    "dataset (no registration), see docs/architecture/frontend.md for scope and limitations."
+    "dataset for candidate/job records, see docs/architecture/frontend.md for scope and limitations."
 )
 username = st.session_state["id_token_claims"].get("preferred_username", "?")
 if st.sidebar.button(f"Log out ({username})"):
     st.session_state.clear()
     st.rerun()
 
-role = st.sidebar.radio("I am a...", ["Candidate", "Employer"])
+st.sidebar.caption(f"Signed in as {role}.")
 
 
 def _render_matches(matches: list[dict]) -> None:
@@ -164,7 +171,7 @@ def _render_matches(matches: list[dict]) -> None:
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
 
-if role == "Candidate":
+if role == "candidate":
     st.header("Candidate")
     candidate_id = st.number_input("Candidate ID (from the seeded dataset)", min_value=1, value=1, step=1)
 

@@ -216,6 +216,10 @@ services:
       OIDC_PUBLIC_ISSUER: http://localhost:8180/realms/jme
       OIDC_INTERNAL_ISSUER: http://keycloak:8080/realms/jme
       OIDC_REDIRECT_URI: http://localhost:8080/
+      # Registration flow (issue #14): least-privilege service-account client
+      # used only to assign a candidate/employer realm role after first login.
+      KEYCLOAK_ADMIN_CLIENT_ID: jme-admin
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
     depends_on:
       api:
         condition: service_healthy
@@ -244,6 +248,12 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Must match the hardcoded "secret" field on the jme-admin client in
+      # jme-realm.json (Keycloak v26's realm-import doesn't resolve ${env.*}
+      # placeholders for client secrets) -- kept here only so both are
+      # documented together and so the Frontend's copy below is visibly the
+      # same value, not because Keycloak itself reads this var.
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
     volumes:
       - ./docker/keycloak/jme-realm.json:/opt/keycloak/data/import/jme-realm.json:ro
     healthcheck:

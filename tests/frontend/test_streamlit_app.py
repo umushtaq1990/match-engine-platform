@@ -19,27 +19,30 @@ from streamlit.testing.v1 import AppTest
 APP_PATH = "app/frontend/streamlit_app.py"
 
 
-def _logged_in_app() -> AppTest:
+def _logged_in_app(role: str = "candidate") -> AppTest:
     at = AppTest.from_file(APP_PATH)
-    at.session_state["id_token_claims"] = {"preferred_username": "candidate"}
+    at.session_state["id_token_claims"] = {
+        "preferred_username": role,
+        "sub": f"user-{role}",
+        "realm_access": {"roles": [role]},
+    }
     return at
 
 
 def test_app_renders_without_error():
     at = _logged_in_app().run()
     assert not at.exception
-    assert "Project JME" in at.title[0].value
+    assert "Talent Matching Platform" in at.title[0].value
 
 
-def test_candidate_is_the_default_role():
-    at = _logged_in_app().run()
-    assert at.sidebar.radio[0].value == "Candidate"
+def test_candidate_role_claim_shows_candidate_flow():
+    at = _logged_in_app(role="candidate").run()
+    assert not at.exception
     assert any("Candidate" in h.value for h in at.header)
 
 
-def test_switching_to_employer_role_shows_job_id_input():
-    at = _logged_in_app().run()
-    at.sidebar.radio[0].set_value("Employer").run()
+def test_employer_role_claim_shows_job_id_input():
+    at = _logged_in_app(role="employer").run()
     assert not at.exception
     assert any("Employer" in h.value for h in at.header)
     assert any("Job ID" in ni.label for ni in at.number_input)
@@ -96,8 +99,7 @@ def test_upload_cv_rejects_oversized_file_client_side(mock_post):
 @patch("requests.get")
 def test_employer_get_candidate_matches_calls_correct_endpoint(mock_get):
     mock_get.return_value = MagicMock(status_code=200, headers={}, json=lambda: [])
-    at = _logged_in_app().run()
-    at.sidebar.radio[0].set_value("Employer").run()
+    at = _logged_in_app(role="employer").run()
     get_button = next(b for b in at.button if b.label == "Get Matching Candidates")
     get_button.click().run(timeout=10)
 
@@ -118,18 +120,54 @@ def test_employer_get_candidate_matches_calls_correct_endpoint(mock_get):
 def test_unauthenticated_user_sees_login_link_not_the_app():
     at = AppTest.from_file(APP_PATH).run()
     assert not at.exception
-    assert not at.sidebar.radio  # _require_login() st.stop()s before the role picker ever renders
-    login_markdown = next(m for m in at.markdown if "Log in with SSO" in m.value)
+    assert not at.number_input  # _require_login() st.stop()s before the rest of the app ever renders
+    login_markdown = next(m for m in at.markdown if "Log in" in m.value)
     assert "client_id=jme-frontend" in login_markdown.value
     assert "response_type=code" in login_markdown.value
     assert "redirect_uri=http://localhost:8080/" in login_markdown.value
+    registration_markdown = next(m for m in at.markdown if "Register" in m.value)
+    assert "/protocol/openid-connect/registrations?" in registration_markdown.value
+
+
+# --- Issue #14: first-login role picker for users with no realm role yet --
+
+def _logged_in_app_without_role() -> AppTest:
+    at = AppTest.from_file(APP_PATH)
+    at.session_state["id_token_claims"] = {
+        "preferred_username": "newuser",
+        "sub": "user-newuser",
+        "realm_access": {"roles": []},
+    }
+    return at
+
+
+def test_new_user_with_no_role_sees_role_picker_not_the_app():
+    at = _logged_in_app_without_role().run()
+    assert not at.exception
+    assert not at.number_input  # neither Candidate nor Employer flow rendered yet
+    assert any("candidate or an employer" in s.value for s in at.subheader)
+    assert any(b.label == "I'm a Candidate" for b in at.button)
+    assert any(b.label == "I'm an Employer" for b in at.button)
+
+
+@patch("app.frontend.keycloak_admin.assign_realm_role")
+@patch("app.frontend.keycloak_admin.get_admin_token")
+def test_choosing_candidate_role_assigns_it_and_shows_candidate_flow(mock_get_token, mock_assign_role):
+    mock_get_token.return_value = "fake-admin-token"
+    at = _logged_in_app_without_role().run()
+    pick_button = next(b for b in at.button if b.label == "I'm a Candidate")
+    at = pick_button.click().run()
+
+    assert not at.exception
+    mock_assign_role.assert_called_once_with("user-newuser", "candidate", "fake-admin-token")
+    assert any("Candidate" in h.value for h in at.header)
 
 
 def test_logged_in_user_sees_the_real_app_not_the_login_link():
     at = _logged_in_app().run()
     assert not at.exception
-    assert "Project JME" in at.title[0].value
-    assert not any("Log in with SSO" in m.value for m in at.markdown)
+    assert "Talent Matching Platform" in at.title[0].value
+    assert not any("Log in" in m.value for m in at.markdown)
     assert any("candidate" in b.label for b in at.sidebar.button)
 
 
@@ -138,4 +176,4 @@ def test_logout_button_clears_session_and_shows_login_link_again():
     logout_button = next(b for b in at.sidebar.button if "Log out" in b.label)
     at = logout_button.click().run()
     assert not at.exception
-    assert any("Log in with SSO" in m.value for m in at.markdown)
+    assert any("Log in" in m.value for m in at.markdown)
