@@ -29,11 +29,14 @@ touches Postgres directly, it only calls `api` and `extraction` over HTTP, the s
 external client would. This is also the smallest image in the project: no `app/db.py`, no ORM, no
 `requirements-base.txt` at all.
 
-**Reuses the existing seeded dataset for candidate/job records, no data-entry UI for them**: a
-candidate enters an existing `candidate_id`, an employer enters an existing `job_id`. Building a
-UI to create *new* candidate/job records would mean a real write-path into
-`app/ingestion/source_models.py`'s tables, deliberately not built for a UI whose whole point is
-demonstrating the matching flow, not demonstrating data entry (see Roadmap).
+**Reuses the existing seeded dataset for candidate/job records, no data-entry UI for them**: an
+employer enters an existing `job_id`. Building a UI to create *new* candidate/job records would
+mean a real write-path into `app/ingestion/source_models.py`'s tables, deliberately not built for
+a UI whose whole point is demonstrating the matching flow, not demonstrating data entry (see
+Roadmap). The Candidate side no longer asks for a `candidate_id` at all (MVP demo simplification):
+it's hardcoded to `1`, since there's still no real link between a logged-in Keycloak identity and
+a specific candidate record — the login email is the unique identifier for *auth*, not (yet)
+matched to a `candidates` row. See Known Limitations.
 
 This is distinct from *user* identity, which issue #14 did add a minimal real model for: Keycloak
 self-registration plus a `candidate`/`employer` realm role, assigned via a one-time in-app picker
@@ -52,11 +55,15 @@ the logged-out screen explicit "Log in" / "New here?" section headings — see
 `app/frontend/streamlit_app.py`  one script, two modes selected by the user's real
 `candidate`/`employer` role, sourced from the `user_profiles` table (`_require_profile()`, see
 [ingress-and-identity.md](ingress-and-identity.md) Part 2) rather than an unauthenticated UI toggle:
-- **Candidate**: enter a `candidate_id` → upload a CV (`POST /candidates/{id}/cv` on `extraction`,
-  client-side size check mirrors the server's 2MB cap before even sending the request) → click "Get
-  My Job Matches" (`GET /candidates/{id}/job-matches` on `api`) → results rendered as a table
-  (label, eligibility, score, explanation), with the `X-Ranking-Mode` response header surfaced so
-  it's visible whether blended or rule-based ranking was used.
+- **Candidate**: a hardcoded `candidate_id = 1` (see Architecture & Design above) is used
+  throughout. "Upload your CV" first calls `GET /candidates/{id}/cv` on `extraction` — if a CV is
+  already on file, its filename/size/upload date are shown and the uploader is labeled "Replace
+  your CV"; otherwise it's a plain upload prompt. Uploading (`POST /candidates/{id}/cv`, client-side
+  size check mirrors the server's 2MB cap before even sending the request) re-renders the page so
+  the "current CV on file" info reflects the new upload. "Show My Top 10 Job Matches"
+  (`GET /candidates/{id}/job-matches?top_k=10` on `api`) renders results as a table (label,
+  eligibility, score, explanation), with the `X-Ranking-Mode` response header surfaced so it's
+  visible whether blended or rule-based ranking was used.
 - **Employer**: enter a `job_id` → click "Get Matching Candidates" (`GET /jobs/{id}/candidate-matches`
   on `api`) → same results table.
 
@@ -83,11 +90,13 @@ browser automation tool, runs the real script headlessly and simulates widget in
 
 Also confirmed the frontend container reaches `api` over the **internal Docker network** (not just the host-mapped port) by running the exact `requests.get` call from inside the running `jme-frontend-1` container itself, the way it will actually be called in practice, not assumed from the host-side test.
 
+**MVP simplification round** (removed the `candidate_id` input, added the existing-CV check, renamed the job-matches button): verified live against the running stack — `GET /candidates/1/cv` returns `404` before any upload (so the plain upload prompt renders, not the "current CV on file" info box) and `GET /candidates/1/job-matches?top_k=10` returns real ranked results. `tests/frontend/test_streamlit_app.py` covers both the existing-CV and no-existing-CV render paths headlessly (mocked `requests.get`).
+
 **CI**: `fresh-volume-smoke-test` builds and Trivy-scans the `frontend` image, starts it after `api`/`extraction` are healthy, confirms `/_stcore/health` and the main page both return `200`, and runs the same internal-network check inside the container.
 
 ## Known Limitations
 
-- Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization doesn't: any logged-in user, regardless of their `candidate`/`employer` role, can still type in any `candidate_id`/`job_id` in the seeded dataset nothing ties a specific Keycloak identity to a specific `candidate_id`. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
+- Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization doesn't: every candidate sees the same hardcoded `candidate_id = 1` (there's no per-user candidate_id input anymore, an MVP demo simplification), and an employer can still type in any `job_id` in the seeded dataset nothing ties a specific Keycloak identity to a specific `candidate_id`/`job_id` yet. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9). A natural next step would be a real lookup (e.g. matching the login email to a `candidates.email` row, or writing a `candidate_id` onto `user_profiles` at registration) rather than hardcoding — not built yet.
 - No candidate/job creation or editing : only the two read-heavy flows (upload CV, view matches) exist. A real portal would need profile management; deliberately out of scope for v1.
 - CV upload and skill extraction are still two separate, un-chained steps (see `docs/architecture/application-services/skill-extraction.md`'s own Known Limitations), uploading a CV here does not automatically extract skills from it or affect the candidate's match scores.
 - `streamlit.testing.v1.AppTest` has no built-in way to simulate an actual file upload, so the "upload succeeds and shows a success message" path is verified only against the live stack, not as an automated unit test.

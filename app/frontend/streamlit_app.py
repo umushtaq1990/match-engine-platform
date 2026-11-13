@@ -152,10 +152,6 @@ st.set_page_config(page_title="Talent Matching Platform", page_icon="🧩", layo
 role = _require_profile()
 
 st.title("Talent Matching Platform")
-st.caption(
-    "A thin demo UI over the real matching/extraction APIs — reuses the existing synthetic "
-    "dataset for candidate/job records, see docs/architecture/frontend.md for scope and limitations."
-)
 username = st.session_state["id_token_claims"].get("preferred_username", "?")
 if st.sidebar.button(f"Log out ({username})"):
     st.session_state.clear()
@@ -182,11 +178,25 @@ def _render_matches(matches: list[dict]) -> None:
 
 
 if role == "candidate":
-    st.header("Candidate")
-    candidate_id = st.number_input("Candidate ID (from the seeded dataset)", min_value=1, value=1, step=1)
+    # MVP: no real link yet between a logged-in Keycloak identity and a
+    # specific candidate_id (the login email is the unique identifier for
+    # auth, but isn't matched to a candidate record) — a fixed id is used
+    # for this demo state. See docs/architecture/frontend.md Known Limitations.
+    candidate_id = 1
 
-    st.subheader("1. Upload your CV")
-    cv_file = st.file_uploader("PDF only, 2MB max", type=["pdf"])
+    st.subheader("Upload your CV")
+    existing_cv = requests.get(f"{EXTRACTION_URL}/candidates/{candidate_id}/cv", headers=HEADERS, timeout=10)
+    if existing_cv.status_code == 200:
+        cv_info = existing_cv.json()
+        st.info(
+            f"Current CV on file: **{cv_info['original_filename']}** "
+            f"({cv_info['size_bytes']} bytes, uploaded {cv_info['uploaded_at']})"
+        )
+        uploader_label = "Replace your CV (PDF only, 2MB max)"
+    else:
+        uploader_label = "PDF only, 2MB max"
+
+    cv_file = st.file_uploader(uploader_label, type=["pdf"])
     if st.button("Upload CV", disabled=cv_file is None):
         data = cv_file.getvalue()
         if len(data) > MAX_CV_SIZE_BYTES:
@@ -200,13 +210,14 @@ if role == "candidate":
             )
             if response.status_code == 201:
                 st.success(f"CV uploaded: {response.json()['original_filename']}")
+                st.rerun()
             else:
                 st.error(f"Upload failed ({response.status_code}): {response.text}")
 
-    st.subheader("2. Your job recommendations")
-    if st.button("Get My Job Matches"):
+    if st.button("Show My Top 10 Job Matches"):
         response = requests.get(
-            f"{API_URL}/candidates/{candidate_id}/job-matches", headers=HEADERS, timeout=10,
+            f"{API_URL}/candidates/{candidate_id}/job-matches",
+            headers=HEADERS, params={"top_k": 10}, timeout=10,
         )
         if response.status_code == 200:
             st.caption(f"Ranking mode: {response.headers.get('X-Ranking-Mode', 'unknown')}")

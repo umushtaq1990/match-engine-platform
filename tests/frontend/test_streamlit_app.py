@@ -41,16 +41,25 @@ def _logged_in_app(role: str = "candidate") -> AppTest:
     return at
 
 
-def test_app_renders_without_error():
+def _no_existing_cv(*args, **kwargs):
+    return MagicMock(status_code=404)
+
+
+@patch("requests.get")
+def test_app_renders_without_error(mock_get):
+    mock_get.side_effect = _no_existing_cv
     at = _logged_in_app().run()
     assert not at.exception
     assert "Talent Matching Platform" in at.title[0].value
 
 
-def test_candidate_role_claim_shows_candidate_flow():
+@patch("requests.get")
+def test_candidate_role_claim_shows_candidate_flow(mock_get):
+    mock_get.side_effect = _no_existing_cv
     at = _logged_in_app(role="candidate").run()
     assert not at.exception
-    assert any("Candidate" in h.value for h in at.header)
+    assert any("Upload your CV" in s.value for s in at.subheader)
+    assert any(b.label == "Show My Top 10 Job Matches" for b in at.button)
 
 
 def test_employer_role_claim_shows_job_id_input():
@@ -61,36 +70,75 @@ def test_employer_role_claim_shows_job_id_input():
 
 
 @patch("requests.get")
-def test_get_job_matches_renders_results_table(mock_get):
-    mock_get.return_value = MagicMock(
-        status_code=200,
-        headers={"X-Ranking-Mode": "blended"},
-        json=lambda: [{
-            "entity_id": 101, "label": "Backend Engineer", "eligible": True,
-            "ineligible_reason": None,
-            "score": {"skill": 0.8, "location": 1.0, "salary": 0.5, "occupation": 1.0, "total": 0.82},
-            "skill_gap": {"confirmed_absent_required": [], "not_recorded_required": [],
-                          "confirmed_absent_preferred": [], "not_recorded_preferred": []},
-            "explanation": "total score 0.82",
-        }],
-    )
+def test_existing_cv_is_shown_with_a_replace_option(mock_get):
+    def side_effect(url, *args, **kwargs):
+        if url.endswith("/cv"):
+            return MagicMock(
+                status_code=200,
+                json=lambda: {
+                    "candidate_id": 1, "original_filename": "resume.pdf", "content_type": "application/pdf",
+                    "size_bytes": 12345, "uploaded_at": "2026-01-01T00:00:00Z",
+                },
+            )
+        return MagicMock(status_code=404)
+    mock_get.side_effect = side_effect
+
     at = _logged_in_app().run()
-    get_matches_button = next(b for b in at.button if b.label == "Get My Job Matches")
+
+    assert not at.exception
+    assert any("resume.pdf" in i.value for i in at.info)
+    assert any("12345 bytes" in i.value for i in at.info)
+
+
+@patch("requests.get")
+def test_no_existing_cv_shows_no_cv_on_file_message(mock_get):
+    mock_get.side_effect = _no_existing_cv
+    at = _logged_in_app().run()
+
+    assert not at.exception
+    assert not at.info
+
+
+@patch("requests.get")
+def test_get_job_matches_renders_results_table(mock_get):
+    def side_effect(url, *args, **kwargs):
+        if url.endswith("/cv"):
+            return MagicMock(status_code=404)
+        return MagicMock(
+            status_code=200,
+            headers={"X-Ranking-Mode": "blended"},
+            json=lambda: [{
+                "entity_id": 101, "label": "Backend Engineer", "eligible": True,
+                "ineligible_reason": None,
+                "score": {"skill": 0.8, "location": 1.0, "salary": 0.5, "occupation": 1.0, "total": 0.82},
+                "skill_gap": {"confirmed_absent_required": [], "not_recorded_required": [],
+                              "confirmed_absent_preferred": [], "not_recorded_preferred": []},
+                "explanation": "total score 0.82",
+            }],
+        )
+    mock_get.side_effect = side_effect
+
+    at = _logged_in_app().run()
+    get_matches_button = next(b for b in at.button if b.label == "Show My Top 10 Job Matches")
     get_matches_button.click().run(timeout=10)
 
     assert not at.exception
-    mock_get.assert_called_once()
-    called_url = mock_get.call_args[0][0]
+    called_url, called_kwargs = mock_get.call_args.args[0], mock_get.call_args.kwargs
     assert called_url.endswith("/candidates/1/job-matches")
+    assert called_kwargs["params"] == {"top_k": 10}
     assert len(at.dataframe) == 1
 
 
 @patch("requests.get")
 def test_get_job_matches_shows_error_on_failure(mock_get):
-    mock_get.return_value = MagicMock(status_code=404, text="No candidate with id=999", headers={})
+    def side_effect(url, *args, **kwargs):
+        if url.endswith("/cv"):
+            return MagicMock(status_code=404)
+        return MagicMock(status_code=404, text="No candidate with id=1", headers={})
+    mock_get.side_effect = side_effect
+
     at = _logged_in_app().run()
-    at.number_input[0].set_value(999).run()
-    get_matches_button = next(b for b in at.button if b.label == "Get My Job Matches")
+    get_matches_button = next(b for b in at.button if b.label == "Show My Top 10 Job Matches")
     get_matches_button.click().run(timeout=10)
 
     assert not at.exception
@@ -98,7 +146,9 @@ def test_get_job_matches_shows_error_on_failure(mock_get):
 
 
 @patch("requests.post")
-def test_upload_cv_rejects_oversized_file_client_side(mock_post):
+@patch("requests.get")
+def test_upload_cv_rejects_oversized_file_client_side(mock_get, mock_post):
+    mock_get.side_effect = _no_existing_cv
     at = _logged_in_app().run()
     # No file uploaded in this headless test harness (AppTest has no file-upload
     # simulation), so the upload button stays disabled -- this test only
@@ -294,14 +344,16 @@ def test_new_user_with_no_profile_sees_profile_form_not_the_app(mock_get_profile
 
 @patch("app.frontend.profile_client.create_profile")
 @patch("app.frontend.profile_client.get_profile")
+@patch("requests.get")
 @patch("app.frontend.keycloak_admin.assign_realm_role")
 @patch("app.frontend.keycloak_admin.get_admin_token")
 def test_submitting_profile_form_as_candidate_assigns_role_and_shows_candidate_flow(
-    mock_get_token, mock_assign_role, mock_get_profile, mock_create_profile,
+    mock_get_token, mock_assign_role, mock_get, mock_get_profile, mock_create_profile,
 ):
     mock_get_token.return_value = "fake-admin-token"
     mock_get_profile.return_value = None
     mock_create_profile.return_value = {"role": "candidate", "full_name": "Ada Lovelace"}
+    mock_get.side_effect = _no_existing_cv
     at = _logged_in_app_without_profile().run()
     at.text_input[0].set_value("Ada Lovelace").run()
     at.radio[0].set_value("Candidate").run()
@@ -314,7 +366,7 @@ def test_submitting_profile_form_as_candidate_assigns_role_and_shows_candidate_f
         keycloak_user_id="user-newuser", role="candidate", full_name="Ada Lovelace",
         email="newuser@example-synthetic.test", company_name=None,
     )
-    assert any("Candidate" in h.value for h in at.header)
+    assert any("Upload your CV" in s.value for s in at.subheader)
 
 
 @patch("app.frontend.profile_client.create_profile")
@@ -342,7 +394,9 @@ def test_submitting_profile_form_as_employer_captures_company_name(
     assert any("Employer" in h.value for h in at.header)
 
 
-def test_logged_in_user_sees_the_real_app_not_the_login_link():
+@patch("requests.get")
+def test_logged_in_user_sees_the_real_app_not_the_login_link(mock_get):
+    mock_get.side_effect = _no_existing_cv
     at = _logged_in_app().run()
     assert not at.exception
     assert "Talent Matching Platform" in at.title[0].value
@@ -350,7 +404,9 @@ def test_logged_in_user_sees_the_real_app_not_the_login_link():
     assert any("candidate" in b.label for b in at.sidebar.button)
 
 
-def test_logout_button_clears_session_and_shows_login_link_again():
+@patch("requests.get")
+def test_logout_button_clears_session_and_shows_login_link_again(mock_get):
+    mock_get.side_effect = _no_existing_cv
     at = _logged_in_app().run()
     logout_button = next(b for b in at.sidebar.button if "Log out" in b.label)
     at = logout_button.click().run()
