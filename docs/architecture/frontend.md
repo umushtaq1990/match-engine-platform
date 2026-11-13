@@ -69,6 +69,18 @@ occupation picker. `Occupation.is_curated` (backfilled by migration — the padd
 listed — a "+ Add a new occupation" sentinel option and a free-text "Add a new skill" input in
 the frontend call these before saving.
 
+Issue #20: location/salary/experience are collected for later filtering/analysis, not for
+scoring — the user explicitly wants scoring kept to skills + education only (see Roadmap; that
+redesign is tracked separately, issue #21, not done yet). The location row became City/Postal
+code/Country (`Candidate.postal_code`/`.country`, two new nullable columns) — `location_region`
+(still the field `_location_component` actually scores on) is no longer collected from the user at
+all; `CandidateDetailsUpdate` omits it on purpose, so a PATCH leaves whatever value is already on
+the row untouched rather than overwriting it with nothing. A 4-bucket experience selector (Entry
+Level/Mid-Level/Senior/Expert) replaced a raw years-of-experience number, mapped to/from the
+existing `years_experience` column server-side (`_years_experience_to_level`/
+`_EXPERIENCE_LEVEL_TO_YEARS` in `profile_routes.py`) — no new column, since nothing besides
+display reads this value as anything but an int.
+
 ## Implementation
 
 `app/frontend/streamlit_app.py`  one script, two modes selected by the user's real
@@ -139,6 +151,15 @@ returns exactly the 26 real titles (confirmed via `psql`, the backfill correctly
 create new rows and are idempotent on a case-insensitive re-post (verified with `curl`); linked a
 newly created occupation + skill onto a real candidate via `PATCH /candidates/{id}/details`.
 
+**Issue #20** (postal code/city/country, experience bucket): verified live — saved real
+postal_code/country/experience_level on the session's real candidate via `curl`, confirmed via
+`psql` that `location_region` (set in an earlier session) was untouched by the PATCH while
+`postal_code`/`country`/`years_experience` persisted, and that `GET /candidates/{id}/details`
+round-trips the experience bucket ("senior" in → "senior" back out, mapped through
+`years_experience=8`). `tests/api/test_candidate_details_routes.py` covers the bucket mapping at
+each boundary (0, 2, 3, 5, 6, 10, 11 years) and confirms a PATCH that omits `location_region`
+never overwrites it.
+
 ## Known Limitations
 
 - Authentication exists (Keycloak SSO, see [ingress-and-identity.md](ingress-and-identity.md)), but authorization only partly does now: each candidate has their own real `candidate_id` (issue #17), so one candidate can no longer see or overwrite another's CV/matches — but an employer can still type in any `job_id` in the seeded dataset, nothing ties a specific Keycloak identity to a specific `job_id` yet. Acceptable for a local demo, not for anything deployed (same class of gap as assumption A9).
@@ -153,6 +174,7 @@ newly created occupation + skill onto a real candidate via `PATCH /candidates/{i
 
 - **v2, only if actually useful for the portfolio demo**: parse the uploaded CV's text and run it through `extract_skills` automatically (the same gap `docs/architecture/application-services/skill-extraction.md` already flags), surfacing extracted skills in the UI.
 - Simple data registration (create a new candidate/job *record* from the UI instead of picking an existing `candidate_id`/`job_id`), would need a real write-path into `app/ingestion/source_models.py`'s tables, not built yet. (Not to be confused with *user* registration, which is done issue #14, see [ingress-and-identity.md](ingress-and-identity.md).)
+- **Issue #21**: simplify matching to score on skills + education only (location/salary/experience become filter/analysis-only data, per the user's explicit direction while scoping issue #20) — needs a new "education" data concept (nothing in the schema represents it today) and a re-evaluation of the embeddings-blended ranker's documented NDCG numbers (`docs/embedding-matching.md`), which are keyed to the current rule-based weights. Not started.
 
 ## Resource Footprint and Scaling
 

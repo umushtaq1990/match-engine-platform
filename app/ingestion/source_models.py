@@ -146,6 +146,12 @@ class Candidate(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
     location_city: Mapped[str] = mapped_column(String(100))
     location_region: Mapped[str] = mapped_column(String(100))
+    # Issue #20: collected for later filtering/analysis, not read by
+    # app/matching/scoring.py's _location_component (that still uses
+    # location_city/location_region above) -- nullable since no UI collects
+    # them at registration time, only via the "Your profile" PATCH.
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     years_experience: Mapped[int] = mapped_column()
     desired_salary_min: Mapped[int | None] = mapped_column(nullable=True)
     desired_salary_max: Mapped[int | None] = mapped_column(nullable=True)

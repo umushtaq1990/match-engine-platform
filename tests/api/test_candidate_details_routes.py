@@ -40,9 +40,91 @@ def test_get_candidate_details_returns_defaults_with_no_skills(profile_db_sessio
         assert response.status_code == 200
         body = response.json()
         assert body["location_city"] == "Unknown"
+        assert body["postal_code"] is None
+        assert body["country"] is None
         assert body["desired_salary_min"] is None
         assert body["primary_occupation_id"] is None
+        assert body["experience_level"] == "entry_level"  # years_experience=0
         assert body["skill_ids"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_candidate_details_sets_postal_code_and_country(profile_db_session):
+    candidate = _make_candidate(profile_db_session, email="postal-issue20@example-synthetic.test")
+    profile_db_session.commit()
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.patch(
+            f"/candidates/{candidate.id}/details",
+            headers=API_KEY_HEADERS,
+            json={
+                "location_city": "Austin", "postal_code": "78701", "country": "USA",
+                "skill_ids": [],
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["postal_code"] == "78701"
+        assert body["country"] == "USA"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_candidate_details_does_not_overwrite_location_region(profile_db_session):
+    candidate = Candidate(
+        full_name="Region Candidate", email="region-issue20@example-synthetic.test",
+        location_city="Unknown", location_region="Texas", years_experience=0,
+        created_at=dt.datetime.now(dt.timezone.utc),
+    )
+    profile_db_session.add(candidate)
+    profile_db_session.flush()
+    profile_db_session.commit()
+
+    client = _client_bound_to(profile_db_session)
+    try:
+        response = client.patch(
+            f"/candidates/{candidate.id}/details",
+            headers=API_KEY_HEADERS,
+            json={"location_city": "Dallas", "skill_ids": []},
+        )
+        assert response.status_code == 200
+        profile_db_session.refresh(candidate)
+        assert candidate.location_region == "Texas"
+        assert candidate.location_city == "Dallas"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_candidate_details_sets_experience_level(profile_db_session):
+    candidate = _make_candidate(profile_db_session, email="exp-issue20@example-synthetic.test")
+    profile_db_session.commit()
+    client = _client_bound_to(profile_db_session)
+    try:
+        for level in ("entry_level", "mid_level", "senior", "expert"):
+            response = client.patch(
+                f"/candidates/{candidate.id}/details",
+                headers=API_KEY_HEADERS,
+                json={"location_city": "Austin", "experience_level": level, "skill_ids": []},
+            )
+            assert response.status_code == 200
+            assert response.json()["experience_level"] == level
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_experience_level_round_trips_at_bucket_boundaries(profile_db_session):
+    candidate = _make_candidate(profile_db_session, email="exp-boundary-issue20@example-synthetic.test")
+    profile_db_session.commit()
+    client = _client_bound_to(profile_db_session)
+    expected = {0: "entry_level", 2: "entry_level", 3: "mid_level", 5: "mid_level",
+                6: "senior", 10: "senior", 11: "expert"}
+    try:
+        for years, level in expected.items():
+            candidate.years_experience = years
+            profile_db_session.commit()
+            response = client.get(f"/candidates/{candidate.id}/details", headers=API_KEY_HEADERS)
+            assert response.json()["experience_level"] == level, f"years={years}"
     finally:
         app.dependency_overrides.clear()
 
@@ -72,7 +154,6 @@ def test_patch_candidate_details_updates_location_salary_occupation_and_skills(p
             headers=API_KEY_HEADERS,
             json={
                 "location_city": "Austin",
-                "location_region": "TX",
                 "desired_salary_min": 90000,
                 "desired_salary_max": 120000,
                 "primary_occupation_id": occupation.id,
@@ -110,8 +191,7 @@ def test_patch_candidate_details_replaces_previous_skills(profile_db_session):
             f"/candidates/{candidate.id}/details",
             headers=API_KEY_HEADERS,
             json={
-                "location_city": "Austin", "location_region": "TX",
-                "skill_ids": [skill_new.id],
+                "location_city": "Austin", "skill_ids": [skill_new.id],
             },
         )
         assert response.status_code == 200
@@ -128,7 +208,7 @@ def test_patch_candidate_details_rejects_more_than_ten_skills(profile_db_session
         response = client.patch(
             f"/candidates/{candidate.id}/details",
             headers=API_KEY_HEADERS,
-            json={"location_city": "Austin", "location_region": "TX", "skill_ids": list(range(1, 12))},
+            json={"location_city": "Austin", "skill_ids": list(range(1, 12))},
         )
         assert response.status_code == 422
     finally:
@@ -141,7 +221,7 @@ def test_patch_candidate_details_returns_404_for_missing_candidate(profile_db_se
         response = client.patch(
             "/candidates/999999999/details",
             headers=API_KEY_HEADERS,
-            json={"location_city": "Austin", "location_region": "TX", "skill_ids": []},
+            json={"location_city": "Austin", "skill_ids": []},
         )
         assert response.status_code == 404
     finally:

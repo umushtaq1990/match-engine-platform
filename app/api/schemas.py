@@ -101,19 +101,28 @@ class CandidateDetailsOut(BaseModel):
     model_config = {"from_attributes": True}
 
     location_city: str
-    location_region: str
+    postal_code: str | None
+    country: str | None
     desired_salary_min: int | None
     desired_salary_max: int | None
     primary_occupation_id: int | None
+    experience_level: str | None
     skill_ids: list[int]
 
 
 class CandidateDetailsUpdate(BaseModel):
+    """Issue #20: `location_region` is deliberately absent here -- it's still
+    read by app/matching/scoring.py's _location_component, but the frontend
+    no longer collects it from the user, so the PATCH handler leaves it
+    untouched rather than overwriting it with nothing.
+    """
     location_city: str
-    location_region: str
+    postal_code: str | None = None
+    country: str | None = None
     desired_salary_min: int | None = None
     desired_salary_max: int | None = None
     primary_occupation_id: int | None = None
+    experience_level: str | None = None
     skill_ids: list[int] = Field(default_factory=list, max_length=10)
 
 

@@ -19,19 +19,21 @@ def get_candidate_details(candidate_id: int) -> dict:
 
 
 def update_candidate_details(
-    candidate_id: int, location_city: str, location_region: str,
+    candidate_id: int, location_city: str, postal_code: str | None, country: str | None,
     desired_salary_min: int | None, desired_salary_max: int | None,
-    primary_occupation_id: int | None, skill_ids: list[int],
+    primary_occupation_id: int | None, experience_level: str | None, skill_ids: list[int],
 ) -> dict:
     resp = requests.patch(
         f"{API_URL}/candidates/{candidate_id}/details",
         headers=_HEADERS,
         json={
             "location_city": location_city,
-            "location_region": location_region,
+            "postal_code": postal_code,
+            "country": country,
             "desired_salary_min": desired_salary_min,
             "desired_salary_max": desired_salary_max,
             "primary_occupation_id": primary_occupation_id,
+            "experience_level": experience_level,
             "skill_ids": skill_ids,
         },
         timeout=10,

@@ -230,19 +230,36 @@ if role == "candidate":
     skills = list_skills()
     skill_name_by_id = {s["id"]: s["name"] for s in skills}
 
-    col1, col2 = st.columns(2)
-    with col1:
+    city_col, postal_col, country_col = st.columns(3)
+    with city_col:
         location_city = st.text_input("City", value=details["location_city"])
+    with postal_col:
+        postal_code = st.text_input("Postal code", value=details["postal_code"] or "")
+    with country_col:
+        country = st.text_input("Country", value=details["country"] or "")
+
+    salary_col1, salary_col2 = st.columns(2)
+    with salary_col1:
         salary_min = st.number_input(
-            "Desired salary (min)", min_value=0, step=1000,
+            "Desired salary (min) ($)", min_value=0, step=1000,
             value=details["desired_salary_min"] or 0,
         )
-    with col2:
-        location_region = st.text_input("Region/State", value=details["location_region"])
+    with salary_col2:
         salary_max = st.number_input(
-            "Desired salary (max)", min_value=0, step=1000,
+            "Desired salary (max) ($)", min_value=0, step=1000,
             value=details["desired_salary_max"] or 0,
         )
+
+    EXPERIENCE_LEVELS = {
+        "Entry Level": "entry_level", "Mid-Level": "mid_level",
+        "Senior": "senior", "Expert": "expert",
+    }
+    level_labels = list(EXPERIENCE_LEVELS.keys())
+    level_by_value = {v: k for k, v in EXPERIENCE_LEVELS.items()}
+    current_level_label = level_by_value.get(details["experience_level"], level_labels[0])
+    experience_label = st.selectbox(
+        "Experience level", level_labels, index=level_labels.index(current_level_label),
+    )
 
     ADD_NEW_OCCUPATION = "+ Add a new occupation"
     occupation_titles = [o["title"] for o in occupations] + [ADD_NEW_OCCUPATION]
@@ -282,10 +299,12 @@ if role == "candidate":
         update_candidate_details(
             candidate_id,
             location_city=location_city,
-            location_region=location_region,
+            postal_code=postal_code or None,
+            country=country or None,
             desired_salary_min=salary_min or None,
             desired_salary_max=salary_max or None,
             primary_occupation_id=occupation_id,
+            experience_level=EXPERIENCE_LEVELS[experience_label],
             skill_ids=skill_ids,
         )
         st.success("Profile details saved.")

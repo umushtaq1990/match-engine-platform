@@ -47,9 +47,9 @@ def _logged_in_app(role: str = "candidate") -> AppTest:
 
 def _default_candidate_details() -> dict:
     return {
-        "location_city": "Unknown", "location_region": "Unknown",
+        "location_city": "Unknown", "postal_code": None, "country": None,
         "desired_salary_min": None, "desired_salary_max": None,
-        "primary_occupation_id": None, "skill_ids": [],
+        "primary_occupation_id": None, "experience_level": "entry_level", "skill_ids": [],
     }
 
 
@@ -206,9 +206,9 @@ def test_profile_details_form_renders_with_prefilled_values(mock_get):
             return MagicMock(status_code=404)
         if url.endswith("/details"):
             return MagicMock(status_code=200, json=lambda: {
-                "location_city": "Austin", "location_region": "TX",
+                "location_city": "Austin", "postal_code": "78701", "country": "USA",
                 "desired_salary_min": 90000, "desired_salary_max": 120000,
-                "primary_occupation_id": 1, "skill_ids": [2],
+                "primary_occupation_id": 1, "experience_level": "senior", "skill_ids": [2],
             })
         return _candidate_support_endpoint_response(url) or MagicMock(status_code=404)
     mock_get.side_effect = side_effect
@@ -218,9 +218,11 @@ def test_profile_details_form_renders_with_prefilled_values(mock_get):
     assert not at.exception
     assert any("Your profile" in s.value for s in at.subheader)
     assert next(ti for ti in at.text_input if ti.label == "City").value == "Austin"
-    assert next(ti for ti in at.text_input if ti.label == "Region/State").value == "TX"
-    assert next(ni for ni in at.number_input if ni.label == "Desired salary (min)").value == 90000
-    assert at.selectbox[0].value == "Software Engineer"
+    assert next(ti for ti in at.text_input if ti.label == "Postal code").value == "78701"
+    assert next(ti for ti in at.text_input if ti.label == "Country").value == "USA"
+    assert next(ni for ni in at.number_input if ni.label == "Desired salary (min) ($)").value == 90000
+    assert next(sb for sb in at.selectbox if sb.label == "Occupation").value == "Software Engineer"
+    assert next(sb for sb in at.selectbox if sb.label == "Experience level").value == "Senior"
     assert at.multiselect[0].value == ["SQL"]
 
 
@@ -228,7 +230,7 @@ def test_profile_details_form_renders_with_prefilled_values(mock_get):
 def test_selecting_add_new_occupation_reveals_title_input(mock_get):
     mock_get.side_effect = _no_existing_cv
     at = _logged_in_app().run()
-    at.selectbox[0].set_value("+ Add a new occupation").run()
+    next(sb for sb in at.selectbox if sb.label == "Occupation").set_value("+ Add a new occupation").run()
     assert not at.exception
     assert any(ti.label == "New occupation title" for ti in at.text_input)
 
@@ -249,7 +251,7 @@ def test_saving_with_a_new_occupation_and_skill_creates_both_then_patches(mock_g
     mock_post.side_effect = post_side_effect
 
     at = _logged_in_app().run()
-    at.selectbox[0].set_value("+ Add a new occupation").run()
+    next(sb for sb in at.selectbox if sb.label == "Occupation").set_value("+ Add a new occupation").run()
     next(ti for ti in at.text_input if ti.label == "New occupation title").set_value("Robot Wrangler").run()
     next(ti for ti in at.text_input if ti.label == "Add a new skill (optional)").set_value("Telekinesis").run()
     save_button = next(b for b in at.button if b.label == "Save profile details")

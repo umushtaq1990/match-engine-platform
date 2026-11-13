@@ -29,6 +29,24 @@ from app.ingestion.source_models import Candidate, CandidateSkill, EvidenceSourc
 
 router = APIRouter(dependencies=[RequireApiKey])
 
+# Issue #20: a 4-bucket experience selector in the UI instead of a raw
+# years-of-experience number. Still stored in the existing
+# Candidate.years_experience column -- nothing reads this as anything but an
+# int today (app/matching/scoring.py doesn't score on it at all), so the
+# bucket is purely a display/UX convenience over that one column, not a new
+# data concept.
+_EXPERIENCE_LEVEL_TO_YEARS = {"entry_level": 1, "mid_level": 4, "senior": 8, "expert": 15}
+_EXPERIENCE_LEVEL_THRESHOLDS = (
+    (2, "entry_level"), (5, "mid_level"), (10, "senior"),
+)
+
+
+def _years_experience_to_level(years: int) -> str:
+    for max_years, level in _EXPERIENCE_LEVEL_THRESHOLDS:
+        if years <= max_years:
+            return level
+    return "expert"
+
 
 def _get_or_create_candidate(db: Session, full_name: str, email: str) -> int:
     """Issue #17: a real, personal `candidates` row for this user, instead
@@ -86,8 +104,11 @@ def get_profile(keycloak_user_id: str, db: Session = DbSession):
 
 @router.get("/candidates/{candidate_id}/details", response_model=CandidateDetailsOut)
 def get_candidate_details(candidate_id: int, db: Session = DbSession):
-    """Issue #18: the scoring-relevant fields (location/salary/occupation/
-    skills) `app/matching/scoring.py` reads for this candidate.
+    """Issue #18/#20: location/salary/occupation/experience/skills for this
+    candidate. Only skills + occupation are read by
+    `app/matching/scoring.py` today; location/salary/experience are stored
+    for filtering/analysis, not scored (see issue #21 for the discussion of
+    simplifying scoring to skills+education only).
     """
     candidate = db.get(Candidate, candidate_id)
     if candidate is None:
@@ -95,32 +116,38 @@ def get_candidate_details(candidate_id: int, db: Session = DbSession):
     skill_ids = [row.skill_id for row in db.query(CandidateSkill).filter_by(candidate_id=candidate_id)]
     return CandidateDetailsOut(
         location_city=candidate.location_city,
-        location_region=candidate.location_region,
+        postal_code=candidate.postal_code,
+        country=candidate.country,
         desired_salary_min=candidate.desired_salary_min,
         desired_salary_max=candidate.desired_salary_max,
         primary_occupation_id=candidate.primary_occupation_id,
+        experience_level=_years_experience_to_level(candidate.years_experience),
         skill_ids=skill_ids,
     )
 
 
 @router.patch("/candidates/{candidate_id}/details", response_model=CandidateDetailsOut)
 def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate, db: Session = DbSession):
-    """Issue #18: lets a candidate set the fields the matching engine scores
-    on (location/salary/occupation/skills) — previously only ever set to MVP
-    placeholders at registration (issue #17). Skills are self-reported here,
-    so every row gets `proficiency=intermediate`/`evidence_source=self_reported`
-    — there's no UI yet to capture a finer-grained proficiency, a documented
-    MVP simplification.
+    """Issue #18/#20: lets a candidate set location/salary/occupation/
+    experience/skills — previously only ever set to MVP placeholders at
+    registration (issue #17). `location_region` is deliberately not updated
+    here (see `CandidateDetailsUpdate`'s docstring). Skills are self-reported
+    here, so every row gets `proficiency=intermediate`/
+    `evidence_source=self_reported` — there's no UI yet to capture a
+    finer-grained proficiency, a documented MVP simplification.
     """
     candidate = db.get(Candidate, candidate_id)
     if candidate is None:
         raise HTTPException(status_code=404, detail="No such candidate")
 
     candidate.location_city = payload.location_city
-    candidate.location_region = payload.location_region
+    candidate.postal_code = payload.postal_code
+    candidate.country = payload.country
     candidate.desired_salary_min = payload.desired_salary_min
     candidate.desired_salary_max = payload.desired_salary_max
     candidate.primary_occupation_id = payload.primary_occupation_id
+    if payload.experience_level is not None:
+        candidate.years_experience = _EXPERIENCE_LEVEL_TO_YEARS[payload.experience_level]
 
     db.query(CandidateSkill).filter_by(candidate_id=candidate_id).delete()
     for skill_id in payload.skill_ids:
@@ -134,10 +161,12 @@ def update_candidate_details(candidate_id: int, payload: CandidateDetailsUpdate,
 
     return CandidateDetailsOut(
         location_city=candidate.location_city,
-        location_region=candidate.location_region,
+        postal_code=candidate.postal_code,
+        country=candidate.country,
         desired_salary_min=candidate.desired_salary_min,
         desired_salary_max=candidate.desired_salary_max,
         primary_occupation_id=candidate.primary_occupation_id,
+        experience_level=_years_experience_to_level(candidate.years_experience),
         skill_ids=payload.skill_ids,
     )
 
