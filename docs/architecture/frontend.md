@@ -118,7 +118,10 @@ display reads this value as anything but an int.
   scoring changes needed. A skill picked as both required and preferred is deduped server-side
   (required wins) rather than violating `job_skills`' unique constraint. "Get Matching Candidates"
   (`GET /jobs/{id}/candidate-matches`, unchanged, already `top_k=10` by default) operates on
-  whichever job is selected.
+  whichever job is selected. Every job-form widget's key is suffixed with the selected job's id
+  (or `"new"`) — Streamlit only honors a widget's `value=` the first time that exact key renders
+  in a session, so a fixed key would otherwise let a previous job's cached field value silently
+  carry into a later job's save on switching (see Verification & Results for the bug this fixed).
 
 `docker/Dockerfile.frontend` / `app/requirements-frontend.txt` just `streamlit` and `requests`,
 nothing else. `docker-compose.yml`'s `frontend` service depends on `api` and `extraction` being
@@ -191,6 +194,18 @@ same skill as both required and preferred violated `job_skills`' unique constrai
 wins silently). `tests/api/test_job_routes.py` covers the postal/country round-trip, the
 `location_region` preservation, the "Unknown" placeholder default for a brand-new job, and the
 overlapping-skill dedup.
+
+**Stale-widget-key bug fix** (reported live: editing a posted job and saving, then logging back
+in, showed different values than what was set): root-caused to every job-form widget sharing a
+fixed key regardless of which job was selected — Streamlit only applies a widget's `value=`
+argument the first time that key renders in a session, so switching from "+ Post a new job" (or
+another job) to a given job did not actually refresh the displayed fields to that job's real data;
+saving in that state silently overwrote the job with stale/blank values from whichever job (or the
+blank new-job form) had been viewed previously in the same session. Fixed by suffixing every
+job-form widget's key with the selected job's id (or `"new"`), forcing Streamlit to treat each
+job's fields as distinct widgets. `tests/frontend/test_streamlit_app.py`'s
+`test_switching_between_jobs_refreshes_form_fields_not_stale_values` reproduces the exact
+switching sequence and asserts the field refreshes correctly both directions.
 
 ## Known Limitations
 

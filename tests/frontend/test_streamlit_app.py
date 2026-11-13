@@ -137,6 +137,40 @@ def test_employer_role_claim_shows_job_posting_flow(mock_get):
 
 
 @patch("requests.get")
+def test_switching_between_jobs_refreshes_form_fields_not_stale_values(mock_get):
+    """Regression test: every job-form widget must be keyed per job_id (or
+    "new"), not a fixed key -- otherwise Streamlit reuses a previous job's
+    cached widget value instead of the freshly fetched `details` on
+    switching, silently carrying stale/blank data into a later save.
+    """
+    def side_effect(url, *args, **kwargs):
+        if url.endswith("/jobs") and "/employers/" in url:
+            return MagicMock(status_code=200, json=lambda: [
+                {"id": 1, "title": "Backend Engineer", "company_name": "Acme Co",
+                 "location_city": "Berlin", "posted_at": "2026-01-01T00:00:00Z"},
+            ])
+        if url.endswith("/jobs/1/details"):
+            return MagicMock(status_code=200, json=lambda: {
+                **_default_job_details(), "title": "Backend Engineer", "company_name": "Acme Co",
+                "location_city": "Berlin",
+            })
+        return _candidate_support_endpoint_response(url) or MagicMock(status_code=404)
+    mock_get.side_effect = side_effect
+
+    at = _logged_in_app(role="employer").run()
+    assert next(ti for ti in at.text_input if ti.label == "City").value == "Berlin"
+
+    jobs_selectbox = next(sb for sb in at.selectbox if sb.label == "Your jobs")
+    at = jobs_selectbox.set_value("+ Post a new job").run()
+    assert next(ti for ti in at.text_input if ti.label == "City").value == ""
+
+    jobs_selectbox = next(sb for sb in at.selectbox if sb.label == "Your jobs")
+    at = jobs_selectbox.set_value("Backend Engineer — Acme Co").run()
+    assert not at.exception
+    assert next(ti for ti in at.text_input if ti.label == "City").value == "Berlin"
+
+
+@patch("requests.get")
 def test_existing_cv_is_shown_with_a_replace_option(mock_get):
     def side_effect(url, *args, **kwargs):
         if url.endswith("/cv"):

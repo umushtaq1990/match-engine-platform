@@ -356,27 +356,45 @@ else:
         job_id = job_id_by_label[chosen_job_label]
         details = get_job_details(job_id)
 
+    # Every widget key below is suffixed with the selected job's id (or "new")
+    # so switching jobs always starts from freshly fetched `details` instead
+    # of Streamlit reusing a previous job's cached widget value for the same
+    # key -- the bug that let unedited fields silently save over real data.
+    job_key_suffix = str(job_id) if job_id is not None else "new"
+
     st.subheader("Job details")
-    title = st.text_input("Job title", value=details["title"])
-    company_name = st.text_input("Company name", value=details["company_name"])
-    description = st.text_area("Job description", value=details["description"])
+    title = st.text_input("Job title", value=details["title"], key=f"job_title_{job_key_suffix}")
+    company_name = st.text_input(
+        "Company name", value=details["company_name"], key=f"job_company_name_{job_key_suffix}",
+    )
+    description = st.text_area(
+        "Job description", value=details["description"], key=f"job_description_{job_key_suffix}",
+    )
 
     job_city_col, job_postal_col, job_country_col = st.columns(3)
     with job_city_col:
-        location_city = st.text_input("City", value=details["location_city"], key="job_city")
+        location_city = st.text_input(
+            "City", value=details["location_city"], key=f"job_city_{job_key_suffix}",
+        )
     with job_postal_col:
-        postal_code = st.text_input("Postal code", value=details["postal_code"] or "", key="job_postal_code")
+        postal_code = st.text_input(
+            "Postal code", value=details["postal_code"] or "", key=f"job_postal_code_{job_key_suffix}",
+        )
     with job_country_col:
-        country = st.text_input("Country", value=details["country"] or "", key="job_country")
+        country = st.text_input(
+            "Country", value=details["country"] or "", key=f"job_country_{job_key_suffix}",
+        )
 
     salary_col1, salary_col2 = st.columns(2)
     with salary_col1:
         salary_min = st.number_input(
-            "Salary (min) ($)", min_value=0, step=1000, value=details["salary_min"] or 0, key="job_salary_min",
+            "Salary (min) ($)", min_value=0, step=1000, value=details["salary_min"] or 0,
+            key=f"job_salary_min_{job_key_suffix}",
         )
     with salary_col2:
         salary_max = st.number_input(
-            "Salary (max) ($)", min_value=0, step=1000, value=details["salary_max"] or 0, key="job_salary_max",
+            "Salary (max) ($)", min_value=0, step=1000, value=details["salary_max"] or 0,
+            key=f"job_salary_max_{job_key_suffix}",
         )
 
     JOB_EXPERIENCE_LEVELS = {
@@ -388,7 +406,7 @@ else:
     current_job_level_label = job_level_by_value.get(details["experience_level"], job_level_labels[0])
     experience_label = st.selectbox(
         "Minimum experience required", job_level_labels,
-        index=job_level_labels.index(current_job_level_label), key="job_experience",
+        index=job_level_labels.index(current_job_level_label), key=f"job_experience_{job_key_suffix}",
     )
 
     JOB_ADD_NEW_OCCUPATION = "+ Add a new occupation"
@@ -400,11 +418,13 @@ else:
         "Occupation", job_occupation_titles,
         index=job_occupation_titles.index(current_job_occupation)
         if current_job_occupation in job_occupation_titles else 0,
-        key="job_occupation",
+        key=f"job_occupation_{job_key_suffix}",
     )
     new_job_occupation_title = ""
     if job_occupation_title == JOB_ADD_NEW_OCCUPATION:
-        new_job_occupation_title = st.text_input("New occupation title", key="job_new_occupation")
+        new_job_occupation_title = st.text_input(
+            "New occupation title", key=f"job_new_occupation_{job_key_suffix}",
+        )
 
     skill_options = [s["name"] for s in skills]
     default_required_names = [
@@ -415,13 +435,15 @@ else:
     ]
     chosen_required_names = st.multiselect(
         "Required skills (up to 10)", skill_options, default=default_required_names,
-        max_selections=10, key="job_required_skills",
+        max_selections=10, key=f"job_required_skills_{job_key_suffix}",
     )
     chosen_preferred_names = st.multiselect(
         "Preferred skills (up to 10)", skill_options, default=default_preferred_names,
-        max_selections=10, key="job_preferred_skills",
+        max_selections=10, key=f"job_preferred_skills_{job_key_suffix}",
     )
-    new_job_skill_name = st.text_input("Add a new skill (optional)", key="job_new_skill")
+    new_job_skill_name = st.text_input(
+        "Add a new skill (optional)", key=f"job_new_skill_{job_key_suffix}",
+    )
 
     if st.button("Save job"):
         skill_id_by_name = {s["name"]: s["id"] for s in skills}
