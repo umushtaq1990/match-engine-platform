@@ -31,7 +31,14 @@ from app.api.schemas import (
 )
 from app.audit.change_log import record_change
 from app.identity.models import UserProfile, UserRole
-from app.ingestion.source_models import Candidate, CandidateSkill, EvidenceSource, Occupation, ProficiencyLevel, Skill
+from app.ingestion.source_models import (
+    Candidate,
+    CandidateSkill,
+    EvidenceSource,
+    Occupation,
+    ProficiencyLevel,
+    Skill,
+)
 
 router = APIRouter(dependencies=[RequireApiKey])
 
@@ -244,7 +251,9 @@ def create_occupation(payload: OccupationCreate, response: Response, db: Session
         db.commit()
     except IntegrityError:
         db.rollback()
-        occupation = db.query(Occupation).filter(func.lower(Occupation.title) == payload.title.lower()).first()
+        occupation = db.query(Occupation).filter(
+            func.lower(Occupation.title) == payload.title.lower()
+        ).first()
         if occupation is None:
             raise
         response.status_code = 200

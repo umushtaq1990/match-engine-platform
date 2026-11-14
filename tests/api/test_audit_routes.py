@@ -47,7 +47,9 @@ def test_record_change_logs_only_actually_changed_fields(profile_db_session):
     )
     profile_db_session.commit()
 
-    row = profile_db_session.query(EntityChangeLog).filter_by(entity_type="candidate_details", entity_id=999001).first()
+    row = profile_db_session.query(EntityChangeLog).filter_by(
+        entity_type="candidate_details", entity_id=999001,
+    ).first()
     assert row is not None
     assert row.changes == {"location_city": {"old": "Austin", "new": "Dallas"}}
 
@@ -59,7 +61,9 @@ def test_record_change_writes_nothing_on_a_no_op_update(profile_db_session):
     )
     profile_db_session.commit()
 
-    count = profile_db_session.query(EntityChangeLog).filter_by(entity_type="candidate_details", entity_id=999002).count()
+    count = profile_db_session.query(EntityChangeLog).filter_by(
+        entity_type="candidate_details", entity_id=999002,
+    ).count()
     assert count == 0
 
 
@@ -72,11 +76,13 @@ def test_get_change_log_returns_history_newest_first(profile_db_session):
     ))
     older = EntityChangeLog(
         entity_type="candidate_details", entity_id=999003, changed_by_keycloak_user_id="user-abc",
-        changed_at=dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc), changes={"location_city": {"old": None, "new": "Austin"}},
+        changed_at=dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
+        changes={"location_city": {"old": None, "new": "Austin"}},
     )
     newer = EntityChangeLog(
         entity_type="candidate_details", entity_id=999003, changed_by_keycloak_user_id="user-abc",
-        changed_at=dt.datetime(2026, 1, 2, tzinfo=dt.timezone.utc), changes={"location_city": {"old": "Austin", "new": "Dallas"}},
+        changed_at=dt.datetime(2026, 1, 2, tzinfo=dt.timezone.utc),
+        changes={"location_city": {"old": "Austin", "new": "Dallas"}},
     )
     profile_db_session.add_all([older, newer])
     profile_db_session.commit()

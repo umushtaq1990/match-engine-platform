@@ -21,9 +21,11 @@ APP_PATH = "app/frontend/streamlit_app.py"
 
 
 def _fake_id_token(preferred_username: str, sub: str = "user-1") -> str:
-    payload = base64.urlsafe_b64encode(
-        f'{{"preferred_username": "{preferred_username}", "sub": "{sub}", "realm_access": {{"roles": []}}}}'.encode()
-    ).rstrip(b"=")
+    claims_json = (
+        f'{{"preferred_username": "{preferred_username}", "sub": "{sub}", '
+        f'"realm_access": {{"roles": []}}}}'
+    )
+    payload = base64.urlsafe_b64encode(claims_json.encode()).rstrip(b"=")
     return f"header.{payload.decode()}.signature"
 
 
@@ -234,7 +236,9 @@ def test_get_job_matches_renders_results_table(mock_get):
     get_matches_button.click().run(timeout=10)
 
     assert not at.exception
-    matches_call = next(c for c in mock_get.call_args_list if c.args[0].endswith("/candidates/42/job-matches"))
+    matches_call = next(
+        c for c in mock_get.call_args_list if c.args[0].endswith("/candidates/42/job-matches")
+    )
     assert matches_call.kwargs["params"] == {"top_k": 10}
     assert len(at.dataframe) == 1
 
@@ -403,7 +407,8 @@ def test_saving_with_a_new_occupation_and_skill_creates_both_then_patches(mock_g
     at = _logged_in_app().run()
     next(sb for sb in at.selectbox if sb.label == "Occupation").set_value("+ Add a new occupation").run()
     next(ti for ti in at.text_input if ti.label == "New occupation title").set_value("Robot Wrangler").run()
-    next(ti for ti in at.text_input if ti.label == "Add a new skill (optional)").set_value("Telekinesis").run()
+    new_skill_input = next(ti for ti in at.text_input if ti.label == "Add a new skill (optional)")
+    new_skill_input.set_value("Telekinesis").run()
     save_button = next(b for b in at.button if b.label == "Save profile details")
     at = save_button.click().run()
 
@@ -698,7 +703,9 @@ def test_submitting_profile_form_as_employer_captures_company_name(
 ):
     mock_get_token.return_value = "fake-admin-token"
     mock_get_profile.return_value = None
-    mock_create_profile.return_value = {"role": "employer", "full_name": "Grace Hopper", "company_name": "Acme Co"}
+    mock_create_profile.return_value = {
+        "role": "employer", "full_name": "Grace Hopper", "company_name": "Acme Co",
+    }
     mock_get.side_effect = _no_employer_jobs
     at = _logged_in_app_without_profile().run()
     at.text_input[0].set_value("Grace Hopper").run()

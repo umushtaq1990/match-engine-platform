@@ -18,9 +18,8 @@ import requests
 import streamlit as st
 
 from app.common.logging import setup_logging
+from app.frontend.audit_client import get_change_log
 from app.frontend.auth_helpers import call_with_refresh
-from app.frontend.keycloak_admin import assign_realm_role, create_user, get_admin_token
-from app.frontend.oidc import decode_id_token, password_grant_login
 from app.frontend.candidate_client import (
     create_occupation,
     create_skill,
@@ -29,7 +28,6 @@ from app.frontend.candidate_client import (
     list_skills,
     update_candidate_details,
 )
-from app.frontend.audit_client import get_change_log
 from app.frontend.job_client import (
     apply_to_job,
     create_job,
@@ -39,6 +37,8 @@ from app.frontend.job_client import (
     save_job,
     update_job_details,
 )
+from app.frontend.keycloak_admin import assign_realm_role, create_user, get_admin_token
+from app.frontend.oidc import decode_id_token, password_grant_login
 from app.frontend.profile_client import create_profile, get_profile
 
 setup_logging("frontend")
@@ -264,8 +264,12 @@ def _render_job_detail_view(candidate_id: int) -> None:
 
     skills = list_skills()
     skill_name_by_id = {s["id"]: s["name"] for s in skills}
-    required_names = [skill_name_by_id[sid] for sid in detail["required_skill_ids"] if sid in skill_name_by_id]
-    preferred_names = [skill_name_by_id[sid] for sid in detail["preferred_skill_ids"] if sid in skill_name_by_id]
+    required_names = [
+        skill_name_by_id[sid] for sid in detail["required_skill_ids"] if sid in skill_name_by_id
+    ]
+    preferred_names = [
+        skill_name_by_id[sid] for sid in detail["preferred_skill_ids"] if sid in skill_name_by_id
+    ]
     if required_names:
         st.caption(f"Required skills: {', '.join(required_names)}")
     if preferred_names:
@@ -274,7 +278,9 @@ def _render_job_detail_view(candidate_id: int) -> None:
     apply_col, save_col, back_col = st.columns(3)
     with apply_col:
         if st.button("Apply"):
-            call_with_refresh(apply_to_job, candidate_id, job_id, access_token=st.session_state["access_token"])
+            call_with_refresh(
+                apply_to_job, candidate_id, job_id, access_token=st.session_state["access_token"],
+            )
             st.success("Applied.")
     with save_col:
         if st.button("Save for later"):
@@ -441,7 +447,9 @@ if role == "candidate":
     last_matches = st.session_state.get("last_job_matches")
     if last_matches:
         st.subheader("View a match")
-        match_label_by_id = {m["entity_id"]: f"{m['label']} (score {m['score']['total']})" for m in last_matches}
+        match_label_by_id = {
+            m["entity_id"]: f"{m['label']} (score {m['score']['total']})" for m in last_matches
+        }
         chosen_match_label = st.selectbox(
             "Pick a job from your matches", list(match_label_by_id.values()),
         )
@@ -449,7 +457,8 @@ if role == "candidate":
         if st.button("View Job Details"):
             st.session_state["viewing_job_id"] = chosen_job_id
             st.session_state["viewing_job_detail"] = call_with_refresh(
-                get_job_details, chosen_job_id, viewed_by_candidate_id=candidate_id, access_token=access_token,
+                get_job_details, chosen_job_id,
+                viewed_by_candidate_id=candidate_id, access_token=access_token,
             )
             st.rerun()
 

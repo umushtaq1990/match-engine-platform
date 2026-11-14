@@ -27,7 +27,9 @@ def list_employer_jobs(keycloak_user_id: str, access_token: str) -> list[dict]:
 
 
 def get_job_details(job_id: int, access_token: str, viewed_by_candidate_id: int | None = None) -> dict:
-    params = {"viewed_by_candidate_id": viewed_by_candidate_id} if viewed_by_candidate_id is not None else None
+    params = (
+        {"viewed_by_candidate_id": viewed_by_candidate_id} if viewed_by_candidate_id is not None else None
+    )
     resp = requests.get(
         f"{API_URL}/jobs/{job_id}/details", headers=_auth_headers(access_token), params=params, timeout=10,
     )

@@ -398,7 +398,10 @@ def test_patch_job_details_does_not_overwrite_location_region(matching_db_sessio
     try:
         response = client.patch(
             f"/jobs/{job.id}/details", headers=API_KEY_HEADERS,
-            json={"title": job.title, "company_name": job.company_name, "description": "desc", "location_city": "Dallas"},
+            json={
+                "title": job.title, "company_name": job.company_name,
+                "description": "desc", "location_city": "Dallas",
+            },
         )
         assert response.status_code == 200
         matching_db_session.refresh(job)

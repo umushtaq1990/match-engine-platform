@@ -87,7 +87,8 @@ def _to_job_details_out(db: Session, job: Job) -> JobDetailsOut:
         primary_occupation_id=job.occupation_id,
         occupation_title=occupation.title if occupation is not None else None,
         experience_level=(
-            years_experience_to_level(job.min_years_experience) if job.min_years_experience is not None else None
+            years_experience_to_level(job.min_years_experience)
+            if job.min_years_experience is not None else None
         ),
         required_skill_ids=_job_skill_ids(db, job.id, RequirementLevel.required),
         preferred_skill_ids=_job_skill_ids(db, job.id, RequirementLevel.preferred),
@@ -214,7 +215,9 @@ def update_job_details(
     return _to_job_details_out(db, job)
 
 
-def _get_or_create_interaction(db: Session, candidate_id: int, job_id: int, interaction_type: InteractionType) -> None:
+def _get_or_create_interaction(
+    db: Session, candidate_id: int, job_id: int, interaction_type: InteractionType,
+) -> None:
     existing = db.query(CandidateJobInteraction).filter_by(
         candidate_id=candidate_id, job_id=job_id, interaction_type=interaction_type,
     ).first()

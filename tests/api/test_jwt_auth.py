@@ -62,7 +62,9 @@ def _patch_jwks(monkeypatch, jwks: dict, fail_on_call: bool = False):
     def _fake_fetch(force: bool = False):
         calls["count"] += 1
         if fail_on_call:
-            raise AssertionError("JWKS was fetched but the request should have failed before any network call")
+            raise AssertionError(
+                "JWKS was fetched but the request should have failed before any network call"
+            )
         return jwks
 
     monkeypatch.setattr(jwt_auth, "_fetch_jwks", _fake_fetch)
