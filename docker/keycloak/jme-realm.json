@@ -2,7 +2,13 @@
   "realm": "jme",
   "enabled": true,
   "sslRequired": "none",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
+  "roles": {
+    "realm": [
+      {"name": "candidate", "description": "Can upload a CV and view job matches"},
+      {"name": "employer", "description": "Can view candidate matches for a job"}
+    ]
+  },
   "clients": [
     {
       "clientId": "jme-frontend",
@@ -14,7 +20,33 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "implicitFlowEnabled": false,
-      "serviceAccountsEnabled": false
+      "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "realm roles (ID token)",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "jme-admin",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "dev-local-admin-client-secret-change-me"
     }
   ],
   "users": [
@@ -27,7 +59,8 @@
       "lastName": "Candidate",
       "credentials": [
         {"type": "password", "value": "candidate-dev-pw", "temporary": false}
-      ]
+      ],
+      "realmRoles": ["candidate"]
     },
     {
       "username": "employer",
@@ -38,7 +71,16 @@
       "lastName": "Employer",
       "credentials": [
         {"type": "password", "value": "employer-dev-pw", "temporary": false}
-      ]
+      ],
+      "realmRoles": ["employer"]
+    },
+    {
+      "username": "service-account-jme-admin",
+      "enabled": true,
+      "serviceAccountClientId": "jme-admin",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users", "view-realm"]
+      }
     }
   ]
 }

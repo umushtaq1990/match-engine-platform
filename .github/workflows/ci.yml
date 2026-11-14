@@ -89,13 +89,55 @@ jobs:
             sleep 2
           done
           echo "db never became healthy" && docker compose logs db && exit 1
+      - name: Start keycloak
+        run: docker compose up -d keycloak
+      - name: Wait for keycloak healthy
+        run: |
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' jme-keycloak-1 2>/dev/null || echo "starting")
+            [ "$status" = "healthy" ] && exit 0
+            sleep 2
+          done
+          echo "keycloak never became healthy" && docker compose logs keycloak && exit 1
+      # Issue #26: the matching API's routes now require a real verified
+      # bearer token, not just X-API-Key -- a throwaway Keycloak user (never
+      # a real credential, the whole environment is destroyed after this
+      # job) lets the rest of this smoke test actually exercise that path,
+      # the same way the real frontend does. Credentials are re-exchanged
+      # for a fresh token in each step that needs one, rather than sharing
+      # one token across the whole job, since this job runs long enough
+      # (pulling Ollama models, etc.) to outlast a short-lived access token.
+      - name: Create a throwaway CI test user in Keycloak
+        run: |
+          set -e
+          admin_secret=$(grep '^KEYCLOAK_ADMIN_CLIENT_SECRET=' .env | cut -d= -f2)
+          admin_token=$(curl -s -X POST http://localhost:8180/realms/jme/protocol/openid-connect/token \
+            -d grant_type=client_credentials -d client_id=jme-admin -d "client_secret=$admin_secret" \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+          # firstName/lastName are required here, not cosmetic -- Keycloak 26's
+          # built-in VERIFY_PROFILE required action is enabled by default and
+          # triggers dynamically (independent of any "defaultAction" flag)
+          # whenever a user is missing a profile field the realm's User
+          # Profile schema requires. Omitting them produces a password-grant
+          # token exchange that 400s with "invalid_grant: Account is not
+          # fully set up" even though the user looks fully set up by every
+          # field the Admin API read-back shows (confirmed by reproducing
+          # this locally against the real stack).
+          code=$(curl -s -o /tmp/ci_user_create_resp.json -w '%{http_code}' -X POST http://localhost:8180/admin/realms/jme/users \
+            -H "Authorization: Bearer $admin_token" -H 'Content-Type: application/json' \
+            -d '{"username":"ci-smoke-test@example-synthetic.test","email":"ci-smoke-test@example-synthetic.test","firstName":"CI","lastName":"Smoke","enabled":true,"emailVerified":true,"credentials":[{"type":"password","value":"ci-smoke-test-pw","temporary":false}]}')
+          echo "create user http code: $code"
+          cat /tmp/ci_user_create_resp.json
+          test "$code" = "201"
+          echo "CI_TEST_EMAIL=ci-smoke-test@example-synthetic.test" >> "$GITHUB_ENV"
+          echo "CI_TEST_PASSWORD=ci-smoke-test-pw" >> "$GITHUB_ENV"
       - name: Run migrations
         run: docker compose run --rm migrate
       - name: Confirm all tables exist
         run: |
           count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from information_schema.tables where table_schema='public';")
           echo "table count: $count"
-          [ "$(echo $count | xargs)" = "21" ]
+          [ "$(echo $count | xargs)" = "24" ]
       - name: Seed synthetic data
         run: docker compose run --rm seed
       - name: Confirm seeded row counts
@@ -129,9 +171,25 @@ jobs:
         run: |
           set -e
           api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          # Fetched from inside jme-api-1 (not the host-mapped localhost:8180)
+          # so the token's `iss` claim is the internal issuer
+          # (http://keycloak:8080/realms/jme) that jwt_auth.py requires --
+          # a token obtained via localhost:8180 carries iss=localhost:8180
+          # instead and is rejected with "Invalid issuer" (confirmed during
+          # issue #26 live verification).
+          access_token=$(docker exec jme-api-1 python3 -c "
+          import httpx
+          r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
+              data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
+          print(r.json()['access_token'])
+          ")
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)" = "200"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/candidates/1/job-matches)" = "401"
-          test "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $api_key" http://localhost:8000/candidates/1/job-matches)" = "200"
+          # Issue #26: X-API-Key alone is no longer enough -- a route-level
+          # JWT check rejects it without a verified bearer token too.
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $api_key" http://localhost:8000/candidates/1/job-matches)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" http://localhost:8000/candidates/1/job-matches)" = "200"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/metrics)" = "200"
       - name: Smoke-test the analytics API (health, auth, ingest)
         run: |
@@ -156,8 +214,17 @@ jobs:
           # stream_consumer.py) picks it up asynchronously, so give it a
           # couple of seconds rather than asserting instant delivery.
           api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          # See the "Smoke-test the API" step above for why this token is
+          # fetched from inside jme-api-1 rather than localhost:8180.
+          access_token=$(docker exec jme-api-1 python3 -c "
+          import httpx
+          r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
+              data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
+          print(r.json()['access_token'])
+          ")
           before=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from analytics.behavioral_events where source='api';" | xargs)
-          curl -s -o /dev/null -H "X-API-Key: $api_key" http://localhost:8000/candidates/2/job-matches
+          curl -s -o /dev/null -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" http://localhost:8000/candidates/2/job-matches
           sleep 3
           after=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from analytics.behavioral_events where source='api';" | xargs)
           echo "before=$before after=$after"
@@ -166,8 +233,15 @@ jobs:
         run: |
           set -e
           api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
-          first=$(curl -s -D - -o /dev/null -H "X-API-Key: $api_key" "http://localhost:8000/candidates/3/job-matches" | grep -i '^x-cache:' | tr -d '\r')
-          second=$(curl -s -D - -o /dev/null -H "X-API-Key: $api_key" "http://localhost:8000/candidates/3/job-matches" | grep -i '^x-cache:' | tr -d '\r')
+          access_token=$(docker exec jme-api-1 python3 -c "
+          import httpx
+          r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
+              data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
+          print(r.json()['access_token'])
+          ")
+          first=$(curl -s -D - -o /dev/null -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" "http://localhost:8000/candidates/3/job-matches" | grep -i '^x-cache:' | tr -d '\r')
+          second=$(curl -s -D - -o /dev/null -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" "http://localhost:8000/candidates/3/job-matches" | grep -i '^x-cache:' | tr -d '\r')
           echo "first=$first second=$second"
           echo "$first" | grep -qi 'MISS'
           echo "$second" | grep -qi 'HIT'
@@ -184,10 +258,17 @@ jobs:
           # a few quota units are already spent by the time this step runs.
           # See docs/redis-infrastructure.md "Use case 1".
           api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          access_token=$(docker exec jme-api-1 python3 -c "
+          import httpx
+          r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
+              data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
+          print(r.json()['access_token'])
+          ")
           ok=0
           limited=0
           for i in $(seq 1 150); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $api_key" "http://localhost:8000/candidates/4/job-matches")
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" "http://localhost:8000/candidates/4/job-matches")
             [ "$code" = "200" ] && ok=$((ok+1))
             [ "$code" = "429" ] && limited=$((limited+1))
           done
@@ -275,9 +356,23 @@ jobs:
           set -e
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8501/_stcore/health)" = "200"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8501/)" = "200"
-          docker exec jme-frontend-1 python -c "
+          access_token=$(docker exec jme-api-1 python3 -c "
+          import httpx
+          r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
+              data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
+          print(r.json()['access_token'])
+          ")
+          docker exec -e JME_ACCESS_TOKEN="$access_token" jme-frontend-1 python -c "
           import os, requests
-          r = requests.get('http://api:8000/candidates/2/job-matches', headers={'X-API-Key': os.environ['JME_API_KEY']}, timeout=10)
+          r = requests.get(
+              'http://api:8000/candidates/2/job-matches',
+              headers={
+                  'X-API-Key': os.environ['JME_API_KEY'],
+                  'Authorization': f\"Bearer {os.environ['JME_ACCESS_TOKEN']}\",
+              },
+              timeout=10,
+          )
           assert r.status_code == 200, r.text
           print('frontend -> api internal call ok')
           "
@@ -297,6 +392,13 @@ jobs:
         run: |
           set -e
           api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
+          access_token=$(docker exec jme-api-1 python3 -c "
+          import httpx
+          r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
+              data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
+          print(r.json()['access_token'])
+          ")
           # Nginx reporting "healthy" only means its own process is listening — not that its
           # proxy_pass connection to api/frontend has actually been exercised yet. A fresh
           # container's very first proxied request can transiently 502/refuse while Docker's
@@ -313,8 +415,8 @@ jobs:
           test "$upstreams" -eq 2
           echo "load balancer round-robin ok: 2 distinct upstreams seen"
           for attempt in $(seq 1 10); do
-            gw_response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8099/matching/candidates/2/job-matches")
-            direct_response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8000/candidates/2/job-matches")
+            gw_response=$(curl -s -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" "http://localhost:8099/matching/candidates/2/job-matches")
+            direct_response=$(curl -s -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" "http://localhost:8000/candidates/2/job-matches")
             [ "$gw_response" = "$direct_response" ] && [ -n "$gw_response" ] && break
             echo "gateway routing attempt $attempt: gw=$gw_response"
             sleep 2
@@ -361,7 +463,14 @@ jobs:
         run: |
           set -e
           api_key=$(grep '^JME_API_KEY=' .env | cut -d= -f2)
-          response=$(curl -s -H "X-API-Key: $api_key" "http://localhost:8000/candidates/1/job-matches/semantic?top_k=3")
+          access_token=$(docker exec jme-api-1 python3 -c "
+          import httpx
+          r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
+              data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
+          print(r.json()['access_token'])
+          ")
+          response=$(curl -s -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" "http://localhost:8000/candidates/1/job-matches/semantic?top_k=3")
           echo "$response"
           echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d) >= 1, 'expected at least one semantic match'; assert 'skills_similarity' in d[0]; print('semantic matching ok:', d)"
       - name: Start neo4j (Phase 19 knowledge graph)

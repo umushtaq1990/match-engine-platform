@@ -9,14 +9,16 @@ transaction — not a mock at any layer.
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_db
+from app.api.jwt_auth import get_verified_claims
 from app.api.main import app
 from tests.conftest import seed_matching_fixture
 
 API_KEY_HEADERS = {"X-API-Key": "dev-local-key-change-me"}
 
 
-def _client_bound_to(session) -> TestClient:
+def _client_bound_to(session, sub: str = "test-caller") -> TestClient:
     app.dependency_overrides[get_db] = lambda: (yield session)
+    app.dependency_overrides[get_verified_claims] = lambda: {"sub": sub}
     return TestClient(app)
 
 

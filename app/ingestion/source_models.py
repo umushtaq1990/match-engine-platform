@@ -43,6 +43,11 @@ class EmploymentType(str, enum.Enum):
     contract = "contract"
 
 
+class InteractionType(str, enum.Enum):
+    applied = "applied"
+    saved = "saved"
+
+
 # --- Canonical taxonomy -----------------------------------------------------
 
 class Skill(Base):
@@ -79,6 +84,13 @@ class Occupation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(20), unique=True)
     title: Mapped[str] = mapped_column(String(150))
+    # Issue #19: True for the real occupation titles (and anything a user adds
+    # via POST /occupations) — False for the synthetic padding rows
+    # app/ingestion/generate_synthetic_data.py creates to reach its target row
+    # count ("Accountant 2", "Accountant 3", ...) by cycling a short list of
+    # real titles. Lets GET /occupations hide the padding from pickers without
+    # touching the seeded data other tables already reference by id.
+    is_curated: Mapped[bool] = mapped_column(default=True)
 
     skills: Mapped[list["OccupationSkill"]] = relationship(back_populates="occupation")
 
@@ -139,6 +151,12 @@ class Candidate(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
     location_city: Mapped[str] = mapped_column(String(100))
     location_region: Mapped[str] = mapped_column(String(100))
+    # Issue #20: collected for later filtering/analysis, not read by
+    # app/matching/scoring.py's _location_component (that still uses
+    # location_city/location_region above) -- nullable since no UI collects
+    # them at registration time, only via the "Your profile" PATCH.
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     years_experience: Mapped[int] = mapped_column()
     desired_salary_min: Mapped[int | None] = mapped_column(nullable=True)
     desired_salary_max: Mapped[int | None] = mapped_column(nullable=True)
@@ -203,10 +221,24 @@ class Job(Base):
     description_raw: Mapped[str] = mapped_column(Text)
     location_city: Mapped[str] = mapped_column(String(100))
     location_region: Mapped[str] = mapped_column(String(100))
+    # Issue #23: collected for later filtering/analysis, not read by
+    # app/matching/scoring.py's _location_component (that still uses
+    # location_city/location_region above) -- same pattern as
+    # Candidate.postal_code/.country (issue #20).
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     salary_min: Mapped[int | None] = mapped_column(nullable=True)
     salary_max: Mapped[int | None] = mapped_column(nullable=True)
     employment_type: Mapped[EmploymentType] = mapped_column(Enum(EmploymentType))
     posted_at: Mapped[datetime] = mapped_column()
+    # Issue #22: ownership link for jobs posted via the frontend (nullable --
+    # the 1000-row seeded dataset's jobs have none, same
+    # keycloak_user_id-based trust boundary as app/api/profile_routes.py's
+    # candidate-details endpoints, no JWT verification).
+    posted_by_keycloak_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Display-only, like Candidate.years_experience/experience_level (issue
+    # #20) -- not read by app/matching/scoring.py.
+    min_years_experience: Mapped[int | None] = mapped_column(nullable=True)
 
     requirements: Mapped[list["JobSkill"]] = relationship(back_populates="job")
 
@@ -222,3 +254,22 @@ class JobSkill(Base):
 
     job: Mapped["Job"] = relationship(back_populates="requirements")
     skill: Mapped["Skill"] = relationship()
+
+
+class CandidateJobInteraction(Base):
+    """Issue #24: a candidate explicitly applying to or saving a job --
+    distinct from CandidateSkill/JobSkill (evidence about a candidate/job's
+    own attributes), this is an action a candidate took. Unique on
+    (candidate_id, job_id, interaction_type) so re-clicking "Apply"/"Save"
+    is idempotent, not a growing pile of duplicate rows.
+    """
+    __tablename__ = "candidate_job_interactions"
+    __table_args__ = (
+        UniqueConstraint("candidate_id", "job_id", "interaction_type", name="uq_candidate_job_interaction"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    interaction_type: Mapped[InteractionType] = mapped_column(Enum(InteractionType))
+    created_at: Mapped[datetime] = mapped_column()

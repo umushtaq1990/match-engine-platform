@@ -5,7 +5,9 @@ internal computation shapes (sets, used for set algebra in scoring.py); these
 are the wire format (sorted lists, JSON-safe), so the two can evolve
 independently without breaking API consumers.
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.identity.models import UserRole
 
 
 class ScoreOut(BaseModel):
@@ -66,3 +68,178 @@ class SemanticMatchOut(BaseModel):
     location_score: float
     salary_score: float
     occupation_score: float
+
+
+class ProfileCreate(BaseModel):
+    """Issue #15: identity-profile registration payload. Issue #26:
+    `keycloak_user_id` is deliberately absent -- identity now comes only
+    from the verified access token's `sub` claim (app/api/jwt_auth.py), not
+    a client-supplied field.
+    """
+    role: UserRole
+    full_name: str
+    email: str
+    company_name: str | None = None
+
+
+class ProfileOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    keycloak_user_id: str
+    role: UserRole
+    full_name: str
+    email: str
+    company_name: str | None
+    candidate_id: int | None  # issue #17: server-assigned, only set for role=candidate
+
+
+class CandidateDetailsOut(BaseModel):
+    """Issue #18: the scoring-relevant fields `app/matching/scoring.py` reads
+    for a candidate (location, salary, occupation, skills) — editable by the
+    candidate themself, as opposed to `ProfileOut`'s identity fields.
+    """
+    model_config = {"from_attributes": True}
+
+    location_city: str
+    postal_code: str | None
+    country: str | None
+    desired_salary_min: int | None
+    desired_salary_max: int | None
+    primary_occupation_id: int | None
+    experience_level: str | None
+    skill_ids: list[int]
+
+
+class CandidateDetailsUpdate(BaseModel):
+    """Issue #20: `location_region` is deliberately absent here -- it's still
+    read by app/matching/scoring.py's _location_component, but the frontend
+    no longer collects it from the user, so the PATCH handler leaves it
+    untouched rather than overwriting it with nothing.
+    """
+    location_city: str
+    postal_code: str | None = None
+    country: str | None = None
+    desired_salary_min: int | None = None
+    desired_salary_max: int | None = None
+    primary_occupation_id: int | None = None
+    experience_level: str | None = None
+    skill_ids: list[int] = Field(default_factory=list, max_length=10)
+    # Issue #24 added changed_by_keycloak_user_id here as a client-supplied
+    # field; issue #26 removed it -- who made this edit now comes only from
+    # the verified access token's `sub` claim, not a client-supplied value.
+
+
+class OccupationOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    title: str
+
+
+class OccupationCreate(BaseModel):
+    title: str
+
+
+class SkillOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    name: str
+
+
+class SkillCreate(BaseModel):
+    name: str
+
+
+class JobCreate(BaseModel):
+    """Issue #22: an employer-posted job. Issue #23: `location_region` is
+    deliberately absent -- still read by app/matching/scoring.py's
+    _location_component, but the frontend no longer collects it, so a new
+    job gets the same "Unknown" placeholder convention as Candidate
+    registration (see app/api/job_routes.py). Issue #26:
+    `posted_by_keycloak_user_id` is deliberately absent too -- ownership
+    now comes only from the verified access token's `sub` claim.
+    """
+    title: str
+    company_name: str
+    description: str
+    location_city: str
+    postal_code: str | None = None
+    country: str | None = None
+    salary_min: int | None = None
+    salary_max: int | None = None
+    primary_occupation_id: int | None = None
+    experience_level: str | None = None
+    required_skill_ids: list[int] = Field(default_factory=list, max_length=10)
+    preferred_skill_ids: list[int] = Field(default_factory=list, max_length=10)
+
+
+class JobListingOut(BaseModel):
+    """Issue #22: one row of an employer's "pick a job" list."""
+    model_config = {"from_attributes": True}
+
+    id: int
+    title: str
+    company_name: str
+    location_city: str
+    posted_at: str
+
+
+class JobDetailsOut(BaseModel):
+    """Issue #22: full job detail for the edit form -- same shape as
+    JobCreate's editable fields, plus the server-assigned id.
+    """
+    id: int
+    title: str
+    company_name: str
+    description: str
+    location_city: str
+    postal_code: str | None
+    country: str | None
+    salary_min: int | None
+    salary_max: int | None
+    primary_occupation_id: int | None
+    # Issue #25: resolved server-side, not a client lookup against GET
+    # /occupations -- that endpoint only returns curated titles, but a
+    # candidate can view a seeded job whose occupation isn't curated.
+    occupation_title: str | None
+    experience_level: str | None
+    required_skill_ids: list[int]
+    preferred_skill_ids: list[int]
+
+
+class JobDetailsUpdate(BaseModel):
+    """Issue #23: `location_region` is deliberately absent -- see
+    JobCreate's docstring; the PATCH handler leaves it untouched."""
+    title: str
+    company_name: str
+    description: str
+    location_city: str
+    postal_code: str | None = None
+    country: str | None = None
+    salary_min: int | None = None
+    salary_max: int | None = None
+    primary_occupation_id: int | None = None
+    experience_level: str | None = None
+    required_skill_ids: list[int] = Field(default_factory=list, max_length=10)
+    preferred_skill_ids: list[int] = Field(default_factory=list, max_length=10)
+    # Issue #26: changed_by_keycloak_user_id removed -- comes from the
+    # verified access token's `sub` claim now, not a client-supplied value.
+
+
+class JobInteractionOut(BaseModel):
+    """Issue #24: one row of a candidate's applied/saved jobs list, joined
+    with the job's title/company so the frontend doesn't need N round-trips.
+    """
+    job_id: int
+    title: str
+    company_name: str
+    interaction_type: str
+    created_at: str
+
+
+class ChangeLogEntryOut(BaseModel):
+    """Issue #24: one entry of GET /audit/{entity_type}/{entity_id}."""
+    changed_by_keycloak_user_id: str | None
+    changed_at: str
+    changes: dict

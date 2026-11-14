@@ -101,7 +101,12 @@ def _parse_llm_output(raw: str) -> list[dict]:
 # Only retried when the LLM returns *nothing at all*, not when it extracts
 # something that merely fails the similarity threshold — an empty
 # `extracted` list is the signature of this specific failure mode.
-_MAX_EXTRACTION_ATTEMPTS = 3
+#
+# Raised from 3 to 5: PR #27's first-ever CI run on this branch hit 3
+# consecutive empty attempts on the exact CI smoke-test text (~6% chance at
+# the measured 3/5 per-attempt success rate, confirmed not a code bug by
+# rerunning the same text locally). 5 attempts brings that down to <1%.
+_MAX_EXTRACTION_ATTEMPTS = 5
 
 
 def extract_skills(
