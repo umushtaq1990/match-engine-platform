@@ -1,6 +1,6 @@
 # Dev/local-only image: simulates an upstream data-engineering pipeline
 # producing source data. Never deployed as part of the production API.
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
