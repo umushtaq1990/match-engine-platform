@@ -1,2 +1,2 @@
 -r requirements-base.txt
-Faker==30.3.0
+Faker==40.43.0
