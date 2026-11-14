@@ -1,7 +1,7 @@
 # One-off job image: runs data-quality checks over existing source data.
 # No Faker/Alembic — this job only reads via SQL and writes its own result
 # tables, so it needs nothing beyond the base DB-connectivity dependencies.
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
