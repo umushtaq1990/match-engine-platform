@@ -114,9 +114,21 @@ jobs:
           admin_token=$(curl -s -X POST http://localhost:8180/realms/jme/protocol/openid-connect/token \
             -d grant_type=client_credentials -d client_id=jme-admin -d "client_secret=$admin_secret" \
             | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
-          curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8180/admin/realms/jme/users \
+          # firstName/lastName are required here, not cosmetic -- Keycloak 26's
+          # built-in VERIFY_PROFILE required action is enabled by default and
+          # triggers dynamically (independent of any "defaultAction" flag)
+          # whenever a user is missing a profile field the realm's User
+          # Profile schema requires. Omitting them produces a password-grant
+          # token exchange that 400s with "invalid_grant: Account is not
+          # fully set up" even though the user looks fully set up by every
+          # field the Admin API read-back shows (confirmed by reproducing
+          # this locally against the real stack).
+          code=$(curl -s -o /tmp/ci_user_create_resp.json -w '%{http_code}' -X POST http://localhost:8180/admin/realms/jme/users \
             -H "Authorization: Bearer $admin_token" -H 'Content-Type: application/json' \
-            -d '{"username":"ci-smoke-test@example-synthetic.test","email":"ci-smoke-test@example-synthetic.test","enabled":true,"emailVerified":true,"credentials":[{"type":"password","value":"ci-smoke-test-pw","temporary":false}]}'
+            -d '{"username":"ci-smoke-test@example-synthetic.test","email":"ci-smoke-test@example-synthetic.test","firstName":"CI","lastName":"Smoke","enabled":true,"emailVerified":true,"credentials":[{"type":"password","value":"ci-smoke-test-pw","temporary":false}]}')
+          echo "create user http code: $code"
+          cat /tmp/ci_user_create_resp.json
+          test "$code" = "201"
           echo "CI_TEST_EMAIL=ci-smoke-test@example-synthetic.test" >> "$GITHUB_ENV"
           echo "CI_TEST_PASSWORD=ci-smoke-test-pw" >> "$GITHUB_ENV"
       - name: Run migrations
@@ -169,6 +181,7 @@ jobs:
           import httpx
           r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
               data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
           print(r.json()['access_token'])
           ")
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health)" = "200"
@@ -207,6 +220,7 @@ jobs:
           import httpx
           r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
               data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
           print(r.json()['access_token'])
           ")
           before=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from analytics.behavioral_events where source='api';" | xargs)
@@ -223,6 +237,7 @@ jobs:
           import httpx
           r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
               data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
           print(r.json()['access_token'])
           ")
           first=$(curl -s -D - -o /dev/null -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" "http://localhost:8000/candidates/3/job-matches" | grep -i '^x-cache:' | tr -d '\r')
@@ -247,6 +262,7 @@ jobs:
           import httpx
           r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
               data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
           print(r.json()['access_token'])
           ")
           ok=0
@@ -344,6 +360,7 @@ jobs:
           import httpx
           r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
               data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
           print(r.json()['access_token'])
           ")
           docker exec -e JME_ACCESS_TOKEN="$access_token" jme-frontend-1 python -c "
@@ -379,6 +396,7 @@ jobs:
           import httpx
           r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
               data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
           print(r.json()['access_token'])
           ")
           # Nginx reporting "healthy" only means its own process is listening — not that its
@@ -449,6 +467,7 @@ jobs:
           import httpx
           r = httpx.post('http://keycloak:8080/realms/jme/protocol/openid-connect/token',
               data={'grant_type': 'password', 'client_id': 'jme-frontend', 'username': '$CI_TEST_EMAIL', 'password': '$CI_TEST_PASSWORD', 'scope': 'openid'})
+          assert r.status_code == 200, f'token endpoint returned {r.status_code}: {r.text}'
           print(r.json()['access_token'])
           ")
           response=$(curl -s -H "X-API-Key: $api_key" -H "Authorization: Bearer $access_token" "http://localhost:8000/candidates/1/job-matches/semantic?top_k=3")
