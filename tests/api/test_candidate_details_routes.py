@@ -278,7 +278,16 @@ def test_patch_candidate_details_rejects_a_caller_who_doesnt_own_it(profile_db_s
         app.dependency_overrides.clear()
 
 
-def test_list_occupations_returns_seeded_rows(profile_db_session):
+def test_list_occupations_returns_rows(profile_db_session):
+    """Issue #26 CI fix: this used to assume the dev DB's synthetic seed data
+    was present, which only `profile_db_session`'s own fixture rows are
+    guaranteed to be -- CI's fresh Postgres only runs migrations, never the
+    seed script, so an assumption of pre-existing rows fails there even
+    though it passes against a locally-seeded dev DB.
+    """
+    profile_db_session.add(Occupation(code="ISSUE26-LIST-OCC", title="Issue26 List Occupation"))
+    profile_db_session.commit()
+
     client = _client_bound_to(profile_db_session)
     try:
         response = client.get("/occupations", headers=API_KEY_HEADERS)
@@ -290,7 +299,10 @@ def test_list_occupations_returns_seeded_rows(profile_db_session):
         app.dependency_overrides.clear()
 
 
-def test_list_skills_returns_seeded_rows(profile_db_session):
+def test_list_skills_returns_rows(profile_db_session):
+    profile_db_session.add(Skill(name="Issue26 List Skill"))
+    profile_db_session.commit()
+
     client = _client_bound_to(profile_db_session)
     try:
         response = client.get("/skills", headers=API_KEY_HEADERS)
