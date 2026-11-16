@@ -37,6 +37,30 @@ DEFAULT_SIMILARITY_THRESHOLD = 0.65
 # have come close to. v3 explicitly instructs short canonical names instead.
 PROMPT_VERSION = "v3"
 
+# No ground truth exists in production (unlike the golden-eval harness, which
+# has real CandidateSkill/JobSkill rows to score against) -- this heuristic is
+# the only confidence signal available for a real, unlabeled document. Built
+# from the two things extract_skills already computes per phrase (match
+# confidence, near-miss best_score for anything below similarity_threshold),
+# then validated against real F1 using the golden-eval data we DO have ground
+# truth for: bucketing runs 29/32/34's ~5700 examples by this exact formula
+# and comparing to their real f1 showed a clean monotonic relationship
+# (bucket avg doc_confidence 0.04/0.33/0.51/0.71/0.92/1.00 -> avg real f1
+# 0.02/0.38/0.61/0.70/0.82/0.87), so it's not an untested guess.
+_REVIEW_THRESHOLD = 0.6
+
+
+def _document_confidence(matches: list[dict], unmatched: list[dict]) -> float:
+    total = len(matches) + len(unmatched)
+    if total == 0:
+        # Nothing extracted at all from non-empty text is itself a bad sign,
+        # not a neutral one -- score it as the lowest bucket rather than 1.0.
+        return 0.0
+    avg_match_confidence = sum(m["confidence"] for m in matches) / len(matches) if matches else 0.0
+    unmatched_rate = len(unmatched) / total
+    return round(avg_match_confidence * (1 - unmatched_rate), 4)
+
+
 _VALID_LEVELS = {"required", "preferred"}
 
 # A JSON Schema, not the loose "format": "json" string — found by real testing
@@ -173,4 +197,11 @@ def extract_skills(
                 "best_score": round(best_score, 4) if best_score > -1 else None,
             })
 
-    return {"matches": matches, "unmatched": unmatched, "extracted": extracted}
+    document_confidence = _document_confidence(matches, unmatched)
+    return {
+        "matches": matches,
+        "unmatched": unmatched,
+        "extracted": extracted,
+        "document_confidence": document_confidence,
+        "needs_review": document_confidence < _REVIEW_THRESHOLD,
+    }

@@ -1,6 +1,11 @@
 """Skill-extraction endpoint (Use Case C) — thin HTTP layer over
-app/extraction/pipeline.py. Stateless: text in, skills out, independent of
-whether the source is a job description or a CV.
+app/extraction/pipeline.py. The extraction itself is stateless (text in,
+skills out, independent of whether the source is a job description or a
+CV), but every call is logged to extraction_calls (app/extraction/models.py)
+for the human-in-the-loop review queue below -- there's no ground truth for
+real production text, so document_confidence is a heuristic proxy, not a
+measured score (see pipeline._document_confidence for how it was derived
+and validated against the golden-eval dataset).
 
 Also exposes basic CV document upload/download (app/extraction/
 document_storage.py) — a candidate's own CV, stored as-is in object
@@ -11,6 +16,7 @@ docs/skill-extraction.md "CV upload storage" for the v2 roadmap note.
 """
 from datetime import datetime, timezone
 
+import mlflow
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import select
@@ -18,9 +24,15 @@ from sqlalchemy.orm import Session
 
 from app.extraction import document_storage
 from app.extraction.deps import DbSession, RequireApiKey
-from app.extraction.models import CandidateDocument
+from app.extraction.models import CandidateDocument, ExtractionCall
 from app.extraction.pipeline import extract_skills
-from app.extraction.schemas import CandidateDocumentOut, ExtractRequest, ExtractResponse
+from app.extraction.schemas import (
+    CandidateDocumentOut,
+    ExtractionCallOut,
+    ExtractRequest,
+    ExtractResponse,
+    ReviewRequest,
+)
 from app.ingestion.source_models import Candidate
 
 router = APIRouter(dependencies=[RequireApiKey])
@@ -35,7 +47,62 @@ def extract(payload: ExtractRequest, db: Session = DbSession):
         embedding_model=payload.embedding_model,
         similarity_threshold=payload.similarity_threshold,
     )
+
+    # Best-effort, same reasoning as pipeline.py's tracing hooks -- logging
+    # this row must never break a real extraction response. Not
+    # get_current_active_span(): extract_skills's own @mlflow.trace span has
+    # already closed by the time control returns here, so that would always
+    # be None -- get_last_active_trace_id() is mlflow's API for exactly this
+    # "grab the trace id of the call I just made" pattern (confirmed live).
+    trace_id = None
+    try:
+        trace_id = mlflow.get_last_active_trace_id()
+    except Exception:
+        pass
+
+    db.add(ExtractionCall(
+        called_at=datetime.now(timezone.utc),
+        llm_model=payload.llm_model,
+        embedding_model=payload.embedding_model,
+        similarity_threshold=payload.similarity_threshold,
+        text_length=len(payload.text),
+        match_count=len(result["matches"]),
+        unmatched_count=len(result["unmatched"]),
+        document_confidence=result["document_confidence"],
+        needs_review=result["needs_review"],
+        mlflow_trace_id=trace_id,
+    ))
+    db.commit()
+
     return ExtractResponse(**result)
+
+
+@router.get("/review-queue", response_model=list[ExtractionCallOut])
+def list_review_queue(db: Session = DbSession, limit: int = 100):
+    """Open backlog: flagged extraction calls nobody has reviewed yet, most
+    recent first. The daily-count/trend view belongs on the Grafana
+    dashboard (it already owns that kind of aggregate); this is the detail
+    list a human actually works through, with mlflow_trace_id as the jump-off
+    point into that document's full per-phrase trace."""
+    rows = db.execute(
+        select(ExtractionCall)
+        .where(ExtractionCall.needs_review.is_(True), ExtractionCall.reviewed_at.is_(None))
+        .order_by(ExtractionCall.called_at.desc())
+        .limit(limit)
+    ).scalars().all()
+    return rows
+
+
+@router.post("/review-queue/{call_id}/review", response_model=ExtractionCallOut)
+def mark_reviewed(call_id: int, payload: ReviewRequest, db: Session = DbSession):
+    row = db.get(ExtractionCall, call_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"No extraction call with id={call_id}")
+    row.reviewed_at = datetime.now(timezone.utc)
+    row.reviewer = payload.reviewer
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 @router.post("/candidates/{candidate_id}/cv", response_model=CandidateDocumentOut, status_code=201)

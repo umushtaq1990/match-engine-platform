@@ -6,6 +6,17 @@
   "version": 1,
   "refresh": "30s",
   "time": { "from": "now-60d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "MLFLOW_BASE_URL",
+        "type": "textbox",
+        "label": "MLflow base URL",
+        "query": "http://localhost:5000",
+        "current": { "value": "http://localhost:5000", "text": "http://localhost:5000" }
+      }
+    ]
+  },
   "panels": [
     {
       "title": "Events over time (by type)",
@@ -117,6 +128,82 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "title": "Extraction calls needing human review, per day",
+      "description": "extraction_calls.needs_review, bucketed by called_at. document_confidence is a heuristic proxy (no ground truth exists for real production text) — see app/extraction/pipeline.py:_document_confidence for the formula and the golden-eval validation behind the 0.6 cutoff. Watch this for sudden spikes: a jump usually means a model/prompt/threshold change regressed quality, not that the underlying text got harder overnight.",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT\n  $__timeGroup(called_at, '1d') AS \"time\",\n  CASE WHEN needs_review THEN 'needs_review' ELSE 'ok' END AS \"metric\",\n  count(*) AS \"value\"\nFROM extraction_calls\nWHERE $__timeFilter(called_at)\nGROUP BY 1, 2\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Open review backlog (flagged, not yet reviewed)",
+      "description": "A human hasn't closed these out yet — this is the number that should trend toward zero, not the daily-flagged count above (which will never be zero on a healthy pipeline, since some fraction of real text is always genuinely ambiguous).",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 44 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 20 } ] } }, "overrides": [] },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) AS open_backlog\nFROM extraction_calls\nWHERE needs_review AND reviewed_at IS NULL",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Avg document confidence, last 7 days",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 44 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT avg(document_confidence) AS avg_confidence\nFROM extraction_calls\nWHERE called_at >= now() - interval '7 days'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Review queue — flagged documents awaiting a human (link to MLflow trace)",
+      "description": "mlflow_trace_id is the jump-off point into that exact extraction's full per-phrase trace in the MLflow UI (http://localhost:5000 locally) — paste it into MLflow's trace search, or use the Data link below once MLFLOW_BASE_URL is set to this environment's real MLflow host. Same split of responsibility as the panels above: this dashboard says how many and which ones, MLflow says why.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 48 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  called_at AS time,\n  llm_model,\n  text_length,\n  match_count,\n  unmatched_count,\n  document_confidence,\n  mlflow_trace_id\nFROM extraction_calls\nWHERE needs_review AND reviewed_at IS NULL\nORDER BY called_at DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "mlflow_trace_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open trace in MLflow",
+                    "url": "${MLFLOW_BASE_URL}/#/experiments/0/traces?selectedTraceId=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

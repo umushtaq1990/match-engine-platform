@@ -11,7 +11,7 @@ already owns), not a genuinely separate concern.
 """
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -92,3 +92,34 @@ class CandidateDocument(Base):
     content_type: Mapped[str] = mapped_column(String(100))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     uploaded_at: Mapped[datetime] = mapped_column()
+
+
+class ExtractionCall(Base):
+    """One row per real POST /extract call -- the production counterpart to
+    ExtractionExampleResult, which only exists for the golden-eval harness.
+    No ground truth exists here (real, unlabeled text), so there's no
+    precision/recall/f1 to store -- document_confidence is a heuristic proxy
+    (see pipeline._document_confidence), not a measured score. mlflow_trace_id
+    links each row to its full per-phrase trace in the MLflow UI, so a human
+    reviewer (or an engineer debugging a confidence dip) can go from "this
+    document needs review" straight to "here's exactly what the LLM and the
+    embedding step did" without re-running anything.
+    """
+    __tablename__ = "extraction_calls"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    called_at: Mapped[datetime] = mapped_column(index=True)
+    llm_model: Mapped[str] = mapped_column(String(100))
+    embedding_model: Mapped[str] = mapped_column(String(100))
+    similarity_threshold: Mapped[float] = mapped_column(Numeric(4, 3))
+    text_length: Mapped[int] = mapped_column()
+    match_count: Mapped[int] = mapped_column()
+    unmatched_count: Mapped[int] = mapped_column()
+    document_confidence: Mapped[float] = mapped_column(Numeric(6, 4))
+    needs_review: Mapped[bool] = mapped_column(Boolean, index=True)
+    mlflow_trace_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Set once a human has looked at a flagged document -- turns the
+    # dashboard's "needs review" count into a real backlog metric (open vs.
+    # closed) instead of just a running total that never comes back down.
+    reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    reviewer: Mapped[str | None] = mapped_column(String(255), nullable=True)
