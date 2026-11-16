@@ -1,7 +1,9 @@
 """Candidates & Job Posts drill-down: entity type -> domain -> occupation,
-colored by F1, click (or use the dropdowns below the chart) to narrow down
-to the full per-example table -- actual/expected skills, matched/
-unmatched, precision/recall/F1, for every record in that leaf.
+colored by F1 (chart above, read-only -- see app/golden/drilldown/
+chart.py's module docstring for why it can't drive the filters below it).
+Use the dropdowns to narrow down to the full per-example table --
+actual/expected skills, matched/unmatched, precision/recall/F1, for every
+record in that leaf.
 """
 import streamlit as st
 
@@ -26,13 +28,11 @@ if rows.empty:
     st.warning(f"No golden_cv/golden_job examples found for run {run_id}.")
     st.stop()
 
-st.caption(f"{len(rows)} examples in run {run_id} -- click a box below, or use the dropdowns to drill in.")
+st.caption(f"{len(rows)} examples in run {run_id} -- use the dropdowns below the chart to drill in.")
 
 render_drilldown_chart(
     rows, "f1",
     [("entity_type",), ("entity_type", "domain"), ("entity_type", "domain", "occupation")],
-    chart_key="candidates_jobs_tree",
-    filter_keys=["entity_type", "domain", "occupation"],
 )
 
 filtered = cascading_filters(rows, ["entity_type", "domain", "occupation"])

@@ -30,15 +30,13 @@ if rows.empty:
 
 st.caption(
     f"{len(rows)} matched skill mentions in run {run_id} -- "
-    "click a box below, or use the dropdowns to drill in."
+    "use the dropdowns below the chart to drill in."
 )
 
 render_drilldown_chart(
     rows, "confidence",
     [("entity_type",), ("entity_type", "domain"), ("entity_type", "domain", "occupation"),
      ("entity_type", "domain", "occupation", "skill_type")],
-    chart_key="skills_tree",
-    filter_keys=["entity_type", "domain", "occupation", "skill_type"],
 )
 
 filtered = cascading_filters(rows, ["entity_type", "domain", "occupation", "skill_type"])

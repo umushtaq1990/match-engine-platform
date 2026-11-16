@@ -146,15 +146,6 @@ def _icicle_trace(
 
     return go.Icicle(
         ids=ids, labels=labels, parents=parents, values=values,
-        # Streamlit's on_select payload for a plotly selection does NOT
-        # include a chart's own `id`/`label`/`parent` fields (confirmed
-        # live, and in its documented schema: curve_number, point_number,
-        # point_index, x, y, customdata, marker_size, legendgroup -- no
-        # hierarchy-specific fields at all) -- customdata is the one field
-        # guaranteed to come back, so app/golden/drilldown/chart.py's
-        # click handler reads the clicked node's own id back out of here,
-        # not out of a nonexistent "id" key on the event.
-        customdata=ids,
         branchvalues="total",
         marker={"colors": colors, "colorscale": "RdYlGn", "cmin": 0, "cmax": 1, "showscale": True},
         text=[f"{c:.0%}" for c in colors],
