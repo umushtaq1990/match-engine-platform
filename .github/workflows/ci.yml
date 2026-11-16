@@ -137,7 +137,7 @@ jobs:
         run: |
           count=$(docker exec jme-db-1 psql -U jme -d jme -t -c "select count(*) from information_schema.tables where table_schema='public';")
           echo "table count: $count"
-          [ "$(echo $count | xargs)" = "24" ]
+          [ "$(echo $count | xargs)" = "27" ]
       - name: Seed synthetic data
         run: docker compose run --rm seed
       - name: Confirm seeded row counts
