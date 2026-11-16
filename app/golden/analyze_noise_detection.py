@@ -3,6 +3,19 @@ scoring review-queue mechanism (app/extraction/pipeline.py's
 _document_confidence, _REVIEW_THRESHOLD) actually catch the deliberately
 injected, unfindable skills from app/golden/inject_noise.py?
 
+Also reports *corrected* precision/recall/F1 for the run -- since we know
+exactly which skill was injected into which example, stripping it from
+that one example's expected_skill_ids before rescoring gives an honest
+read of the model's real extraction quality, undeflated by ground truth
+we know is deliberately wrong. Confirmed live: run 38's raw F1 (0.8273,
+`extraction_runs.f1_avg`, computed against the uncorrected -- deliberately
+corrupted -- ground truth) understates true quality by about half a point
+(corrected F1 0.8337) -- a real, if modest, effect, not assumed. This
+corrected number is NOT written back to `extraction_runs` -- the raw
+metrics there stay as originally scored (that's the whole point of
+running this check against them), this is a separate, repeatable report
+on top of already-persisted data.
+
 No new extraction calls are made here -- document_confidence is computed
 retroactively from each example's already-persisted match_detail/
 unmatched_detail (ExtractionExampleResult), reusing pipeline.py's own
@@ -16,6 +29,7 @@ import argparse
 from sqlalchemy import select
 
 from app.db import SessionLocal
+from app.extraction.metrics import set_f1, set_precision, set_recall
 from app.extraction.models import ExtractionExampleResult, ExtractionRun
 from app.extraction.pipeline import _REVIEW_THRESHOLD, _document_confidence
 from app.golden.models import GoldenInjectedNoise
@@ -60,6 +74,8 @@ def main() -> None:
         noisy_flagged = noisy_total = 0
         clean_flagged = clean_total = 0
         false_positive_matches = 0  # injected skill wrongly ended up in match_detail anyway
+        orig_p, orig_r, orig_f1 = [], [], []
+        corrected_p, corrected_r, corrected_f1 = [], [], []
 
         for r in results:
             raw_id = int(r.example_id.split(":", 1)[1])
@@ -89,6 +105,17 @@ def main() -> None:
                 if flagged:
                     clean_flagged += 1
 
+            predicted = set(r.predicted_skill_ids or [])
+            expected = set(r.expected_skill_ids or [])
+            orig_p.append(float(r.precision))
+            orig_r.append(float(r.recall))
+            orig_f1.append(float(r.f1))
+
+            corrected_expected = expected - {injected_skill_id} if is_noisy else expected
+            corrected_p.append(set_precision(predicted, corrected_expected))
+            corrected_r.append(set_recall(predicted, corrected_expected))
+            corrected_f1.append(set_f1(predicted, corrected_expected))
+
         def _avg(values: list[float]) -> float:
             return sum(values) / len(values) if values else 0.0
 
@@ -108,6 +135,17 @@ def main() -> None:
         print(
             f"  Injected skill wrongly appeared in match_detail anyway: "
             f"{false_positive_matches}/{noisy_total}"
+        )
+
+        n = len(orig_f1)
+        print(f"\n  Corrected metrics (excluding each example's own injected skill, n={n}):")
+        print(
+            f"    Original  -- precision={_avg(orig_p):.4f} recall={_avg(orig_r):.4f} "
+            f"f1={_avg(orig_f1):.4f}  (matches extraction_runs.*_avg for this run)"
+        )
+        print(
+            f"    Corrected -- precision={_avg(corrected_p):.4f} recall={_avg(corrected_r):.4f} "
+            f"f1={_avg(corrected_f1):.4f}"
         )
     finally:
         session.close()
