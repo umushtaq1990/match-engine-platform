@@ -73,6 +73,11 @@ jobs:
   fresh-volume-smoke-test:
     needs: build-and-scan
     runs-on: ubuntu-latest
+    env:
+      # GitHub Actions runners have no GPU -- without this, `docker compose
+      # up -d ollama` fails ("failed to discover GPU vendor from CDI") on
+      # the base docker-compose.yml's `gpus: all`. See docker-compose.ci.yml.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - uses: actions/checkout@v4
       - name: Write CI env file
