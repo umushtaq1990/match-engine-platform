@@ -71,6 +71,11 @@ class ExtractionExampleResult(Base):
     # visibly different from a true non-match (0.1):
     # [{"phrase", "best_score"}, ...]
     unmatched_detail: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Links this one example to its full MLflow trace, same purpose as
+    # extraction_calls.mlflow_trace_id in production -- full traceability
+    # means a golden-eval example should be just as drillable down to "what
+    # did the LLM/embedding step actually do" as a real production call is.
+    mlflow_trace_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     run: Mapped["ExtractionRun"] = relationship(back_populates="example_results")
 

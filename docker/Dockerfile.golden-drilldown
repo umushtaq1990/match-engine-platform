@@ -1,7 +1,8 @@
-# Internal, live drill-down explorer over golden-eval results (two pages:
-# Candidates & Job Posts, Skills) -- app/golden/drilldown/. Direct-to-
-# Postgres, read-only, no CV storage/LLM access needed (unlike the other
-# golden-* tools) since this only reads already-persisted eval results.
+# Internal, live drill-down explorer over golden-eval results (three
+# pages: Candidates & Job Posts, Skills, Behavioral Analytics) --
+# app/golden/drilldown/. Direct-to-Postgres, read-only, no CV storage/LLM
+# access needed (unlike the other golden-* tools) since this only reads
+# already-persisted eval/behavioral/occupation data.
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -12,12 +13,18 @@ RUN pip install --no-cache-dir -r requirements-golden-drilldown.txt
 COPY app/db.py ./app/db.py
 COPY app/__init__.py ./app/__init__.py
 COPY app/common/ ./app/common/
-COPY app/ingestion/__init__.py ./app/ingestion/__init__.py
-COPY app/ingestion/source_models.py ./app/ingestion/source_models.py
+COPY app/ingestion/ ./app/ingestion/
 COPY app/extraction/models.py ./app/extraction/models.py
 COPY app/extraction/__init__.py ./app/extraction/__init__.py
+COPY app/analytics/__init__.py ./app/analytics/__init__.py
+COPY app/analytics/models.py ./app/analytics/models.py
+COPY app/analytics/segmentation.py ./app/analytics/segmentation.py
 COPY app/golden/__init__.py ./app/golden/__init__.py
 COPY app/golden/build_evaluation_tree.py ./app/golden/build_evaluation_tree.py
+COPY app/golden/models.py ./app/golden/models.py
+COPY app/golden/select.py ./app/golden/select.py
+COPY app/golden/seed_curated_occupations.py ./app/golden/seed_curated_occupations.py
+COPY app/golden/generate_persona_events.py ./app/golden/generate_persona_events.py
 COPY app/golden/drilldown/ ./app/golden/drilldown/
 
 ENV PYTHONPATH=/app

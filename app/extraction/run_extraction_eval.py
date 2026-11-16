@@ -121,6 +121,21 @@ def _extract_one(
     total_phrases = len(result["matches"]) + len(result["unmatched"])
     unmatched_rate = len(result["unmatched"]) / total_phrases if total_phrases else 0.0
 
+    # Best-effort, same reasoning as app/extraction/routes.py's identical
+    # capture for extraction_calls -- full traceability means every golden-
+    # eval example should be able to point at its own MLflow trace too, not
+    # just production calls. get_last_active_trace_id(), not
+    # get_current_active_span(): extract_skills()'s own @mlflow.trace span
+    # has already closed by the time control returns here. Mlflow's tracing
+    # context is thread-local, so this stays correct per-example even when
+    # max_workers>1 runs extract_skills() calls concurrently across threads
+    # (confirmed live, not assumed -- see golden-evaluation-dataset.md).
+    mlflow_trace_id = None
+    try:
+        mlflow_trace_id = mlflow.get_last_active_trace_id()
+    except Exception:
+        pass
+
     return {
         "example_id": ex["example_id"],
         "source": ex["source"],
@@ -137,6 +152,7 @@ def _extract_one(
         "extracted_phrases": result["extracted"],
         "match_detail": result["matches"],
         "unmatched_detail": result["unmatched"],
+        "mlflow_trace_id": mlflow_trace_id,
     }
 
 
@@ -226,6 +242,7 @@ def run_extraction_eval(
             extracted_phrases=r["extracted_phrases"],
             match_detail=r["match_detail"],
             unmatched_detail=r["unmatched_detail"],
+            mlflow_trace_id=r.get("mlflow_trace_id"),
         ))
 
     session.commit()

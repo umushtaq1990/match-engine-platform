@@ -720,6 +720,22 @@ services:
   # and job posts (1500). Writes a single self-contained Plotly HTML file,
   # no server needed -- see app/golden/build_evaluation_tree.py's docstring.
   # Pass --run-id if the default (best-scoring 2000-sample run) isn't right.
+  # Closes the golden-dataset-v2 Roadmap item this was explicitly deferred
+  # from: does the confidence-scoring review queue actually catch the
+  # deliberately injected noise skills? See
+  # app/golden/analyze_noise_detection.py.
+  golden-analyze-noise:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.analyze_noise_detection"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
   golden-eval-tree:
     build:
       context: .
@@ -735,11 +751,12 @@ services:
     profiles: ["tools"]
 
   # Live, interactive version of golden-eval-tree's static report --
-  # app/golden/drilldown/, two pages (Candidates & Job Posts, Skills),
-  # click (or dropdown) drill-down all the way to per-record detail. A
-  # long-running server, not a one-off script, so it's started with
-  # `up -d`, not `run --rm`, even though it shares the "tools" profile with
-  # the rest of the golden-dataset tooling.
+  # app/golden/drilldown/, three pages (Candidates & Job Posts, Skills,
+  # Behavioral Analytics), dropdown drill-down all the way to per-record
+  # detail, with MLflow trace links and noise-injection flags for full
+  # traceability. A long-running server, not a one-off script, so it's
+  # started with `up -d`, not `run --rm`, even though it shares the
+  # "tools" profile with the rest of the golden-dataset tooling.
   golden-drilldown:
     build:
       context: .

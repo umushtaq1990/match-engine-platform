@@ -1,4 +1,4 @@
-"""Provisions a real Keycloak login for each of the 500 golden candidates
+"""Provisions a real Keycloak login for each golden candidate
 (app/golden/select.py), reusing the exact same Admin-API client
 (app/frontend/keycloak_admin.py) that backs the real inline self-registration
 form -- `create_user` already splits `full_name` into firstName/lastName,
@@ -24,7 +24,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.frontend.keycloak_admin import assign_realm_role, create_user, get_admin_token
-from app.golden.select import select_golden_candidate_ids
+from app.golden.select import select_existing_golden_candidate_ids
 from app.identity.models import UserProfile, UserRole
 from app.ingestion.source_models import Candidate
 
@@ -38,7 +38,7 @@ def golden_email(candidate_id: int) -> str:
 def main(limit: int | None) -> None:
     session = SessionLocal()
     try:
-        golden_ids = select_golden_candidate_ids(session)
+        golden_ids = select_existing_golden_candidate_ids(session)
         if limit is not None:
             golden_ids = golden_ids[:limit]
 

@@ -1,4 +1,4 @@
-"""Persona-driven behavioral history for the 500 golden candidates --
+"""Persona-driven behavioral history for the golden candidates --
 deliberately controlled activity patterns (not the generic
 app/analytics/generate_synthetic_events.py's uniform-random session
 assignment), so a later clustering pass has real, separable behavioral
@@ -32,7 +32,7 @@ from sqlalchemy import select
 from app.analytics.models import BehavioralEvent
 from app.db import SessionLocal
 from app.golden.models import GoldenPair
-from app.golden.select import select_golden_candidate_ids
+from app.golden.select import select_existing_golden_candidate_ids
 from app.ingestion.source_models import Job
 
 SEED = 1337
@@ -59,7 +59,8 @@ def assign_personas(candidate_ids: list[int], seed: int = SEED) -> dict[int, str
     """Deterministic, independent of occupation/selection order -- the
     input list is shuffled with a fixed seed before slicing into persona
     buckets, so persona assignment doesn't correlate with
-    select_golden_candidate_ids' occupation-sorted ordering.
+    select_existing_golden_candidate_ids' id-sorted ordering (or, before
+    golden-dataset v2, select_golden_candidate_ids' occupation-sorted one).
     """
     rng = random.Random(seed)
     shuffled = list(candidate_ids)
@@ -212,7 +213,7 @@ def _events_for_persona(rng, persona, actor_id, golden_job_ids, pool_job_ids, no
 def main(limit: int | None) -> None:
     session = SessionLocal()
     try:
-        golden_ids = select_golden_candidate_ids(session)
+        golden_ids = select_existing_golden_candidate_ids(session)
         if limit is not None:
             golden_ids = golden_ids[:limit]
 
