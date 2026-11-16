@@ -65,9 +65,12 @@ def extract(payload: ExtractRequest, db: Session = DbSession):
         llm_model=payload.llm_model,
         embedding_model=payload.embedding_model,
         similarity_threshold=payload.similarity_threshold,
+        text=payload.text,
         text_length=len(payload.text),
         match_count=len(result["matches"]),
         unmatched_count=len(result["unmatched"]),
+        match_detail=result["matches"],
+        unmatched_detail=result["unmatched"],
         document_confidence=result["document_confidence"],
         needs_review=result["needs_review"],
         mlflow_trace_id=trace_id,
@@ -75,6 +78,19 @@ def extract(payload: ExtractRequest, db: Session = DbSession):
     db.commit()
 
     return ExtractResponse(**result)
+
+
+@router.get("/extraction-calls", response_model=list[ExtractionCallOut])
+def list_extraction_calls(db: Session = DbSession, limit: int = 100):
+    """Every extraction call, flagged or not -- the full audit trail behind
+    the "JME Extraction Review" Grafana dashboard's per-document table.
+    /review-queue below is the narrower, actionable subset (flagged and
+    still open); this is "what did we extract from everything," which a
+    reviewer or an engineer debugging a specific document also needs."""
+    rows = db.execute(
+        select(ExtractionCall).order_by(ExtractionCall.called_at.desc()).limit(limit)
+    ).scalars().all()
+    return rows
 
 
 @router.get("/review-queue", response_model=list[ExtractionCallOut])

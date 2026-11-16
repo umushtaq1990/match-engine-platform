@@ -40,9 +40,12 @@ class ExtractionCallOut(BaseModel):
     id: int
     called_at: datetime
     llm_model: str
+    text: str
     text_length: int
     match_count: int
     unmatched_count: int
+    match_detail: list[SkillMatchOut]
+    unmatched_detail: list[UnmatchedPhraseOut]
     document_confidence: float
     needs_review: bool
     mlflow_trace_id: str | None

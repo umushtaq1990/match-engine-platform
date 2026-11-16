@@ -11,7 +11,7 @@ already owns), not a genuinely separate concern.
 """
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -112,9 +112,20 @@ class ExtractionCall(Base):
     llm_model: Mapped[str] = mapped_column(String(100))
     embedding_model: Mapped[str] = mapped_column(String(100))
     similarity_threshold: Mapped[float] = mapped_column(Numeric(4, 3))
+    # The submitted text itself -- needed for a human reviewer to judge a
+    # flagged document at all, not just see that it was flagged. Same
+    # sensitivity class as CandidateDocument's stored CVs (real user text),
+    # kept here rather than only logged, consistent with that existing
+    # choice elsewhere in this service.
+    text: Mapped[str] = mapped_column(Text())
     text_length: Mapped[int] = mapped_column()
     match_count: Mapped[int] = mapped_column()
     unmatched_count: Mapped[int] = mapped_column()
+    # Same shape as ExtractionExampleResult's match_detail/unmatched_detail
+    # above -- this is what lets a reviewer (or the dashboard) see *what*
+    # was extracted, not just how many phrases matched or didn't.
+    match_detail: Mapped[list] = mapped_column(JSONB)
+    unmatched_detail: Mapped[list] = mapped_column(JSONB)
     document_confidence: Mapped[float] = mapped_column(Numeric(6, 4))
     needs_review: Mapped[bool] = mapped_column(Boolean, index=True)
     mlflow_trace_id: Mapped[str | None] = mapped_column(String(100), nullable=True)

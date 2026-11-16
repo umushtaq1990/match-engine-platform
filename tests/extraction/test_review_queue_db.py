@@ -27,6 +27,17 @@ def _client_bound_to(session) -> TestClient:
     return TestClient(app)
 
 
+def _extraction_call(**overrides) -> ExtractionCall:
+    defaults = dict(
+        called_at=datetime.now(timezone.utc), llm_model="qwen2.5:1.5b",
+        embedding_model="nomic-embed-text", similarity_threshold=0.65,
+        text="placeholder text", text_length=10, match_count=0, unmatched_count=1,
+        match_detail=[], unmatched_detail=[], document_confidence=0.1, needs_review=True,
+    )
+    defaults.update(overrides)
+    return ExtractionCall(**defaults)
+
+
 def _fake_extract_skills(needs_review: bool):
     def _inner(text, session, llm_model=None, embedding_model=None, similarity_threshold=None):
         return {
@@ -58,29 +69,38 @@ def test_extract_persists_an_extraction_call_row(matching_db_session, monkeypatc
         ).scalars().all()
         assert len(rows) == 1
         assert rows[0].needs_review is False
+        assert rows[0].text == "Must know Python."
+        assert rows[0].match_detail[0]["source_phrase"] == "Python"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_extraction_calls_lists_everything_flagged_or_not(matching_db_session):
+    flagged = _extraction_call()
+    not_flagged = _extraction_call(
+        match_count=3, unmatched_count=0, document_confidence=0.95, needs_review=False,
+    )
+    matching_db_session.add_all([flagged, not_flagged])
+    matching_db_session.commit()
+
+    client = _client_bound_to(matching_db_session)
+    try:
+        response = client.get("/extraction-calls", headers=API_KEY_HEADERS)
+        assert response.status_code == 200
+        ids = {row["id"] for row in response.json()}
+        assert flagged.id in ids
+        assert not_flagged.id in ids
     finally:
         app.dependency_overrides.clear()
 
 
 def test_review_queue_lists_only_unreviewed_flagged_calls(matching_db_session):
-    flagged_unreviewed = ExtractionCall(
-        called_at=datetime.now(timezone.utc), llm_model="qwen2.5:1.5b",
-        embedding_model="nomic-embed-text", similarity_threshold=0.65,
-        text_length=10, match_count=0, unmatched_count=1,
-        document_confidence=0.1, needs_review=True,
-    )
-    flagged_already_reviewed = ExtractionCall(
-        called_at=datetime.now(timezone.utc), llm_model="qwen2.5:1.5b",
-        embedding_model="nomic-embed-text", similarity_threshold=0.65,
-        text_length=10, match_count=0, unmatched_count=1,
-        document_confidence=0.1, needs_review=True,
+    flagged_unreviewed = _extraction_call()
+    flagged_already_reviewed = _extraction_call(
         reviewed_at=datetime.now(timezone.utc), reviewer="alice",
     )
-    not_flagged = ExtractionCall(
-        called_at=datetime.now(timezone.utc), llm_model="qwen2.5:1.5b",
-        embedding_model="nomic-embed-text", similarity_threshold=0.65,
-        text_length=10, match_count=3, unmatched_count=0,
-        document_confidence=0.95, needs_review=False,
+    not_flagged = _extraction_call(
+        match_count=3, unmatched_count=0, document_confidence=0.95, needs_review=False,
     )
     matching_db_session.add_all([flagged_unreviewed, flagged_already_reviewed, not_flagged])
     matching_db_session.commit()
@@ -98,12 +118,7 @@ def test_review_queue_lists_only_unreviewed_flagged_calls(matching_db_session):
 
 
 def test_mark_reviewed_removes_call_from_the_queue(matching_db_session):
-    flagged = ExtractionCall(
-        called_at=datetime.now(timezone.utc), llm_model="qwen2.5:1.5b",
-        embedding_model="nomic-embed-text", similarity_threshold=0.65,
-        text_length=10, match_count=0, unmatched_count=1,
-        document_confidence=0.1, needs_review=True,
-    )
+    flagged = _extraction_call()
     matching_db_session.add(flagged)
     matching_db_session.commit()
 

@@ -1,0 +1,69 @@
+{
+  "title": "JME Golden Evaluation",
+  "uid": "jme-golden-evaluation",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": { "from": "now-90d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "run_id",
+        "type": "query",
+        "label": "Eval run",
+        "datasource": { "type": "postgres", "uid": "postgres-jme" },
+        "query": "SELECT id AS __value, (llm_model || ' | run ' || id || ' | ' || to_char(run_at, 'YYYY-MM-DD HH24:MI') || ' | f1_avg=' || f1_avg || ' | n=' || sample_size) AS __text FROM extraction_runs ORDER BY id DESC",
+        "refresh": 1,
+        "sort": 0,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Run summary",
+      "description": "extraction_runs — the aggregate numbers for the selected run. Per-example detail is in the table below.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  id AS run_id, run_at, llm_model, embedding_model, similarity_threshold, prompt_version,\n  sample_size, precision_avg, recall_avg, f1_avg, requirement_level_accuracy_avg, unmatched_phrase_rate_avg\nFROM extraction_runs\nWHERE id = $run_id",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Per-example results: actual skills vs matched vs unmatched",
+      "description": "extraction_example_results for the selected run, worst F1 first — the full per-document breakdown: ground-truth skills (expected_skill_ids, resolved to names), skills the pipeline actually matched (predicted_skill_ids), and phrases it extracted but couldn't canonicalize (unmatched_detail, with the near-miss score). Same skill-id-to-name join pattern as the JME Extraction Review dashboard.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  e.id,\n  e.example_id,\n  e.source,\n  COALESCE((\n    SELECT string_agg(s.name, ', ' ORDER BY s.name)\n    FROM jsonb_array_elements_text(e.expected_skill_ids) sid\n    JOIN skills s ON s.id = sid::int\n  ), '') AS actual_skills,\n  COALESCE((\n    SELECT string_agg(s.name, ', ' ORDER BY s.name)\n    FROM jsonb_array_elements_text(e.predicted_skill_ids) sid\n    JOIN skills s ON s.id = sid::int\n  ), '') AS matched_skills,\n  COALESCE((\n    SELECT string_agg((u->>'phrase') || ' (score ' || COALESCE(u->>'best_score', 'n/a') || ')', ', ')\n    FROM jsonb_array_elements(e.unmatched_detail) u\n  ), '') AS unmatched_phrases,\n  e.precision,\n  e.recall,\n  e.f1,\n  e.requirement_level_accuracy\nFROM extraction_example_results e\nWHERE e.run_id = $run_id\nORDER BY e.f1 ASC\nLIMIT 500",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "f1" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [
+                { "color": "red", "value": null },
+                { "color": "orange", "value": 0.4 },
+                { "color": "green", "value": 0.7 }
+              ] } }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

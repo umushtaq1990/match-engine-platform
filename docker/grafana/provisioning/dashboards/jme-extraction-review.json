@@ -1,0 +1,107 @@
+{
+  "title": "JME Extraction Review",
+  "uid": "jme-extraction-review",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "MLFLOW_BASE_URL",
+        "type": "textbox",
+        "label": "MLflow base URL",
+        "query": "http://localhost:5000",
+        "current": { "value": "http://localhost:5000", "text": "http://localhost:5000" }
+      },
+      {
+        "name": "needs_review_filter",
+        "type": "custom",
+        "label": "Show",
+        "query": "All documents : 1=1,Needs review only : ec.needs_review",
+        "current": { "value": "1=1", "text": "All documents" },
+        "options": [
+          { "text": "All documents", "value": "1=1", "selected": true },
+          { "text": "Needs review only", "value": "ec.needs_review", "selected": false }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Every extracted document: id, text, extracted skills, confidence, review flag",
+      "description": "One row per real POST /extract call (app/extraction/models.py:ExtractionCall) — includes every document, not only flagged ones; use the \"Show\" variable above to narrow to needs_review only. matched_skills/unmatched_phrases are resolved from the stored match_detail/unmatched_detail JSONB (skill ids joined against the skills table for readability). mlflow_trace_id links out to that exact call's full trace (set MLFLOW_BASE_URL above to this environment's real MLflow host, default assumes local dev).",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  ec.id,\n  ec.called_at AS time,\n  left(ec.text, 300) AS text_preview,\n  ec.llm_model,\n  ec.document_confidence,\n  ec.needs_review,\n  (ec.reviewed_at IS NOT NULL) AS reviewed,\n  COALESCE((\n    SELECT string_agg(s.name || ' (' || (m->>'confidence') || ')', ', ')\n    FROM jsonb_array_elements(ec.match_detail) m\n    JOIN skills s ON s.id = (m->>'skill_id')::int\n  ), '') AS matched_skills,\n  COALESCE((\n    SELECT string_agg((u->>'phrase') || ' (' || COALESCE(u->>'best_score', 'n/a') || ')', ', ')\n    FROM jsonb_array_elements(ec.unmatched_detail) u\n  ), '') AS unmatched_phrases,\n  ec.mlflow_trace_id\nFROM extraction_calls ec\nWHERE $__timeFilter(ec.called_at)\n  AND ($needs_review_filter)\nORDER BY ec.called_at DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "mlflow_trace_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open trace in MLflow",
+                    "url": "${MLFLOW_BASE_URL}/#/experiments/0/traces?selectedTraceId=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Document count, flagged vs ok (selected range)",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  count(*) FILTER (WHERE needs_review) AS needs_review,\n  count(*) FILTER (WHERE NOT needs_review) AS ok\nFROM extraction_calls\nWHERE $__timeFilter(called_at)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Avg document confidence (selected range)",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT avg(document_confidence) AS avg_confidence\nFROM extraction_calls\nWHERE $__timeFilter(called_at)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Open review backlog (all time)",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 16 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 20 } ] } }, "overrides": [] },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) AS open_backlog\nFROM extraction_calls\nWHERE needs_review AND reviewed_at IS NULL",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
