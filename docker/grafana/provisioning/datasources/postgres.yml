@@ -1,0 +1,21 @@
+apiVersion: 1
+
+# Grafana's built-in Postgres data source (no plugin install needed) reads
+# directly from the same Postgres instance the api/analytics services write
+# to — analytics.behavioral_events and entity_change_log. Credentials are
+# expanded from the grafana container's own env (set in docker-compose.yml
+# from the project's existing POSTGRES_* vars, not duplicated here).
+datasources:
+  - name: Postgres
+    uid: postgres-jme
+    type: postgres
+    access: proxy
+    url: db:5432
+    user: $POSTGRES_USER
+    database: $POSTGRES_DB
+    isDefault: false
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600

@@ -1,5 +1,5 @@
 """Pure-logic tests for app/extraction/pipeline.py — no DB/LLM involved."""
-from app.extraction.pipeline import _cosine_similarity, _parse_llm_output
+from app.extraction.pipeline import _cosine_similarity, _document_confidence, _parse_llm_output
 
 
 def test_parse_llm_output_valid_array():
@@ -45,3 +45,20 @@ def test_cosine_similarity_orthogonal_vectors():
 
 def test_cosine_similarity_zero_vector_is_handled():
     assert _cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
+
+
+def test_document_confidence_no_phrases_at_all_is_lowest_bucket():
+    # Non-empty text that yields nothing is itself a bad sign, not neutral.
+    assert _document_confidence([], []) == 0.0
+
+
+def test_document_confidence_all_strong_matches_no_unmatched():
+    matches = [{"confidence": 1.0}, {"confidence": 0.9}]
+    assert _document_confidence(matches, []) == 0.95
+
+
+def test_document_confidence_penalized_by_unmatched_rate():
+    matches = [{"confidence": 1.0}]
+    unmatched = [{"phrase": "x", "best_score": 0.5}]
+    # avg_match_confidence (1.0) * (1 - unmatched_rate (0.5)) == 0.5
+    assert _document_confidence(matches, unmatched) == 0.5

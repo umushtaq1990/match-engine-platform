@@ -10,12 +10,40 @@ else in this project: measured against the real running stack, not estimated fro
 | Item | Value |
 |---|---|
 | CPU | AMD Ryzen 7 250 (8 cores / 16 logical processors) |
-| RAM | ~16 GB total; Docker Desktop's WSL2 VM allocates 16 CPUs / ~7.41 GiB to containers |
-| GPU | NVIDIA RTX 5060 Laptop, 8151 MiB VRAM (unused — Ollama runs CPU inference; see `docs/architecture/ai-ml-and-mlops.md`) |
-| Disk | ~593 GB free |
+| RAM | ~15.3 GB total (host); Docker Desktop's WSL2 VM allocated ~7.4 GiB by default, raised to 12 GiB via `.wslconfig` after real memory-pressure crashes — see "WSL2 memory ceiling is a real, not theoretical, failure mode" below |
+| GPU | NVIDIA RTX 5060 Laptop, 8151 MiB VRAM — **now used**: vLLM serves 3B-class models on it for the golden-dataset model comparison, see `docs/architecture/ai-ml-and-mlops.md`. Ollama still runs CPU-only (its own serving architecture doesn't benefit from this GPU the way vLLM's continuous batching does, see below) |
+| Disk | ~593 GB free (confirmed ~803 GB free inside the WSL2 VM's own overlay fs as of the GPU-model-comparison session) |
 
-Captured 2026-10-28 via PowerShell/WMI/`nvidia-smi`; this document is the authoritative sizing
-reference (see the appendix below for the original raw capture this was built from).
+Captured 2026-10-28 via PowerShell/WMI/`nvidia-smi`, GPU-usage status updated after the vLLM
+experiments below; this document is the authoritative sizing reference (see the appendix below for
+the original raw capture this was built from).
+
+### WSL2 memory ceiling is a real, not theoretical, failure mode
+
+Running CPU-only inference for bigger models (`qwen2.5:7b`, `gemma2:9b`, via Ollama, for the
+golden-dataset "hard case" comparison — see `docs/architecture/application-services/skill-extraction.md`)
+alongside the rest of the stack (Postgres, Grafana, Loki, MLflow, etc.) genuinely crashed Docker
+Desktop's engine twice in one session, confirmed via `docker ps`/`docker version` returning literal
+`500 Internal Server Error` responses and every running container exiting simultaneously, not a
+slow response that eventually came back.
+
+- **First crash**: traced to the WSL2 VM's own default memory cap (~7.4 GiB) being exceeded by
+  `qwen2.5:7b` (~4.7 GB weights) plus the rest of the stack. Fixed by writing `.wslconfig`
+  (`memory=10GB`, later `12GB`) in the Windows user profile and `wsl --shutdown` + relaunching
+  Docker Desktop to apply it — confirmed this is a genuine host-RAM ceiling: the dev machine has
+  only ~15.3 GB total, so the cap can't be raised past what leaves Windows itself enough to run.
+- **Second crash, same symptom, different real cause**: recurred even at the raised 12 GiB cap.
+  Checked `Get-Process | Sort-Object WS -Descending` and `Get-CimInstance Win32_OperatingSystem`
+  directly rather than re-applying the same fix blindly — found the WSL2 VM itself was only using
+  about half its 12 GiB allowance, while the **host** had under 500 MB of free physical RAM,
+  system-wide. Raising the VM's cap further would not have helped (there was no free host memory
+  left to give it) and could have made things worse. Fixed by reducing what Docker/WSL2 actually
+  needed to hold in memory instead: stopped the non-essential observability containers
+  (`grafana`/`loki`/`promtail`/`prometheus`/`cadvisor` — none needed for the extraction eval
+  itself) rather than touching the memory ceiling again.
+- Both crashes happened during an unattended overnight run and were diagnosed and recovered from
+  without any human input, confirming the project's retry/resumability discipline extends to the
+  Docker Desktop layer itself, not just application-level failures.
 
 ## Per-service memory footprint — measured, full stack running
 

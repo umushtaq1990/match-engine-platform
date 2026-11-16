@@ -1,0 +1,29 @@
+# The golden evaluation dataset (app/golden/): 500 candidates, each given a
+# realistic LLM-written CV, 3 LLM-written paired job postings, a real
+# Keycloak login, and a persona-driven behavioral history, plus eval
+# harnesses against the extraction/recommendation pipelines. One shared
+# image for every golden-* tool service (mirrors docker-compose.yml's
+# extraction-eval/embeddings-compute both reusing Dockerfile.extraction),
+# varied only by `command`.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY app/requirements-base.txt app/requirements-golden.txt ./
+RUN pip install --no-cache-dir -r requirements-golden.txt
+
+COPY app/db.py ./app/db.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/common/ ./app/common/
+COPY app/ingestion/ ./app/ingestion/
+COPY app/identity/ ./app/identity/
+COPY app/analytics/models.py ./app/analytics/models.py
+COPY app/analytics/__init__.py ./app/analytics/__init__.py
+COPY app/extraction/ ./app/extraction/
+COPY app/matching/ ./app/matching/
+COPY app/evaluation/ ./app/evaluation/
+COPY app/frontend/keycloak_admin.py ./app/frontend/keycloak_admin.py
+COPY app/golden/ ./app/golden/
+COPY data/golden/ ./data/golden/
+
+CMD ["python", "-c", "print('Specify a command: golden-cvs, golden-jobs, golden-logins, golden-events, golden-extraction-eval, or golden-recommendation-eval')"]

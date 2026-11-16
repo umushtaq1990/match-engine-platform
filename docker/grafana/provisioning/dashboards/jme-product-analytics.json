@@ -1,0 +1,209 @@
+{
+  "title": "JME Product Analytics",
+  "uid": "jme-product-analytics",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-60d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "MLFLOW_BASE_URL",
+        "type": "textbox",
+        "label": "MLflow base URL",
+        "query": "http://localhost:5000",
+        "current": { "value": "http://localhost:5000", "text": "http://localhost:5000" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Events over time (by type)",
+      "description": "analytics.behavioral_events, bucketed by time. Uses COALESCE(occurred_at, received_at): synthetic seed data only sets occurred_at (spread over the last 60 days), live events only set received_at (the moment the API ingested them) — see app/analytics/models.py and app/api/analytics_client.py. The COALESCE is computed in a subquery, not passed directly to $__timeGroup/$__timeFilter — those macros' argument parsing breaks on a comma inside nested parens.",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT\n  $__timeGroup(event_time, '$__interval') AS \"time\",\n  event_type AS \"metric\",\n  count(*) AS \"value\"\nFROM (\n  SELECT COALESCE(occurred_at, received_at) AS event_time, event_type\n  FROM analytics.behavioral_events\n) e\nWHERE $__timeFilter(event_time)\nGROUP BY 1, 2\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Recommendation -> click -> apply/save funnel",
+      "description": "Total event counts by type across the selected time range — read top to bottom as the funnel: recommendation_shown -> recommendation_clicked -> job_applied/job_saved.",
+      "type": "barchart",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT event_type, count(*) AS events\nFROM (\n  SELECT COALESCE(occurred_at, received_at) AS event_time, event_type\n  FROM analytics.behavioral_events\n) e\nWHERE $__timeFilter(event_time)\nGROUP BY event_type\nORDER BY events DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Click-through rate (clicked / shown)",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  CASE WHEN sum((event_type = 'recommendation_shown')::int) = 0 THEN 0\n  ELSE 100.0 * sum((event_type = 'recommendation_clicked')::int) / sum((event_type = 'recommendation_shown')::int)\n  END AS click_through_rate\nFROM (\n  SELECT COALESCE(occurred_at, received_at) AS event_time, event_type\n  FROM analytics.behavioral_events\n) e\nWHERE $__timeFilter(event_time)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Apply rate (applied / clicked)",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  CASE WHEN sum((event_type = 'recommendation_clicked')::int) = 0 THEN 0\n  ELSE 100.0 * sum((event_type = 'job_applied')::int) / sum((event_type = 'recommendation_clicked')::int)\n  END AS apply_rate\nFROM (\n  SELECT COALESCE(occurred_at, received_at) AS event_time, event_type\n  FROM analytics.behavioral_events\n) e\nWHERE $__timeFilter(event_time)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Distinct active actors in range",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 13 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT actor_type, count(DISTINCT actor_id) AS distinct_actors\nFROM (\n  SELECT COALESCE(occurred_at, received_at) AS event_time, actor_type, actor_id\n  FROM analytics.behavioral_events\n) e\nWHERE $__timeFilter(event_time)\nGROUP BY actor_type\nORDER BY actor_type",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Active users per day (by actor type)",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT\n  $__timeGroup(event_time, '1d') AS \"time\",\n  actor_type AS \"metric\",\n  count(DISTINCT actor_id) AS \"value\"\nFROM (\n  SELECT COALESCE(occurred_at, received_at) AS event_time, actor_type, actor_id\n  FROM analytics.behavioral_events\n) e\nWHERE $__timeFilter(event_time)\nGROUP BY 1, 2\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Recent activity (raw events)",
+      "description": "The \"what did user X just do\" view — most recent behavioral_events rows first.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 26 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  COALESCE(occurred_at, received_at) AS time,\n  actor_type,\n  actor_id,\n  event_type,\n  entity_type,\n  entity_id,\n  source,\n  session_id\nFROM analytics.behavioral_events\nORDER BY COALESCE(occurred_at, received_at) DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Recent edits (audit trail)",
+      "description": "entity_change_log — who changed which field on a candidate_details/job_details record, old -> new, and when. See app/audit/.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 26 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  changed_at AS time,\n  entity_type,\n  entity_id,\n  changed_by_keycloak_user_id AS changed_by,\n  changes::text AS changes\nFROM entity_change_log\nORDER BY changed_at DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Extraction calls needing human review, per day",
+      "description": "extraction_calls.needs_review, bucketed by called_at. document_confidence is a heuristic proxy (no ground truth exists for real production text) — see app/extraction/pipeline.py:_document_confidence for the formula and the golden-eval validation behind the 0.6 cutoff. Watch this for sudden spikes: a jump usually means a model/prompt/threshold change regressed quality, not that the underlying text got harder overnight.",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT\n  $__timeGroup(called_at, '1d') AS \"time\",\n  CASE WHEN needs_review THEN 'needs_review' ELSE 'ok' END AS \"metric\",\n  count(*) AS \"value\"\nFROM extraction_calls\nWHERE $__timeFilter(called_at)\nGROUP BY 1, 2\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Open review backlog (flagged, not yet reviewed)",
+      "description": "A human hasn't closed these out yet — this is the number that should trend toward zero, not the daily-flagged count above (which will never be zero on a healthy pipeline, since some fraction of real text is always genuinely ambiguous).",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 44 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 20 } ] } }, "overrides": [] },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) AS open_backlog\nFROM extraction_calls\nWHERE needs_review AND reviewed_at IS NULL",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Avg document confidence, last 7 days",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 44 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2 }, "overrides": [] },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT avg(document_confidence) AS avg_confidence\nFROM extraction_calls\nWHERE called_at >= now() - interval '7 days'",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Review queue — flagged documents awaiting a human (link to MLflow trace)",
+      "description": "mlflow_trace_id is the jump-off point into that exact extraction's full per-phrase trace in the MLflow UI (http://localhost:5000 locally) — paste it into MLflow's trace search, or use the Data link below once MLFLOW_BASE_URL is set to this environment's real MLflow host. Same split of responsibility as the panels above: this dashboard says how many and which ones, MLflow says why.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 48 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  called_at AS time,\n  llm_model,\n  text_length,\n  match_count,\n  unmatched_count,\n  document_confidence,\n  mlflow_trace_id\nFROM extraction_calls\nWHERE needs_review AND reviewed_at IS NULL\nORDER BY called_at DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "mlflow_trace_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open trace in MLflow",
+                    "url": "${MLFLOW_BASE_URL}/#/experiments/0/traces?selectedTraceId=${__value.raw}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

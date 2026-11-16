@@ -127,6 +127,33 @@ services:
     image: ollama/ollama:0.40.13
     ports:
       - "11434:11434"
+    gpus: all
+    environment:
+      # Forces genuine CPU-only inference for the 7B/9B comparison, even
+      # though vLLM is stopped and the GPU is otherwise free right now --
+      # without this, Ollama (which has `gpus: all` above) would silently
+      # grab the GPU for these bigger models too, making the result much
+      # faster than intended and not a real CPU baseline.
+      CUDA_VISIBLE_DEVICES: ""
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      # Explicit, not left to Ollama's own memory-based auto-detection --
+      # this host's Docker VM caps total memory around 7.4GB shared across
+      # every container (see docs/architecture/golden-evaluation-dataset.md),
+      # so a conservative fixed value keeps concurrent golden-eval requests
+      # from competing for memory Ollama might otherwise over-allocate.
+      OLLAMA_NUM_PARALLEL: "5"
+      # Default 5m idle-unload meant every one of our earlier concurrency
+      # tests paid a real ~20s cold-reload penalty inside the timed window
+      # (confirmed via /api/generate's own load_duration field) -- raised
+      # so a model loaded once stays warm across an entire batch run. Bumped
+      # further (to 4h) for the 7B/9B CPU evals, expected to run for hours.
+      OLLAMA_KEEP_ALIVE: "4h"
+      OLLAMA_KV_CACHE_TYPE: "q8_0"
+      OLLAMA_FLASH_ATTENTION: "true"
+      # Real golden CVs/jobs run ~30-60 tokens in our own measurements --
+      # far under the 4096/slot Ollama auto-picked. 2048 leaves comfortable
+      # headroom while roughly halving per-slot KV-cache memory.
+      OLLAMA_CONTEXT_LENGTH: "2048"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:
@@ -134,6 +161,48 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Experimental: a purpose-built continuous-batching GPU serving stack,
+  # tested as an alternative to Ollama for serving many concurrent
+  # extraction requests -- Ollama's own request parallelism plateaued
+  # around 5 concurrent calls even on this GPU (40-78% utilization,
+  # nowhere near VRAM-limited), pointing at Ollama's serving layer, not
+  # the hardware, as the real concurrency ceiling. Not wired into the
+  # golden-* pipeline; a standalone comparison target. Downloads its own
+  # copy of the model from Hugging Face (different format: safetensors,
+  # not Ollama's GGUF) on first run.
+  vllm:
+    image: vllm/vllm-openai:latest
+    gpus: all
+    ports:
+      - "8000:8000"
+    ipc: host
+    environment:
+      # The model is already fully cached in vllm_hf_cache from prior runs
+      # -- without this, startup still hits huggingface.co first to check
+      # for updates, and a container-specific DNS resolution failure there
+      # (confirmed live: other containers on the same host resolved the
+      # same hostname fine) blocked startup entirely despite having
+      # everything it needs locally.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    volumes:
+      - vllm_hf_cache:/root/.cache/huggingface
+    command:
+      # Qwen2.5-3B-AWQ is the best-performing model tested (F1 0.7916, see
+      # docs/architecture/golden-evaluation-dataset.md): 1.5B/3B-Qwen/3B-Llama
+      # all fit and were compared; a quantized 7B (Qwen2.5-7B-Instruct-AWQ)
+      # was also tried and genuinely does NOT fit this 8GB card -- confirmed
+      # via 3 separate attempts (max-model-len 2048, 1024, and even 256
+      # all failed identically with "No available memory for the cache
+      # blocks") that the model's own fixed compute/activation overhead
+      # alone exceeds the ~1.5GB left after its 5.19GB weights load,
+      # independent of context length -- a genuine hardware ceiling, not a
+      # tunable config gap.
+      - "--model=Qwen/Qwen2.5-3B-Instruct-AWQ"
+      - "--gpu-memory-utilization=0.85"
+      - "--max-model-len=2048"
+    profiles: ["tools"]
 
   # One-off job: pulls every model the live services actually use into the
   # ollama_data volume. Idempotent — `ollama pull` is a no-op if the model is
@@ -180,12 +249,23 @@ services:
       CV_STORAGE_ACCESS_KEY: ${CV_STORAGE_ACCESS_KEY}
       CV_STORAGE_SECRET_KEY: ${CV_STORAGE_SECRET_KEY}
       CV_STORAGE_BUCKET: candidate-cvs
+      # Per-call MLflow tracing (latency, token counts, prompt/response) on
+      # extract_skills()/generate()/embed_batch() -- see
+      # app/extraction/pipeline.py and ollama_client.py. Fully best-effort
+      # (a no-op if unreachable, never breaks a real request) and async
+      # (queued/uploaded in a background thread, doesn't add request
+      # latency) -- see MLflow's own tracing production guidance.
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_EXPERIMENT_NAME: jme-skill-extraction
+      MLFLOW_ENABLE_ASYNC_LOGGING: "true"
     depends_on:
       db:
         condition: service_healthy
       ollama:
         condition: service_healthy
       seaweedfs:
+        condition: service_healthy
+      mlflow:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
@@ -374,6 +454,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       OLLAMA_URL: http://ollama:11434
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_EXPERIMENT_NAME: jme-skill-extraction
     command: ["python", "-m", "app.extraction.run_extraction_eval"]
     depends_on:
       db:
@@ -436,6 +517,298 @@ services:
       db:
         condition: service_healthy
       ollama:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # Golden evaluation dataset (app/golden/): 500 of the existing seeded
+  # candidates, each given a realistic LLM-written CV, 3 LLM-written paired
+  # job postings, a real Keycloak login, and a persona-driven behavioral
+  # history — see app/golden/ module docstrings for the full rationale.
+  # One shared image (docker/Dockerfile.golden), varied only by `command`,
+  # same pattern as extraction-eval/embeddings-compute both reusing
+  # Dockerfile.extraction. Run in this order: golden-curated-occupations,
+  # golden-cvs, golden-jobs, golden-inject-noise, golden-logins,
+  # golden-events, then either eval script.
+  # Wipes the existing golden subset before a full v2 regenerate -- see
+  # app/golden/wipe_golden_dataset.py's docstring for exact scope (golden
+  # CVs/jobs/pairs/eval-runs only, never the base seed pool).
+  golden-wipe:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.wipe_golden_dataset"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  golden-curated-occupations:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.seed_curated_occupations"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # Selects N candidates and assigns each to one of the new curated
+  # occupations (round-robin, even spread), regenerating their skill
+  # profile to match -- see app/golden/select.py's
+  # select_and_assign_golden_candidates. Run after golden-curated-
+  # occupations, before golden-cvs/golden-jobs. Pass --n to override 1000.
+  golden-assign-candidates:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.select"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  golden-cvs:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OLLAMA_URL: http://ollama:11434
+      VLLM_URL: http://vllm:8000
+      # Must match whichever model vLLM's own --model= is currently serving
+      # -- vllm_client.py sends this exact string in each request's "model"
+      # field, but it's ignored server-side (vLLM serves one model per
+      # process) when --backend vllm is used.
+      VLLM_MODEL: "Qwen/Qwen2.5-3B-Instruct-AWQ"
+      CV_STORAGE_ENDPOINT: seaweedfs:8333
+      CV_STORAGE_ACCESS_KEY: ${CV_STORAGE_ACCESS_KEY}
+      CV_STORAGE_SECRET_KEY: ${CV_STORAGE_SECRET_KEY}
+    command: ["python", "-m", "app.golden.generate_cvs"]
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      # No healthcheck on `vllm` -- only waits for container start, not
+      # model load. See golden-extraction-eval's note on this same gap.
+      vllm:
+        condition: service_started
+    profiles: ["tools"]
+
+  golden-jobs:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OLLAMA_URL: http://ollama:11434
+      VLLM_URL: http://vllm:8000
+      VLLM_MODEL: "Qwen/Qwen2.5-3B-Instruct-AWQ"
+    command: ["python", "-m", "app.golden.generate_jobs"]
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      vllm:
+        condition: service_started
+    profiles: ["tools"]
+
+  # golden-dataset v2: deliberately injects 1-2 unrelated "noise" skills into
+  # ~10% of golden candidates'/jobs' ground truth, AFTER their CV/job text
+  # is already written (never regenerated afterward) -- see
+  # app/golden/inject_noise.py and golden_injected_noise. Run after
+  # golden-cvs/golden-jobs, before golden-extraction-eval.
+  golden-inject-noise:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.inject_noise"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  golden-logins:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OIDC_INTERNAL_ISSUER: http://keycloak:8080/realms/jme
+      KEYCLOAK_ADMIN_CLIENT_ID: jme-admin
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+    command: ["python", "-m", "app.golden.provision_logins"]
+    depends_on:
+      db:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  golden-events:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.generate_persona_events"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  golden-extraction-eval:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OLLAMA_URL: http://ollama:11434
+      VLLM_URL: http://vllm:8000
+      # Must match whichever model vLLM's own --model= is currently serving
+      # (see the vllm service's command above) -- vllm_client.py sends this
+      # exact string in each request's "model" field.
+      VLLM_MODEL: "Qwen/Qwen2.5-3B-Instruct-AWQ"
+      CV_STORAGE_ENDPOINT: seaweedfs:8333
+      CV_STORAGE_ACCESS_KEY: ${CV_STORAGE_ACCESS_KEY}
+      CV_STORAGE_SECRET_KEY: ${CV_STORAGE_SECRET_KEY}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_EXPERIMENT_NAME: jme-skill-extraction
+    command: ["python", "-m", "app.golden.run_extraction_eval"]
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      # `vllm` has no healthcheck defined, so this only waits for the
+      # container to start, not for the model to finish loading (that took
+      # real, observed minutes this session) -- a genuine gap, previously
+      # missing here entirely. True readiness still needs an external wait
+      # (e.g. polling for "Application startup complete" in its logs, same
+      # as this session's manual recovery did) before calling --backend vllm.
+      vllm:
+        condition: service_started
+    profiles: ["tools"]
+
+  golden-recommendation-eval:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.run_recommendation_eval"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # Decomposition-tree ("drill-down") report over a golden-eval run: overall
+  # F1 -> profession domain -> occupation, separately for candidates (500)
+  # and job posts (1500). Writes a single self-contained Plotly HTML file,
+  # no server needed -- see app/golden/build_evaluation_tree.py's docstring.
+  # Pass --run-id if the default (best-scoring 2000-sample run) isn't right.
+  # Closes the golden-dataset-v2 Roadmap item this was explicitly deferred
+  # from: does the confidence-scoring review queue actually catch the
+  # deliberately injected noise skills? See
+  # app/golden/analyze_noise_detection.py.
+  golden-analyze-noise:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.analyze_noise_detection"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  golden-eval-tree:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.build_evaluation_tree"]
+    volumes:
+      - ./data/golden/reports:/app/data/golden/reports
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # Live, interactive version of golden-eval-tree's static report --
+  # app/golden/drilldown/, three pages (Candidates & Job Posts, Skills,
+  # Behavioral Analytics), dropdown drill-down all the way to per-record
+  # detail, with MLflow trace links and noise-injection flags for full
+  # traceability. A long-running server, not a one-off script, so it's
+  # started with `up -d`, not `run --rm`, even though it shares the
+  # "tools" profile with the rest of the golden-dataset tooling.
+  golden-drilldown:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden-drilldown
+    ports:
+      - "8502:8502"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # Backs up/restores the expensive (LLM-generated) part of the golden
+  # dataset -- the 500 CVs and 1500 job postings -- to a local, git-ignored
+  # directory, so a wiped Docker volume doesn't require ~2,000 Ollama calls
+  # again. See app/golden/export_backup.py's docstring for exact scope.
+  golden-export:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      CV_STORAGE_ENDPOINT: seaweedfs:8333
+      CV_STORAGE_ACCESS_KEY: ${CV_STORAGE_ACCESS_KEY}
+      CV_STORAGE_SECRET_KEY: ${CV_STORAGE_SECRET_KEY}
+    command: ["python", "-m", "app.golden.export_backup"]
+    volumes:
+      - ./data/golden/backup:/app/data/golden/backup
+    depends_on:
+      db:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  golden-restore:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      CV_STORAGE_ENDPOINT: seaweedfs:8333
+      CV_STORAGE_ACCESS_KEY: ${CV_STORAGE_ACCESS_KEY}
+      CV_STORAGE_SECRET_KEY: ${CV_STORAGE_SECRET_KEY}
+    command: ["python", "-m", "app.golden.restore_backup"]
+    volumes:
+      - ./data/golden/backup:/app/data/golden/backup
+    depends_on:
+      db:
+        condition: service_healthy
+      seaweedfs:
         condition: service_healthy
     profiles: ["tools"]
 
@@ -533,12 +906,19 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Product-analytics dashboard (behavioral_events/entity_change_log)
+      # reads straight from Postgres via Grafana's built-in Postgres data
+      # source — see docker/grafana/provisioning/datasources/postgres.yml.
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
       - loki
+      - db
 
   # Phase 30: log aggregation backend — single-process, filesystem storage,
   # no clustering (appropriate at this project's scale). Grafana queries it
@@ -650,6 +1030,7 @@ volumes:
   prometheus_data:
   grafana_data:
   ollama_data:
+  vllm_hf_cache:
   neo4j_data:
   redis_data:
   seaweedfs_data:

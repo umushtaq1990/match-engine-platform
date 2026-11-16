@@ -32,6 +32,31 @@ class UnmatchedPhraseOut(BaseModel):
 class ExtractResponse(BaseModel):
     matches: list[SkillMatchOut]
     unmatched: list[UnmatchedPhraseOut]
+    document_confidence: float
+    needs_review: bool
+
+
+class ExtractionCallOut(BaseModel):
+    id: int
+    called_at: datetime
+    llm_model: str
+    text: str
+    text_length: int
+    match_count: int
+    unmatched_count: int
+    match_detail: list[SkillMatchOut]
+    unmatched_detail: list[UnmatchedPhraseOut]
+    document_confidence: float
+    needs_review: bool
+    mlflow_trace_id: str | None
+    reviewed_at: datetime | None
+    reviewer: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class ReviewRequest(BaseModel):
+    reviewer: str = Field(min_length=1)
 
 
 class CandidateDocumentOut(BaseModel):

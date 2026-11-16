@@ -97,17 +97,83 @@ SKILL_TAXONOMY = [
 ]
 
 # Phase 20 (docs/data-at-scale.md): coarse grouping of the fine-grained
-# categories above, used ONLY to anchor occupation skill-profile sampling —
-# never written to the database, so comparing discovered graph clusters
-# against the real `category` column stays a legitimate, independent check.
+# categories above, used to anchor occupation skill-profile sampling for
+# BOTH the base seed's own occupation_skills (never written to the database
+# at that level, so comparing discovered graph clusters against the real
+# `category` column stays a legitimate, independent check -- see
+# app/graph/cluster_skills.py's compute_mean_category_purity) AND, as of
+# golden-dataset v2, the curated occupation taxonomy below, where the
+# resulting domain IS persisted (Occupation.domain) for the curated titles
+# specifically -- that's a different, occupation-level fact, not the
+# skill-level category this comment's "never written" guarantee is about.
+#
+# Expanded from 4 to 8 domains for golden-dataset v2 (see
+# docs/architecture/golden-evaluation-dataset.md "Taxonomy v2"): the
+# original 4-domain grouping was fine for giving the skill co-occurrence
+# graph community structure, but a real decomposition-tree business report
+# found it too coarse, and more importantly found that the ORIGINAL
+# anchoring (`_assign_domain_anchored_skills` picking `rng.choice` per
+# occupation, independent of its title) let an occupation's skills land on
+# a domain unrelated to its own name (confirmed live: a "Welder" occupation
+# row whose required skill was "Django"). `CURATED_OCCUPATION_DOMAINS`
+# below is the fix -- a hand-picked, title-consistent domain per curated
+# occupation, replacing the random choice for those titles specifically.
+# "sales" and "soft_skill" are deliberately absent from every domain's set
+# here: "soft_skill" is cross-cutting by nature (handled by SKILL_TYPE
+# below, not forced into one industry), and "sales" skills anchor
+# sales_marketing explicitly via the category itself.
 SKILL_DOMAINS = {
-    "software_engineering": {
-        "programming", "frontend", "backend", "platform", "cloud", "ai", "data", "it",
-    },
-    "business_ops": {"business", "soft_skill", "hr", "office", "finance"},
-    "trades_logistics": {"trades", "logistics", "engineering"},
-    "people_services": {"healthcare", "education", "creative", "marketing"},
+    "technology": {"programming", "frontend", "backend", "platform", "cloud", "ai", "data", "it"},
+    "healthcare": {"healthcare"},
+    "skilled_trades": {"trades", "engineering"},
+    "business_finance": {"business", "finance", "office", "hr"},
+    "sales_marketing": {"sales", "marketing"},
+    "education": {"education"},
+    "creative_media": {"creative"},
+    "logistics_operations": {"logistics"},
 }
+
+# Technical vs. soft is a judgment call at the category level, same spirit
+# as CURATED_OCCUPATION_DOMAINS below -- not claimed to be scientifically
+# rigorous, just a documented, consistent split good enough for a
+# decomposition-tree business report and later clustering. A category not
+# listed here (there shouldn't be any) falls back to "soft" in SKILL_TYPE_OF.
+SKILL_TYPE = {
+    "technical": {
+        "programming", "frontend", "backend", "platform", "cloud", "ai", "data", "it",
+        "trades", "engineering", "logistics", "finance", "healthcare", "office",
+    },
+    "soft": {"soft_skill", "business", "hr", "marketing", "creative", "education", "sales"},
+}
+SKILL_TYPE_OF = {
+    category: skill_type for skill_type, categories in SKILL_TYPE.items() for category in categories
+}
+
+# New skills added for golden-dataset v2 to give the newly-expanded
+# sales_marketing/healthcare/education/logistics_operations domains real
+# breadth to anchor-sample from (those categories had only 1-3 skills in
+# the original SKILL_TAXONOMY, too thin for `_assign_domain_anchored_skills`
+# to draw a believable k=4-8 profile from). Purely additive -- appended as
+# new Skill rows by app/golden/seed_curated_occupations.py, never touching
+# SKILL_TAXONOMY/the base seed's own skill set.
+GOLDEN_V2_NEW_SKILLS = [
+    ("Account Management", "sales"), ("Cold Calling", "sales"),
+    ("Business Development", "sales"), ("Inside Sales", "sales"),
+    ("Medical Coding", "healthcare"), ("Phlebotomy", "healthcare"),
+    ("Clinical Documentation", "healthcare"), ("Patient Scheduling", "healthcare"),
+    ("Classroom Management", "education"), ("Tutoring", "education"),
+    ("Instructional Design", "education"), ("Lesson Planning", "education"),
+    ("Inventory Management", "logistics"), ("Procurement", "logistics"),
+    ("Fleet Dispatching", "logistics"), ("Shipping & Receiving", "logistics"),
+]
+
+# "Sales" was originally tagged "business" (SKILL_TAXONOMY above) -- a
+# modeling shortcut from when there was no dedicated sales_marketing
+# domain. Golden-dataset v2 retags it to the new "sales" category (a label
+# change only: same Skill.id, same name, no candidate_skills/job_skills
+# row is affected) so Sales Representative-type occupations actually
+# anchor on real sales skills instead of generic business ones.
+RETAGGED_SKILL_CATEGORIES = {"Sales": "sales"}
 
 SYNONYM_MAP = {
     "Python": ["py", "python3", "python programming"],
@@ -119,6 +185,13 @@ SYNONYM_MAP = {
     "Communication": ["communication skills"],
 }
 
+# Indices 0-25 are the original list, untouched (base-seed occupations
+# already created from these keep their exact ids/titles if the base seed
+# is ever re-run). Indices 26+ are new for golden-dataset v2, added only to
+# round out CURATED_OCCUPATION_DOMAINS's 8 domains with real breadth --
+# see app/golden/seed_curated_occupations.py, which is what actually
+# inserts Occupation rows for these; appending here does not by itself
+# create any new database rows.
 OCCUPATION_TITLES = [
     "Software Engineer", "Data Analyst", "Data Scientist", "Project Manager",
     "Sales Representative", "Marketing Specialist", "Customer Service Agent",
@@ -127,7 +200,70 @@ OCCUPATION_TITLES = [
     "Content Writer", "Network Administrator", "Security Analyst", "Teacher",
     "Welder", "Carpenter", "Forklift Operator", "QA Engineer",
     "Manufacturing Technician", "Mechanical Engineer", "Scrum Master",
+    # -- golden-dataset v2 additions --
+    "Cloud Engineer", "DevOps Engineer", "Frontend Developer", "Backend Developer",
+    "IT Support Specialist", "Machine Learning Engineer",
+    "Medical Assistant", "Physical Therapist", "Pharmacy Technician",
+    "Dental Hygienist", "Radiology Technician", "Home Health Aide", "Phlebotomist",
+    "HVAC Technician", "Automotive Mechanic",
+    "Financial Analyst", "Bookkeeper", "Office Administrator", "Operations Manager",
+    "Account Executive", "Digital Marketing Specialist",
+    "Business Development Representative", "SEO Specialist", "Brand Manager",
+    "Inside Sales Representative",
+    "Teaching Assistant", "School Counselor", "Curriculum Developer",
+    "Instructional Designer", "Tutor", "Education Coordinator", "Librarian",
+    "Video Editor", "UX Designer", "Photographer", "Social Media Manager",
+    "Copywriter", "Art Director",
+    "Logistics Coordinator", "Inventory Manager", "Fleet Dispatcher",
+    "Procurement Specialist", "Shipping Clerk",
 ]
+
+# Hand-curated title -> domain, replacing the random `rng.choice` anchor for
+# every title listed here (both the 26 original curated titles, now
+# correctly domained, and the v2 additions). Any occupation NOT in this map
+# (i.e. every padding duplicate like "Welder 4") keeps the old random
+# anchor -- deliberately: fixing those would mean touching 124 already-
+# seeded occupation_skills rows other parts of the platform (course-gap
+# analysis, matching's profile fallback) already depend on, which is out
+# of scope here (see the golden-dataset-v2 plan's scope boundary).
+CURATED_OCCUPATION_DOMAINS = {
+    "Software Engineer": "technology", "Data Analyst": "technology",
+    "Data Scientist": "technology", "Network Administrator": "technology",
+    "Security Analyst": "technology", "QA Engineer": "technology",
+    "Scrum Master": "technology", "Cloud Engineer": "technology",
+    "DevOps Engineer": "technology", "Frontend Developer": "technology",
+    "Backend Developer": "technology", "IT Support Specialist": "technology",
+    "Machine Learning Engineer": "technology",
+    "Registered Nurse": "healthcare", "Medical Assistant": "healthcare",
+    "Physical Therapist": "healthcare", "Pharmacy Technician": "healthcare",
+    "Dental Hygienist": "healthcare", "Radiology Technician": "healthcare",
+    "Home Health Aide": "healthcare", "Phlebotomist": "healthcare",
+    "Electrician": "skilled_trades", "Plumber": "skilled_trades",
+    "Welder": "skilled_trades", "Carpenter": "skilled_trades",
+    "Manufacturing Technician": "skilled_trades", "Mechanical Engineer": "skilled_trades",
+    "HVAC Technician": "skilled_trades", "Automotive Mechanic": "skilled_trades",
+    "Project Manager": "business_finance", "Customer Service Agent": "business_finance",
+    "Accountant": "business_finance", "HR Coordinator": "business_finance",
+    "Financial Analyst": "business_finance", "Bookkeeper": "business_finance",
+    "Office Administrator": "business_finance", "Operations Manager": "business_finance",
+    "Sales Representative": "sales_marketing", "Marketing Specialist": "sales_marketing",
+    "Account Executive": "sales_marketing", "Digital Marketing Specialist": "sales_marketing",
+    "Business Development Representative": "sales_marketing",
+    "SEO Specialist": "sales_marketing", "Brand Manager": "sales_marketing",
+    "Inside Sales Representative": "sales_marketing",
+    "Teacher": "education", "Teaching Assistant": "education",
+    "School Counselor": "education", "Curriculum Developer": "education",
+    "Instructional Designer": "education", "Tutor": "education",
+    "Education Coordinator": "education", "Librarian": "education",
+    "Graphic Designer": "creative_media", "Content Writer": "creative_media",
+    "Video Editor": "creative_media", "UX Designer": "creative_media",
+    "Photographer": "creative_media", "Social Media Manager": "creative_media",
+    "Copywriter": "creative_media", "Art Director": "creative_media",
+    "Warehouse Associate": "logistics_operations", "Supply Chain Analyst": "logistics_operations",
+    "Forklift Operator": "logistics_operations", "Logistics Coordinator": "logistics_operations",
+    "Inventory Manager": "logistics_operations", "Fleet Dispatcher": "logistics_operations",
+    "Procurement Specialist": "logistics_operations", "Shipping Clerk": "logistics_operations",
+}
 
 COMPANY_NAMES_EXTRA = ["Acme", "Globex", "Initech", "Umbrella", "Stark", "Wayne"]
 

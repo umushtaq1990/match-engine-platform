@@ -11,7 +11,7 @@ already owns), not a genuinely separate concern.
 """
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -53,6 +53,29 @@ class ExtractionExampleResult(Base):
     expected_skill_ids: Mapped[list] = mapped_column(JSONB)
     predicted_skill_ids: Mapped[list] = mapped_column(JSONB)
     unmatched_phrases: Mapped[list] = mapped_column(JSONB)
+    # Full per-stage trace, added so an AI engineer can see exactly where a
+    # given example's errors come from -- LLM-stage (never extracted a
+    # phrase for a real skill) vs embedding-stage (extracted fine, but
+    # matched to the wrong skill, or the right skill scored below
+    # similarity_threshold and got discarded) -- without this, only the
+    # final skill_id sets survive, which conflates both failure modes into
+    # one recall/precision number with no way to tell them apart.
+    # Raw LLM output before any embedding matching: [{"phrase", "requirement_level"}, ...]
+    extracted_phrases: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Successful matches with the detail predicted_skill_ids alone loses:
+    # [{"skill_id", "requirement_level", "confidence", "source_phrase"}, ...]
+    match_detail: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Extracted phrases that scored below similarity_threshold (real misses,
+    # not the LLM's fault) -- same phrases as unmatched_phrases, plus the
+    # actual score so a near-miss (0.53 when the threshold is 0.55) is
+    # visibly different from a true non-match (0.1):
+    # [{"phrase", "best_score"}, ...]
+    unmatched_detail: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Links this one example to its full MLflow trace, same purpose as
+    # extraction_calls.mlflow_trace_id in production -- full traceability
+    # means a golden-eval example should be just as drillable down to "what
+    # did the LLM/embedding step actually do" as a real production call is.
+    mlflow_trace_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     run: Mapped["ExtractionRun"] = relationship(back_populates="example_results")
 
@@ -74,3 +97,45 @@ class CandidateDocument(Base):
     content_type: Mapped[str] = mapped_column(String(100))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     uploaded_at: Mapped[datetime] = mapped_column()
+
+
+class ExtractionCall(Base):
+    """One row per real POST /extract call -- the production counterpart to
+    ExtractionExampleResult, which only exists for the golden-eval harness.
+    No ground truth exists here (real, unlabeled text), so there's no
+    precision/recall/f1 to store -- document_confidence is a heuristic proxy
+    (see pipeline._document_confidence), not a measured score. mlflow_trace_id
+    links each row to its full per-phrase trace in the MLflow UI, so a human
+    reviewer (or an engineer debugging a confidence dip) can go from "this
+    document needs review" straight to "here's exactly what the LLM and the
+    embedding step did" without re-running anything.
+    """
+    __tablename__ = "extraction_calls"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    called_at: Mapped[datetime] = mapped_column(index=True)
+    llm_model: Mapped[str] = mapped_column(String(100))
+    embedding_model: Mapped[str] = mapped_column(String(100))
+    similarity_threshold: Mapped[float] = mapped_column(Numeric(4, 3))
+    # The submitted text itself -- needed for a human reviewer to judge a
+    # flagged document at all, not just see that it was flagged. Same
+    # sensitivity class as CandidateDocument's stored CVs (real user text),
+    # kept here rather than only logged, consistent with that existing
+    # choice elsewhere in this service.
+    text: Mapped[str] = mapped_column(Text())
+    text_length: Mapped[int] = mapped_column()
+    match_count: Mapped[int] = mapped_column()
+    unmatched_count: Mapped[int] = mapped_column()
+    # Same shape as ExtractionExampleResult's match_detail/unmatched_detail
+    # above -- this is what lets a reviewer (or the dashboard) see *what*
+    # was extracted, not just how many phrases matched or didn't.
+    match_detail: Mapped[list] = mapped_column(JSONB)
+    unmatched_detail: Mapped[list] = mapped_column(JSONB)
+    document_confidence: Mapped[float] = mapped_column(Numeric(6, 4))
+    needs_review: Mapped[bool] = mapped_column(Boolean, index=True)
+    mlflow_trace_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Set once a human has looked at a flagged document -- turns the
+    # dashboard's "needs review" count into a real backlog metric (open vs.
+    # closed) instead of just a running total that never comes back down.
+    reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    reviewer: Mapped[str | None] = mapped_column(String(255), nullable=True)

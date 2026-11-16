@@ -7,9 +7,11 @@ rationale.
 import json
 import math
 
+import mlflow
+from mlflow.entities import SpanType
 from sqlalchemy.orm import Session
 
-from app.extraction.ollama_client import embed, generate
+from app.extraction.ollama_client import embed_batch, generate
 from app.extraction.skill_cache import get_reference_embeddings
 
 # Promoted from llama3.2:1b (Phase 16's original baseline) in Phase 18 after
@@ -23,8 +25,41 @@ DEFAULT_LLM_MODEL = "qwen2.5:1.5b"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 # Confirmed via a real sweep (0.45/0.50/0.55/0.60/0.65), not just inherited:
 # 0.55 remained the best-scoring threshold among those tested.
-DEFAULT_SIMILARITY_THRESHOLD = 0.55
-PROMPT_VERSION = "v2"  # v1 used the loose "format": "json" string — see schema fix below
+DEFAULT_SIMILARITY_THRESHOLD = 0.65
+# v3: v2's prompt let the LLM output full descriptive sentence fragments
+# (e.g. "Adept at translating complex concepts into engaging content")
+# instead of skill names -- confirmed live via the golden-eval traceability
+# fields (extracted_phrases/match_detail/unmatched_detail, added for exactly
+# this diagnosis): these fragments then get embedded and loosely match
+# *something* in the taxonomy right at the similarity_threshold boundary
+# (confidence ~0.55), producing wrong matches (one measured case: "passion
+# for technology" -> "Telekinesis") that a clean skill name would never
+# have come close to. v3 explicitly instructs short canonical names instead.
+PROMPT_VERSION = "v3"
+
+# No ground truth exists in production (unlike the golden-eval harness, which
+# has real CandidateSkill/JobSkill rows to score against) -- this heuristic is
+# the only confidence signal available for a real, unlabeled document. Built
+# from the two things extract_skills already computes per phrase (match
+# confidence, near-miss best_score for anything below similarity_threshold),
+# then validated against real F1 using the golden-eval data we DO have ground
+# truth for: bucketing runs 29/32/34's ~5700 examples by this exact formula
+# and comparing to their real f1 showed a clean monotonic relationship
+# (bucket avg doc_confidence 0.04/0.33/0.51/0.71/0.92/1.00 -> avg real f1
+# 0.02/0.38/0.61/0.70/0.82/0.87), so it's not an untested guess.
+_REVIEW_THRESHOLD = 0.6
+
+
+def _document_confidence(matches: list[dict], unmatched: list[dict]) -> float:
+    total = len(matches) + len(unmatched)
+    if total == 0:
+        # Nothing extracted at all from non-empty text is itself a bad sign,
+        # not a neutral one -- score it as the lowest bucket rather than 1.0.
+        return 0.0
+    avg_match_confidence = sum(m["confidence"] for m in matches) / len(matches) if matches else 0.0
+    unmatched_rate = len(unmatched) / total
+    return round(avg_match_confidence * (1 - unmatched_rate), 4)
+
 
 _VALID_LEVELS = {"required", "preferred"}
 
@@ -49,9 +84,19 @@ _EXTRACTION_PROMPT = """You extract skills mentioned in job postings or resumes,
 technical skills (e.g. programming languages, tools, platforms) and non-technical skills (e.g. \
 communication, sales, trades, healthcare, creative, office skills).
 
-For each skill mentioned in the text below, output one entry with the exact phrase used and \
-whether it is required (mandatory/must-have) or preferred (nice-to-have/bonus/plus). If no \
-skills are mentioned, output an empty list.
+For each skill mentioned in the text below, output one entry with a SHORT, canonical skill name \
+(like "Python", "Communication", "Welding", "Patient Care") and whether it is required \
+(mandatory/must-have) or preferred (nice-to-have/bonus/plus).
+
+The phrase must be the skill name itself, never a sentence, clause, or description copied from \
+the text. For example, if the text says "adept at translating complex concepts into engaging \
+content for diverse audiences", output "Communication" — not that sentence. If the text says \
+"excellent knowledge of modern JavaScript frameworks", output "JavaScript" — not "excellent \
+knowledge of". Strip away filler words like "excellent", "strong", "proven", "passion for", \
+"experience with", and generic phrases like "fast-paced environments" or "hands-on position" are \
+not skills at all and must not be output.
+
+If no skills are mentioned, output an empty list.
 
 Text:
 \"\"\"
@@ -109,6 +154,7 @@ def _parse_llm_output(raw: str) -> list[dict]:
 _MAX_EXTRACTION_ATTEMPTS = 5
 
 
+@mlflow.trace(span_type=SpanType.CHAIN)
 def extract_skills(
     text: str,
     session: Session,
@@ -124,10 +170,14 @@ def extract_skills(
             break
     reference = get_reference_embeddings(session, embedding_model)
 
+    # One batched call for every extracted phrase instead of one HTTP round
+    # trip per phrase -- a CV/job with e.g. 6 extracted phrases previously
+    # cost 6 separate /api/embeddings calls, now costs exactly 1.
+    phrase_embeddings = embed_batch(embedding_model, [item["phrase"] for item in extracted])
+
     matches = []
     unmatched = []
-    for item in extracted:
-        phrase_embedding = embed(embedding_model, item["phrase"])
+    for item, phrase_embedding in zip(extracted, phrase_embeddings):
         best_skill_id, best_score = None, -1.0
         for skill_id, _ref_text, ref_embedding in reference:
             score = _cosine_similarity(phrase_embedding, ref_embedding)
@@ -147,4 +197,11 @@ def extract_skills(
                 "best_score": round(best_score, 4) if best_score > -1 else None,
             })
 
-    return {"matches": matches, "unmatched": unmatched}
+    document_confidence = _document_confidence(matches, unmatched)
+    return {
+        "matches": matches,
+        "unmatched": unmatched,
+        "extracted": extracted,
+        "document_confidence": document_confidence,
+        "needs_review": document_confidence < _REVIEW_THRESHOLD,
+    }

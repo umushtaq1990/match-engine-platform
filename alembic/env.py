@@ -14,6 +14,7 @@ from app.db import DATABASE_URL, Base  # noqa: E402
 from app.embeddings import models as embeddings_models  # noqa: E402,F401
 from app.evaluation import eval_models  # noqa: E402,F401
 from app.extraction import models as extraction_models  # noqa: E402,F401
+from app.golden import models as golden_models  # noqa: E402,F401
 from app.identity import models as identity_models  # noqa: E402,F401
 from app.ingestion import (
     quality_models,  # noqa: E402,F401

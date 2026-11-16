@@ -1,0 +1,72 @@
+"""Candidates & Job Posts drill-down: entity type -> domain -> occupation,
+colored by F1 (chart above, read-only -- see app/golden/drilldown/
+chart.py's module docstring for why it can't drive the filters below it).
+Use the dropdowns to narrow down to the full per-example table --
+actual/expected skills, matched/unmatched, precision/recall/F1, for every
+record in that leaf.
+"""
+import streamlit as st
+
+from app.db import SessionLocal
+from app.golden.drilldown.chart import cascading_filters, render_drilldown_chart
+from app.golden.drilldown.data import (
+    load_example_rows,
+    mlflow_base_url_in_sidebar,
+    mlflow_trace_url,
+    select_run_in_sidebar,
+)
+
+st.set_page_config(page_title="Candidates & Job Posts", layout="wide")
+st.title("Candidates & Job Posts -- by F1")
+
+mlflow_base_url = mlflow_base_url_in_sidebar()
+
+session = SessionLocal()
+try:
+    run_id = select_run_in_sidebar(session)
+    if run_id is None:
+        st.stop()
+
+    rows = load_example_rows(session, run_id)
+finally:
+    session.close()
+
+rows["mlflow_trace_url"] = rows["mlflow_trace_id"].apply(lambda t: mlflow_trace_url(mlflow_base_url, t))
+
+if rows.empty:
+    st.warning(f"No golden_cv/golden_job examples found for run {run_id}.")
+    st.stop()
+
+st.caption(f"{len(rows)} examples in run {run_id} -- use the dropdowns below the chart to drill in.")
+
+render_drilldown_chart(
+    rows, "f1",
+    [("entity_type",), ("entity_type", "domain"), ("entity_type", "domain", "occupation")],
+)
+
+filtered = cascading_filters(rows, ["entity_type", "domain", "occupation"])
+
+noise_only = st.checkbox(
+    "Show only deliberately noise-injected examples (app/golden/inject_noise.py)"
+)
+if noise_only:
+    filtered = filtered[filtered["injected_noise_skill"].notna()]
+
+st.markdown(f"### {len(filtered)} matching record(s)")
+st.dataframe(
+    filtered[[
+        "example_id", "title", "entity_type", "domain", "occupation",
+        "precision", "recall", "f1", "expected_skills", "matched_skills", "unmatched_phrases",
+        "injected_noise_skill", "mlflow_trace_url",
+    ]],
+    use_container_width=True, hide_index=True,
+    column_config={
+        "mlflow_trace_url": st.column_config.LinkColumn("MLflow trace", display_text="open trace"),
+    },
+)
+
+if len(filtered) == 1:
+    row = filtered.iloc[0]
+    if row["text_preview"]:
+        st.markdown("#### Job posting text (first 500 chars)")
+        st.text(row["text_preview"])

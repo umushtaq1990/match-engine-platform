@@ -14,6 +14,7 @@ doesn't fail the run, it only skips the MLflow log.
 import argparse
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import mlflow
@@ -29,6 +30,7 @@ from app.extraction.pipeline import (
     PROMPT_VERSION,
     extract_skills,
 )
+from app.extraction.skill_cache import get_reference_embeddings
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,29 @@ def _log_to_mlflow(run: ExtractionRun) -> None:
     try:
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
-        with mlflow.start_run(run_name=f"extraction-run-{run.id}"):
+        # "/" in the model name means an HF repo path -- served via vLLM in
+        # this project (app/golden/vllm_client.py), vs an Ollama tag like
+        # "qwen2.5:1.5b" (no slash). A model-only run_name made every run in
+        # the list look identical ("extraction-run-N") -- unreadable once
+        # more than a couple of configs were being compared side by side.
+        backend = "vllm" if "/" in run.llm_model else "ollama"
+        model_short = run.llm_model.split("/")[-1]
+        run_name = f"{model_short} | thr={run.similarity_threshold} | {run.prompt_version} | {backend}"
+        description = (
+            f"**Model**: `{run.llm_model}` ({backend})\n\n"
+            f"**Embedding model**: `{run.embedding_model}`\n\n"
+            f"**Similarity threshold**: {run.similarity_threshold}\n\n"
+            f"**Prompt version**: {run.prompt_version}\n\n"
+            f"**Sample size**: {run.sample_size}\n\n"
+            f"**Results**: Precision {run.precision_avg} / Recall {run.recall_avg} / "
+            f"F1 {run.f1_avg}"
+        )
+        with mlflow.start_run(run_name=run_name):
+            mlflow.set_tag("mlflow.note.content", description)
+            mlflow.set_tags({
+                "backend": backend,
+                "model_family": model_short.split("-")[0].split("_")[0],
+            })
             mlflow.log_params({
                 "llm_model": run.llm_model,
                 "embedding_model": run.embedding_model,
@@ -70,45 +94,109 @@ def _log_to_mlflow(run: ExtractionRun) -> None:
         )
 
 
+def _extract_one(
+    ex: dict, llm_model: str, embedding_model: str, similarity_threshold: float, session=None,
+) -> dict:
+    logger.info(
+        "extracting skills", extra={"example_id": ex["example_id"], "source": ex["source"]}
+    )
+    try:
+        result = extract_skills(
+            ex["text"], session,
+            llm_model=llm_model, embedding_model=embedding_model,
+            similarity_threshold=similarity_threshold,
+        )
+    except Exception:
+        logger.warning(
+            "extraction failed", exc_info=True,
+            extra={"example_id": ex["example_id"], "source": ex["source"]},
+        )
+        raise
+    predicted_ids = {m["skill_id"] for m in result["matches"]}
+    expected_ids = {e["skill_id"] for e in ex["expected"]}
+    predicted_levels = {m["skill_id"]: m["requirement_level"] for m in result["matches"]}
+    expected_levels = {e["skill_id"]: e["requirement_level"] for e in ex["expected"]}
+    true_positive_ids = predicted_ids & expected_ids
+
+    total_phrases = len(result["matches"]) + len(result["unmatched"])
+    unmatched_rate = len(result["unmatched"]) / total_phrases if total_phrases else 0.0
+
+    # Best-effort, same reasoning as app/extraction/routes.py's identical
+    # capture for extraction_calls -- full traceability means every golden-
+    # eval example should be able to point at its own MLflow trace too, not
+    # just production calls. get_last_active_trace_id(), not
+    # get_current_active_span(): extract_skills()'s own @mlflow.trace span
+    # has already closed by the time control returns here. Mlflow's tracing
+    # context is thread-local, so this stays correct per-example even when
+    # max_workers>1 runs extract_skills() calls concurrently across threads
+    # (confirmed live, not assumed -- see golden-evaluation-dataset.md).
+    mlflow_trace_id = None
+    try:
+        mlflow_trace_id = mlflow.get_last_active_trace_id()
+    except Exception:
+        pass
+
+    return {
+        "example_id": ex["example_id"],
+        "source": ex["source"],
+        "precision": set_precision(predicted_ids, expected_ids),
+        "recall": set_recall(predicted_ids, expected_ids),
+        "f1": set_f1(predicted_ids, expected_ids),
+        "requirement_level_accuracy": requirement_level_accuracy(
+            predicted_levels, expected_levels, true_positive_ids
+        ),
+        "unmatched_phrase_rate": unmatched_rate,
+        "expected_skill_ids": sorted(expected_ids),
+        "predicted_skill_ids": sorted(predicted_ids),
+        "unmatched_phrases": [u["phrase"] for u in result["unmatched"]],
+        "extracted_phrases": result["extracted"],
+        "match_detail": result["matches"],
+        "unmatched_detail": result["unmatched"],
+        "mlflow_trace_id": mlflow_trace_id,
+    }
+
+
 def run_extraction_eval(
     session,
     llm_model: str = DEFAULT_LLM_MODEL,
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
     sample_size: int = DEFAULT_SAMPLE_SIZE,
+    examples: list[dict] | None = None,
+    max_workers: int = 1,
 ) -> tuple[ExtractionRun, list[dict]]:
-    examples = load_generator_injected(session, sample_size=sample_size) + load_hand_authored(session)
+    """`examples`, when given, replaces the default generator-injected +
+    hand-authored dataset entirely -- used by app/golden/run_extraction_eval.py
+    to score the same persistence/metrics/MLflow pipeline against the 500
+    golden candidates' real natural-prose CVs/job postings instead.
 
-    per_example = []
-    for ex in examples:
-        result = extract_skills(
-            ex["text"], session,
-            llm_model=llm_model, embedding_model=embedding_model,
-            similarity_threshold=similarity_threshold,
-        )
-        predicted_ids = {m["skill_id"] for m in result["matches"]}
-        expected_ids = {e["skill_id"] for e in ex["expected"]}
-        predicted_levels = {m["skill_id"]: m["requirement_level"] for m in result["matches"]}
-        expected_levels = {e["skill_id"]: e["requirement_level"] for e in ex["expected"]}
-        true_positive_ids = predicted_ids & expected_ids
+    `max_workers` > 1 runs extract_skills() calls concurrently via a thread
+    pool -- safe ONLY because extract_skills()'s one DB touch
+    (skill_cache.get_reference_embeddings) is pre-warmed synchronously
+    below and memoizes in a module-level dict keyed by embedding_model, so
+    every worker thread's extract_skills() call hits that cache instead of
+    the shared `session` -- no concurrent session use ever actually
+    happens. This is a real invariant, not an assumption: if extract_skills
+    ever starts using `session` for anything beyond that one cache lookup,
+    this parallel path stops being safe and needs a per-thread session
+    instead. Each example is otherwise independent (its own text, its own
+    metrics), so ordering doesn't matter for the aggregate.
+    """
+    if examples is None:
+        examples = load_generator_injected(session, sample_size=sample_size) + load_hand_authored(session)
 
-        total_phrases = len(result["matches"]) + len(result["unmatched"])
-        unmatched_rate = len(result["unmatched"]) / total_phrases if total_phrases else 0.0
-
-        per_example.append({
-            "example_id": ex["example_id"],
-            "source": ex["source"],
-            "precision": set_precision(predicted_ids, expected_ids),
-            "recall": set_recall(predicted_ids, expected_ids),
-            "f1": set_f1(predicted_ids, expected_ids),
-            "requirement_level_accuracy": requirement_level_accuracy(
-                predicted_levels, expected_levels, true_positive_ids
-            ),
-            "unmatched_phrase_rate": unmatched_rate,
-            "expected_skill_ids": sorted(expected_ids),
-            "predicted_skill_ids": sorted(predicted_ids),
-            "unmatched_phrases": [u["phrase"] for u in result["unmatched"]],
-        })
+    if max_workers > 1:
+        get_reference_embeddings(session, embedding_model)  # pre-warm before any thread touches it
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            per_example = list(pool.map(
+                lambda ex: _extract_one(ex, llm_model, embedding_model, similarity_threshold),
+                examples,
+            ))
+    else:
+        per_example = [
+            _extract_one(ex, llm_model, embedding_model, similarity_threshold, session=session)
+            for ex in examples
+        ]
 
     n = len(per_example)
     rla_values = [
@@ -151,6 +239,10 @@ def run_extraction_eval(
             expected_skill_ids=r["expected_skill_ids"],
             predicted_skill_ids=r["predicted_skill_ids"],
             unmatched_phrases=r["unmatched_phrases"],
+            extracted_phrases=r["extracted_phrases"],
+            match_detail=r["match_detail"],
+            unmatched_detail=r["unmatched_detail"],
+            mlflow_trace_id=r.get("mlflow_trace_id"),
         ))
 
     session.commit()

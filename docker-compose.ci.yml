@@ -1,0 +1,12 @@
+# CI-only override. GitHub Actions runners have no GPU, so services that
+# request one via `gpus: all` (ollama, vllm) fail to start in
+# fresh-volume-smoke-test with "failed to discover GPU vendor from CDI: no
+# known GPU vendor found" -- confirmed from that job's own failure log.
+# `!reset` drops the base file's `gpus` key entirely rather than merging
+# into it, so these services fall back to plain CPU inference, same as any
+# other container.
+services:
+  ollama:
+    gpus: !reset null
+  vllm:
+    gpus: !reset null
