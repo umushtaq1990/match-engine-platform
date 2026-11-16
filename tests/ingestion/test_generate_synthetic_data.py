@@ -17,10 +17,18 @@ class _FakeSkill:
 
 
 def test_every_taxonomy_category_is_covered_by_exactly_one_domain():
-    categories = {category for _name, category in SKILL_TAXONOMY}
+    # "soft_skill" is deliberately excluded from every domain as of golden-
+    # dataset v2 -- it's cross-cutting (handled by SKILL_TYPE, not anchored
+    # to one industry domain); see SKILL_DOMAINS's docstring. SKILL_DOMAINS
+    # may also cover a category ("sales") that doesn't exist in the base
+    # SKILL_TAXONOMY at all yet -- it's introduced at golden-v2 runtime via
+    # RETAGGED_SKILL_CATEGORIES + GOLDEN_V2_NEW_SKILLS, so the base
+    # taxonomy's categories only need to be a SUBSET of what's domained,
+    # not an exact match.
+    categories = {category for _name, category in SKILL_TAXONOMY} - {"soft_skill"}
     domain_categories = [cat for categories_set in SKILL_DOMAINS.values() for cat in categories_set]
 
-    assert categories == set(domain_categories), "every category must be covered by some domain"
+    assert categories <= set(domain_categories), "every non-soft_skill category must be covered"
     assert len(domain_categories) == len(set(domain_categories)), "no category in two domains"
 
 
@@ -40,23 +48,22 @@ def test_assign_domain_anchored_skills_returns_k_skills():
 
 
 def test_assign_domain_anchored_skills_majority_from_one_domain():
+    # Restricted to "technology" alone (27 skills in SKILL_TAXONOMY, by far
+    # the richest of the 8 golden-dataset-v2 domains): the 70-80% anchor
+    # ratio only holds when the anchor domain's own pool is big enough to
+    # supply it -- several other domains (e.g. healthcare, only 2 skills)
+    # are deliberately thin in the BASE taxonomy and get thickened by
+    # GOLDEN_V2_NEW_SKILLS only for the new curated occupations
+    # (app/golden/seed_curated_occupations.py), not tested here.
     skills = [_FakeSkill(i, cat) for i, (_name, cat) in enumerate(SKILL_TAXONOMY)]
-    skills_by_domain = {
-        domain: [s for s in skills if s.category in categories]
-        for domain, categories in SKILL_DOMAINS.items()
-    }
-    domain_names = list(SKILL_DOMAINS.keys())
+    tech_categories = SKILL_DOMAINS["technology"]
+    skills_by_domain = {"technology": [s for s in skills if s.category in tech_categories]}
+    domain_names = ["technology"]
     rng = random.Random(7)
 
     result = _assign_domain_anchored_skills(rng, skills, skills_by_domain, domain_names, k=8)
 
-    domain_by_category = {
-        cat: domain for domain, categories in SKILL_DOMAINS.items() for cat in categories
-    }
-    domain_counts: dict[str, int] = {}
-    for s in result:
-        domain = domain_by_category[s.category]
-        domain_counts[domain] = domain_counts.get(domain, 0) + 1
+    anchor_count = sum(1 for s in result if s.category in tech_categories)
 
-    # At least 70% (per the documented 70-80% anchor ratio) came from a single domain.
-    assert max(domain_counts.values()) / len(result) >= 0.7
+    # At least 70% (per the documented 70-80% anchor ratio) came from the one domain.
+    assert anchor_count / len(result) >= 0.7

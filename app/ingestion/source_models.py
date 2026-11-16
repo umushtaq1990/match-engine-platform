@@ -56,6 +56,12 @@ class Skill(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), unique=True, index=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # "technical" | "soft" | NULL -- golden-dataset v2 (app/ingestion/
+    # generate_synthetic_data.py's SKILL_TYPE_OF), a coarser, more
+    # business-meaningful axis than `category` for reporting. NULL for any
+    # skill not yet backfilled (there shouldn't be any after the v2
+    # migration, but nothing assumes non-null).
+    skill_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     synonyms: Mapped[list["SkillSynonym"]] = relationship(back_populates="skill")
 
@@ -91,6 +97,14 @@ class Occupation(Base):
     # real titles. Lets GET /occupations hide the padding from pickers without
     # touching the seeded data other tables already reference by id.
     is_curated: Mapped[bool] = mapped_column(default=True)
+    # One of the 8 golden-dataset-v2 domains (app/ingestion/
+    # generate_synthetic_data.py's CURATED_OCCUPATION_DOMAINS), set only
+    # for occupations in that curated map -- NULL means "not part of the
+    # curated taxonomy" (e.g. every padding duplicate like "Welder 4"),
+    # which is itself meaningful, not an oversight. Deliberately NOT a
+    # ForeignKey/enum: domains are a small, hand-curated Python-side
+    # taxonomy, not their own DB-managed entity.
+    domain: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     skills: Mapped[list["OccupationSkill"]] = relationship(back_populates="occupation")
 

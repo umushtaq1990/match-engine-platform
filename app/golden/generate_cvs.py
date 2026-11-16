@@ -1,11 +1,18 @@
 """Golden CV generator: unlike app/extraction/generate_synthetic_cvs.py's
 templated FPDF (built mechanically from a candidate's own DB fields -- easy
 for the extraction pipeline to parse because the text *is* the structured
-data), this writes a realistic one-page resume in natural LLM prose for each
-of the 500 golden candidates (app/golden/select.py), then renders and
-uploads it through the exact same real path a user upload goes through.
+data), this writes a realistic one-page resume in natural LLM prose for
+each golden candidate (app/golden/select.py), then renders and uploads it
+through the exact same real path a user upload goes through.
 
 Run with: docker compose run --rm golden-cvs [--limit N] [--force]
+          [--backend {ollama,vllm}] [--llm-model NAME]
+
+golden-dataset v2: --backend vllm routes generation through the GPU-served
+vLLM server (app/golden/vllm_client.py) instead of CPU-only Ollama -- the
+~15 req/s vLLM achieves via continuous batching vs. Ollama's ~0.3-0.6 req/s
+(docs/architecture/ai-ml-and-mlops.md) is what makes regenerating
+thousands of CVs/jobs practical instead of a multi-hour CPU batch.
 
 Idempotent/resumable via a `CandidateDocument.original_filename ==
 "golden_cv.pdf"` marker -- a killed/restarted run skips candidates that
@@ -23,13 +30,15 @@ from app.common.logging import setup_logging
 from app.db import SessionLocal
 from app.extraction.document_storage import upload_cv, validate_cv_upload
 from app.extraction.models import CandidateDocument
-from app.golden.llm_retry import generate_with_retry
-from app.golden.select import select_golden_candidate_ids
+from app.extraction.ollama_client import generate as _ollama_generate
+from app.golden import vllm_client
+from app.golden.llm_retry import make_generate_with_retry
+from app.golden.select import select_existing_golden_candidate_ids
 from app.ingestion.source_models import Candidate, CandidateSkill, Occupation, Skill
 
 logger = logging.getLogger(__name__)
 
-LLM_MODEL = "qwen2.5:1.5b"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b"
 GOLDEN_FILENAME = "golden_cv.pdf"
 
 _CV_PROMPT = """Write a realistic one-page resume for a job candidate, as plain text (no \
@@ -105,10 +114,14 @@ def _build_prompt(candidate, occupation_title, skills: list[tuple[str, str]]) ->
     )
 
 
-def main(limit: int | None, force: bool) -> None:
+def main(limit: int | None, force: bool, backend: str, llm_model: str | None) -> None:
+    backend_generate = vllm_client.generate if backend == "vllm" else _ollama_generate
+    model = llm_model or (DEFAULT_OLLAMA_MODEL if backend == "ollama" else "unused-for-vllm")
+    generate_with_retry = make_generate_with_retry(backend_generate)
+
     session = SessionLocal()
     try:
-        golden_ids = select_golden_candidate_ids(session)
+        golden_ids = select_existing_golden_candidate_ids(session)
         if limit is not None:
             golden_ids = golden_ids[:limit]
 
@@ -144,7 +157,7 @@ def main(limit: int | None, force: bool) -> None:
                 prompt = _build_prompt(
                     candidate, occupation_titles.get(candidate.primary_occupation_id), skills
                 )
-                body_text = generate_with_retry(LLM_MODEL, prompt)
+                body_text = generate_with_retry(model, prompt)
                 pdf_bytes = _render_cv_pdf(candidate.full_name, candidate.email, body_text)
 
                 validate_cv_upload("application/pdf", len(pdf_bytes), pdf_bytes[:5])
@@ -198,5 +211,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--force", action="store_true", help="Regenerate even candidates that already have a golden CV"
     )
+    parser.add_argument("--backend", choices=["ollama", "vllm"], default="ollama")
+    parser.add_argument(
+        "--llm-model", default=None,
+        help="Ignored when --backend vllm (vLLM serves exactly one model per process).",
+    )
     args = parser.parse_args()
-    main(limit=args.limit, force=args.force)
+    main(limit=args.limit, force=args.force, backend=args.backend, llm_model=args.llm_model)

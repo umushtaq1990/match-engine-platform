@@ -12,6 +12,9 @@ straight from their own CandidateSkill rows) but are independently written
 that should all still rank as strong matches, not 3 copies of one.
 
 Run with: docker compose run --rm golden-jobs [--limit N]
+          [--backend {ollama,vllm}] [--llm-model NAME]
+
+golden-dataset v2: --backend vllm, same reasoning as generate_cvs.py.
 
 Idempotent/resumable: tops a candidate back up to exactly 3 GoldenPair rows
 rather than skipping them outright, so a killed/restarted run doesn't
@@ -27,9 +30,11 @@ from sqlalchemy import select
 
 from app.common.logging import setup_logging
 from app.db import SessionLocal
-from app.golden.llm_retry import generate_with_retry
+from app.extraction.ollama_client import generate as _ollama_generate
+from app.golden import vllm_client
+from app.golden.llm_retry import make_generate_with_retry
 from app.golden.models import GoldenPair
-from app.golden.select import select_golden_candidate_ids
+from app.golden.select import select_existing_golden_candidate_ids
 from app.ingestion.source_models import (
     Candidate,
     CandidateSkill,
@@ -44,7 +49,7 @@ from app.ingestion.source_models import (
 
 logger = logging.getLogger(__name__)
 
-LLM_MODEL = "qwen2.5:1.5b"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:1.5b"
 JOBS_PER_CANDIDATE = 3
 
 _JOB_PROMPT = """Write a realistic job posting, as plain text (no Markdown formatting, no \
@@ -105,11 +110,15 @@ def _build_prompt(
     return prompt, company
 
 
-def main(limit: int | None) -> None:
+def main(limit: int | None, backend: str, llm_model: str | None) -> None:
+    backend_generate = vllm_client.generate if backend == "vllm" else _ollama_generate
+    model = llm_model or (DEFAULT_OLLAMA_MODEL if backend == "ollama" else "unused-for-vllm")
+    generate_with_retry = make_generate_with_retry(backend_generate)
+
     session = SessionLocal()
     fake = Faker()
     try:
-        golden_ids = select_golden_candidate_ids(session)
+        golden_ids = select_existing_golden_candidate_ids(session)
         if limit is not None:
             golden_ids = golden_ids[:limit]
 
@@ -138,7 +147,7 @@ def main(limit: int | None) -> None:
                 )
                 try:
                     prompt, company = _build_prompt(fake, title, candidate.years_experience, target_skills)
-                    description = _strip_markdown(generate_with_retry(LLM_MODEL, prompt))
+                    description = _strip_markdown(generate_with_retry(model, prompt))
 
                     job = Job(
                         title=title,
@@ -195,5 +204,10 @@ if __name__ == "__main__":
     setup_logging("golden-jobs")
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None, help="Only process the first N golden candidates")
+    parser.add_argument("--backend", choices=["ollama", "vllm"], default="ollama")
+    parser.add_argument(
+        "--llm-model", default=None,
+        help="Ignored when --backend vllm (vLLM serves exactly one model per process).",
+    )
     args = parser.parse_args()
-    main(limit=args.limit)
+    main(limit=args.limit, backend=args.backend, llm_model=args.llm_model)

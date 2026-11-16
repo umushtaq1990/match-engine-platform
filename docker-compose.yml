@@ -177,6 +177,15 @@ services:
     ports:
       - "8000:8000"
     ipc: host
+    environment:
+      # The model is already fully cached in vllm_hf_cache from prior runs
+      # -- without this, startup still hits huggingface.co first to check
+      # for updates, and a container-specific DNS resolution failure there
+      # (confirmed live: other containers on the same host resolved the
+      # same hostname fine) blocked startup entirely despite having
+      # everything it needs locally.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
     volumes:
       - vllm_hf_cache:/root/.cache/huggingface
     command:
@@ -517,8 +526,53 @@ services:
   # history — see app/golden/ module docstrings for the full rationale.
   # One shared image (docker/Dockerfile.golden), varied only by `command`,
   # same pattern as extraction-eval/embeddings-compute both reusing
-  # Dockerfile.extraction. Run in this order: golden-cvs, golden-jobs,
-  # golden-logins, golden-events, then either eval script.
+  # Dockerfile.extraction. Run in this order: golden-curated-occupations,
+  # golden-cvs, golden-jobs, golden-inject-noise, golden-logins,
+  # golden-events, then either eval script.
+  # Wipes the existing golden subset before a full v2 regenerate -- see
+  # app/golden/wipe_golden_dataset.py's docstring for exact scope (golden
+  # CVs/jobs/pairs/eval-runs only, never the base seed pool).
+  golden-wipe:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.wipe_golden_dataset"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  golden-curated-occupations:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.seed_curated_occupations"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # Selects N candidates and assigns each to one of the new curated
+  # occupations (round-robin, even spread), regenerating their skill
+  # profile to match -- see app/golden/select.py's
+  # select_and_assign_golden_candidates. Run after golden-curated-
+  # occupations, before golden-cvs/golden-jobs. Pass --n to override 1000.
+  golden-assign-candidates:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.select"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
   golden-cvs:
     build:
       context: .
@@ -526,6 +580,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       OLLAMA_URL: http://ollama:11434
+      VLLM_URL: http://vllm:8000
+      # Must match whichever model vLLM's own --model= is currently serving
+      # -- vllm_client.py sends this exact string in each request's "model"
+      # field, but it's ignored server-side (vLLM serves one model per
+      # process) when --backend vllm is used.
+      VLLM_MODEL: "Qwen/Qwen2.5-3B-Instruct-AWQ"
       CV_STORAGE_ENDPOINT: seaweedfs:8333
       CV_STORAGE_ACCESS_KEY: ${CV_STORAGE_ACCESS_KEY}
       CV_STORAGE_SECRET_KEY: ${CV_STORAGE_SECRET_KEY}
@@ -537,6 +597,10 @@ services:
         condition: service_healthy
       seaweedfs:
         condition: service_healthy
+      # No healthcheck on `vllm` -- only waits for container start, not
+      # model load. See golden-extraction-eval's note on this same gap.
+      vllm:
+        condition: service_started
     profiles: ["tools"]
 
   golden-jobs:
@@ -546,11 +610,32 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       OLLAMA_URL: http://ollama:11434
+      VLLM_URL: http://vllm:8000
+      VLLM_MODEL: "Qwen/Qwen2.5-3B-Instruct-AWQ"
     command: ["python", "-m", "app.golden.generate_jobs"]
     depends_on:
       db:
         condition: service_healthy
       ollama:
+        condition: service_healthy
+      vllm:
+        condition: service_started
+    profiles: ["tools"]
+
+  # golden-dataset v2: deliberately injects 1-2 unrelated "noise" skills into
+  # ~10% of golden candidates'/jobs' ground truth, AFTER their CV/job text
+  # is already written (never regenerated afterward) -- see
+  # app/golden/inject_noise.py and golden_injected_noise. Run after
+  # golden-cvs/golden-jobs, before golden-extraction-eval.
+  golden-inject-noise:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.inject_noise"]
+    depends_on:
+      db:
         condition: service_healthy
     profiles: ["tools"]
 
@@ -608,6 +693,14 @@ services:
         condition: service_healthy
       seaweedfs:
         condition: service_healthy
+      # `vllm` has no healthcheck defined, so this only waits for the
+      # container to start, not for the model to finish loading (that took
+      # real, observed minutes this session) -- a genuine gap, previously
+      # missing here entirely. True readiness still needs an external wait
+      # (e.g. polling for "Application startup complete" in its logs, same
+      # as this session's manual recovery did) before calling --backend vllm.
+      vllm:
+        condition: service_started
     profiles: ["tools"]
 
   golden-recommendation-eval:

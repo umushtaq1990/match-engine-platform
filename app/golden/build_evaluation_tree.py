@@ -1,7 +1,9 @@
 """Decomposition-tree ("drill-down") report for a golden-eval extraction
 run: overall F1 -> profession domain -> occupation, built separately for
-candidates (golden CVs, 500 total) and job posts (golden jobs, 1500 total)
-so each branch's leaf counts sum to exactly those numbers.
+candidates (golden CVs) and job posts (golden jobs) so each branch's leaf
+counts sum to the right totals. A second, parallel tree breaks each
+occupation down by skill type (technical/soft) instead of by F1 -- see
+"Two trees, two units" below for why these can't be one tree.
 
 Grafana has no hierarchical decomposition-tree visual (sunburst/icicle) --
 this is a genuinely different chart type, so it's a standalone report, not
@@ -14,163 +16,77 @@ Rendered to a single self-contained HTML file (plotly.js inlined, no CDN,
 no server) so it can be emailed or opened by someone with no access to this
 stack at all -- a business audience, not an engineer with a terminal.
 
-Occupations have no persisted "domain" column -- SKILL_DOMAINS
-(app/ingestion/generate_synthetic_data.py) only maps *skill category* to a
-coarse domain. This derives each occupation's domain the same way the
-generator derives a candidate's anchor domain: the domain that contains the
-plurality of that occupation's own occupation_skills, by category. Ties
-broken by SKILL_DOMAINS's own iteration order, deterministically.
+golden-dataset v2: `Occupation.domain` is now a real persisted column
+(app/ingestion/source_models.py), populated for the curated occupations by
+app/golden/seed_curated_occupations.py -- this report used to reconstruct
+domain on the fly from occupation_skills, including a hand-curated
+Python-side map and padding-title canonicalization (a real bug that work
+found and fixed: random per-occupation-row domain anchoring let the same
+profession, e.g. "Welder," scatter across multiple domains). golden
+selection now only ever assigns candidates/jobs to the new curated
+occupations (app/golden/select.py's select_and_assign_golden_candidates),
+which have clean, non-padded titles and a correct domain already, so none
+of that reconstruction logic is needed anymore -- this just reads the
+columns.
+
+Two trees, two units: the first tree's leaves are *examples* (one CV or
+one job posting), so "F1" and "count of examples" are well-defined at
+every level. Skill type (technical/soft) is a property of a *matched
+skill*, not of a whole example -- a single CV legitimately has both
+technical and soft skills in its ground truth, so it can't be a strict
+child of one occupation node without double-counting or picking an
+arbitrary "primary" type. The second tree's leaves are instead *matched
+skill mentions* (from match_detail), so "how many technical vs. soft
+skills did this occupation's examples successfully match, and at what
+average confidence" is its own, internally consistent hierarchy.
 
 Run with: docker compose run --rm golden-eval-tree [--run-id N]
 """
 import argparse
-import re
-from collections import Counter
 from pathlib import Path
 
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.extraction.models import ExtractionExampleResult, ExtractionRun
-from app.ingestion.generate_synthetic_data import SKILL_DOMAINS
-from app.ingestion.source_models import Candidate, Job, Occupation, OccupationSkill, Skill
+from app.ingestion.source_models import Candidate, Job, Occupation, Skill
 
 OUTPUT_DIR = Path("data/golden/reports")
-
-_CATEGORY_TO_DOMAIN = {
-    category: domain for domain, categories in SKILL_DOMAINS.items() for category in categories
-}
-_UNCATEGORIZED_DOMAIN = "uncategorized"
-
-# The seed data's own occupation_skills domain anchor is picked uniformly at
-# random per occupation (generate_synthetic_data.py's
-# _assign_domain_anchored_skills -> rng.choice(domain_names)), with no
-# semantic link to the occupation's title -- it exists purely to give the
-# *skill co-occurrence graph* real community structure (docs/knowledge-
-# graph.md), not to encode a real professional taxonomy. Confirmed live:
-# before this hand-curated map existed, "Welder" came back in every one of
-# the 4 domains depending on which padding row happened to get sampled,
-# which would read as a bug to a business audience even though it's
-# faithfully reflecting the seed data. For the 26 real titles
-# (OCCUPATION_TITLES), use an explicit, human-judged mapping instead; the
-# skill-category-majority vote below is still the fallback for anything not
-# in this list (e.g. user-added occupations like "AI Engineer").
-_CURATED_OCCUPATION_DOMAINS = {
-    "Software Engineer": "software_engineering",
-    "Data Analyst": "software_engineering",
-    "Data Scientist": "software_engineering",
-    "Network Administrator": "software_engineering",
-    "Security Analyst": "software_engineering",
-    "QA Engineer": "software_engineering",
-    "Scrum Master": "software_engineering",
-    "Project Manager": "business_ops",
-    "Sales Representative": "business_ops",
-    "Customer Service Agent": "business_ops",
-    "Accountant": "business_ops",
-    "HR Coordinator": "business_ops",
-    "Supply Chain Analyst": "business_ops",
-    "Electrician": "trades_logistics",
-    "Plumber": "trades_logistics",
-    "Warehouse Associate": "trades_logistics",
-    "Welder": "trades_logistics",
-    "Carpenter": "trades_logistics",
-    "Forklift Operator": "trades_logistics",
-    "Manufacturing Technician": "trades_logistics",
-    "Mechanical Engineer": "trades_logistics",
-    "Registered Nurse": "people_services",
-    "Graphic Designer": "people_services",
-    "Content Writer": "people_services",
-    "Teacher": "people_services",
-    "Marketing Specialist": "people_services",
-}
-
-# Occupations are seeded by cycling a short list of real titles with a
-# " <n>" suffix once the real list is exhausted (generate_synthetic_data.py:
-# `f"{title}{suffix}"`, suffix e.g. " 4") to reach the target row count --
-# "QA Engineer 4" and "QA Engineer" are the *same* profession for a business
-# rollup, just two different padding rows. Without this, the occupation
-# level of the tree fragments into ~hundreds of near-duplicate 1-5-count
-# leaves instead of the handful of real professions a business audience
-# actually recognizes (confirmed live: the first version of this report did
-# exactly that before this normalization was added).
-_PADDING_SUFFIX = re.compile(r" \d+$")
-
-
-def _canonical_occupation_title(title: str) -> str:
-    return _PADDING_SUFFIX.sub("", title)
+_UNKNOWN = "unknown"
 
 
 def _pick_default_run_id(session) -> int:
-    row = session.execute(
-        select(ExtractionRun.id)
-        .where(ExtractionRun.sample_size == 2000)
-        .order_by(ExtractionRun.f1_avg.desc())
-        .limit(1)
-    ).first()
+    row = session.execute(select(ExtractionRun.id).order_by(ExtractionRun.f1_avg.desc()).limit(1)).first()
     if row is None:
-        raise SystemExit("No extraction_runs with sample_size=2000 found -- pass --run-id explicitly.")
+        raise SystemExit("No extraction_runs found -- pass --run-id explicitly.")
     return row[0]
 
 
-def _occupation_domains(session) -> dict[int, str]:
-    """occupation_id -> domain. Votes are pooled by *canonical* title, not
-    raw occupation_id: each padding duplicate ("Welder 4") got its own,
-    independently sampled occupation_skills, so voting per-row let the same
-    real profession scatter across multiple domains by chance (confirmed
-    live: "Welder" showed up under all 4 domains in the first version of
-    this report). Pooling by canonical title gives one consistent domain per
-    real profession instead."""
-    rows = session.execute(
-        select(Occupation.id, Occupation.title, Skill.category)
-        .join(OccupationSkill, OccupationSkill.occupation_id == Occupation.id)
-        .join(Skill, Skill.id == OccupationSkill.skill_id)
-    ).all()
-
-    categories_by_title: dict[str, list[str | None]] = {}
-    title_by_occupation: dict[int, str] = {}
-    for occupation_id, title, category in rows:
-        canonical = _canonical_occupation_title(title)
-        title_by_occupation[occupation_id] = canonical
-        categories_by_title.setdefault(canonical, []).append(category)
-
-    domain_by_title: dict[str, str] = {}
-    for canonical, categories in categories_by_title.items():
-        if canonical in _CURATED_OCCUPATION_DOMAINS:
-            domain_by_title[canonical] = _CURATED_OCCUPATION_DOMAINS[canonical]
-            continue
-        domain_votes = Counter(
-            _CATEGORY_TO_DOMAIN.get(c, _UNCATEGORIZED_DOMAIN) for c in categories
-        )
-        domain_by_title[canonical] = domain_votes.most_common(1)[0][0]
-
-    return {
-        occupation_id: domain_by_title[canonical]
-        for occupation_id, canonical in title_by_occupation.items()
-    }
-
-
-def _example_rows(session, run_id: int) -> list[tuple[str, str, float]]:
-    """Returns (source, example_id, f1) for every example in the run."""
+def _example_rows(session, run_id: int):
+    """Returns (source, example_id, f1, match_detail) for every example in the run."""
     return session.execute(
         select(
             ExtractionExampleResult.source,
             ExtractionExampleResult.example_id,
             ExtractionExampleResult.f1,
+            ExtractionExampleResult.match_detail,
         ).where(ExtractionExampleResult.run_id == run_id)
     ).all()
 
 
-def _build_tree_rows(session, run_id: int) -> list[dict]:
-    occupation_domain = _occupation_domains(session)
+def _build_rows(session, run_id: int) -> tuple[list[dict], list[dict]]:
+    """Returns (example_rows, skill_match_rows) -- the two different units
+    the two trees are built from (see module docstring)."""
+    occupation_domain = dict(session.execute(select(Occupation.id, Occupation.domain)).all())
     occupation_title = dict(session.execute(select(Occupation.id, Occupation.title)).all())
-    candidate_occupation = dict(
-        session.execute(select(Candidate.id, Candidate.primary_occupation_id)).all()
-    )
+    candidate_occupation = dict(session.execute(select(Candidate.id, Candidate.primary_occupation_id)).all())
     job_occupation = dict(session.execute(select(Job.id, Job.occupation_id)).all())
+    skill_type_by_id = dict(session.execute(select(Skill.id, Skill.skill_type)).all())
 
-    rows = []
-    for source, example_id, f1 in _example_rows(session, run_id):
+    example_rows, skill_match_rows = [], []
+    for source, example_id, f1, match_detail in _example_rows(session, run_id):
         raw_id = int(example_id.split(":", 1)[1])
         if source == "golden_cv":
             entity_type, occupation_id = "Candidates", candidate_occupation.get(raw_id)
@@ -179,73 +95,89 @@ def _build_tree_rows(session, run_id: int) -> list[dict]:
         else:
             continue  # hand-authored/non-golden examples aren't part of this breakdown
 
-        domain = occupation_domain.get(occupation_id, _UNCATEGORIZED_DOMAIN)
-        title = _canonical_occupation_title(occupation_title.get(occupation_id, "Unknown occupation"))
-        rows.append({"entity_type": entity_type, "domain": domain, "occupation": title, "f1": float(f1)})
-    return rows
+        domain = occupation_domain.get(occupation_id) or _UNKNOWN
+        occupation = occupation_title.get(occupation_id, _UNKNOWN)
+        example_rows.append({
+            "entity_type": entity_type, "domain": domain, "occupation": occupation, "f1": float(f1),
+        })
+
+        for match in match_detail or []:
+            skill_match_rows.append({
+                "entity_type": entity_type, "domain": domain, "occupation": occupation,
+                "skill_type": skill_type_by_id.get(match["skill_id"]) or _UNKNOWN,
+                "confidence": float(match["confidence"]),
+            })
+    return example_rows, skill_match_rows
 
 
-def _aggregate(rows: list[dict], *keys: str) -> dict[tuple, tuple[int, float]]:
-    """group key -> (count, avg_f1)."""
+def _aggregate(rows: list[dict], value_key: str, *group_keys: str) -> dict[tuple, tuple[int, float]]:
+    """group key -> (count, avg of value_key)."""
     buckets: dict[tuple, list[float]] = {}
     for row in rows:
-        key = tuple(row[k] for k in keys)
-        buckets.setdefault(key, []).append(row["f1"])
-    return {key: (len(f1s), sum(f1s) / len(f1s)) for key, f1s in buckets.items()}
+        key = tuple(row[k] for k in group_keys)
+        buckets.setdefault(key, []).append(row[value_key])
+    return {key: (len(values), sum(values) / len(values)) for key, values in buckets.items()}
 
 
-def _build_icicle(rows: list[dict], run_id: int, f1_avg_overall: float) -> go.Figure:
-    by_type = _aggregate(rows, "entity_type")
-    by_type_domain = _aggregate(rows, "entity_type", "domain")
-    by_type_domain_occupation = _aggregate(rows, "entity_type", "domain", "occupation")
+def _icicle_trace(
+    rows: list[dict], value_key: str, root_label: str, levels: list[tuple[str, ...]]
+) -> go.Icicle:
+    """`levels` is [group_keys, ...], outermost first, each one tuple longer
+    than the last (e.g. ("entity_type",), ("entity_type", "domain"), ...) --
+    each level's node id is built from its own group_keys tuple, parented
+    to the previous level's node id, same pattern regardless of depth."""
+    ids, labels, parents, values, colors = ["root"], [root_label], [""], [len(rows)], [
+        sum(r[value_key] for r in rows) / len(rows) if rows else 0.0
+    ]
 
-    ids, labels, parents, values, colors = [], [], [], [], []
+    parent_ids_by_row_key: dict[tuple, str] = {}
+    for depth, group_keys in enumerate(levels):
+        aggregated = _aggregate(rows, value_key, *group_keys)
+        for key, (count, avg_value) in aggregated.items():
+            node_id = "root|" + "|".join(f"{k}:{v}" for k, v in zip(group_keys, key))
+            parent_key = key[:-1] if depth > 0 else ()
+            parent_id = parent_ids_by_row_key.get(parent_key, "root") if depth > 0 else "root"
+            ids.append(node_id)
+            labels.append(str(key[-1]))
+            parents.append(parent_id)
+            values.append(count)
+            colors.append(avg_value)
+            parent_ids_by_row_key[key] = node_id
 
-    root_id = "All"
-    ids.append(root_id)
-    labels.append(f"All golden examples (run {run_id})")
-    parents.append("")
-    values.append(len(rows))
-    colors.append(f1_avg_overall)
-
-    for (entity_type,), (count, avg_f1) in by_type.items():
-        node_id = f"type:{entity_type}"
-        ids.append(node_id)
-        labels.append(entity_type)
-        parents.append(root_id)
-        values.append(count)
-        colors.append(avg_f1)
-
-    for (entity_type, domain), (count, avg_f1) in by_type_domain.items():
-        node_id = f"type:{entity_type}|domain:{domain}"
-        ids.append(node_id)
-        labels.append(domain)
-        parents.append(f"type:{entity_type}")
-        values.append(count)
-        colors.append(avg_f1)
-
-    for (entity_type, domain, occupation), (count, avg_f1) in by_type_domain_occupation.items():
-        node_id = f"type:{entity_type}|domain:{domain}|occ:{occupation}"
-        ids.append(node_id)
-        labels.append(occupation)
-        parents.append(f"type:{entity_type}|domain:{domain}")
-        values.append(count)
-        colors.append(avg_f1)
-
-    fig = go.Figure(go.Icicle(
+    return go.Icicle(
         ids=ids, labels=labels, parents=parents, values=values,
         branchvalues="total",
         marker={"colors": colors, "colorscale": "RdYlGn", "cmin": 0, "cmax": 1, "showscale": True},
         text=[f"{c:.0%}" for c in colors],
-        texttemplate="%{label}<br>n=%{value}<br>F1=%{text}",
-        hovertemplate="%{label}<br>examples: %{value}<br>avg F1: %{customdata:.4f}<extra></extra>",
-        customdata=colors,
+        texttemplate="%{label}<br>n=%{value}<br>%{text}",
         tiling={"orientation": "v"},
-    ))
-    fig.update_layout(
-        title=f"Golden evaluation drill-down -- run {run_id} (overall F1 {f1_avg_overall:.4f})",
-        margin={"t": 60, "l": 10, "r": 10, "b": 10},
     )
+
+
+def _build_figure(example_rows: list[dict], skill_match_rows: list[dict], run_id: int) -> go.Figure:
+    fig = make_subplots(
+        rows=1, cols=2, specs=[[{"type": "icicle"}, {"type": "icicle"}]],
+        subplot_titles=(
+            "By F1: domain -> occupation",
+            "By skill type: domain -> occupation -> technical/soft",
+        ),
+    )
+    fig.add_trace(
+        _icicle_trace(
+            example_rows, "f1", f"All examples (run {run_id})",
+            [("entity_type",), ("entity_type", "domain"), ("entity_type", "domain", "occupation")],
+        ),
+        row=1, col=1,
+    )
+    fig.add_trace(
+        _icicle_trace(
+            skill_match_rows, "confidence", f"All matched skills (run {run_id})",
+            [("entity_type",), ("entity_type", "domain"), ("entity_type", "domain", "occupation"),
+             ("entity_type", "domain", "occupation", "skill_type")],
+        ),
+        row=1, col=2,
+    )
+    fig.update_layout(title=f"Golden evaluation drill-down -- run {run_id}", margin={"t": 80})
     return fig
 
 
@@ -262,14 +194,15 @@ def main() -> None:
         if run is None:
             raise SystemExit(f"No extraction_runs row with id={run_id}")
 
-        rows = _build_tree_rows(session, run_id)
-        candidate_count = sum(1 for r in rows if r["entity_type"] == "Candidates")
-        job_count = sum(1 for r in rows if r["entity_type"] == "Job Posts")
+        example_rows, skill_match_rows = _build_rows(session, run_id)
+        candidate_count = sum(1 for r in example_rows if r["entity_type"] == "Candidates")
+        job_count = sum(1 for r in example_rows if r["entity_type"] == "Job Posts")
         print(f"Run {run_id} ({run.llm_model}, sample_size={run.sample_size}, f1_avg={run.f1_avg}):")
         print(f"  Candidates: {candidate_count} examples")
         print(f"  Job Posts:  {job_count} examples")
+        print(f"  Matched skill mentions: {len(skill_match_rows)}")
 
-        fig = _build_icicle(rows, run_id, float(run.f1_avg))
+        fig = _build_figure(example_rows, skill_match_rows, run_id)
 
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = args.output or (OUTPUT_DIR / f"evaluation_drilldown_run{run_id}.html")

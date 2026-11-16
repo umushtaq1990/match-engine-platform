@@ -21,7 +21,6 @@ import argparse
 import logging
 import time
 
-import httpx
 from pypdf import PdfReader
 from sqlalchemy import select
 
@@ -34,7 +33,8 @@ from app.extraction.ollama_client import generate as _ollama_generate
 from app.extraction.run_extraction_eval import run_extraction_eval
 from app.golden import vllm_client
 from app.golden.generate_cvs import GOLDEN_FILENAME
-from app.golden.select import select_golden_candidate_ids
+from app.golden.llm_retry import make_generate_with_retry
+from app.golden.select import select_existing_golden_candidate_ids
 from app.ingestion.source_models import CandidateSkill, Job, JobSkill, ProficiencyLevel
 
 logger = logging.getLogger(__name__)
@@ -46,27 +46,11 @@ logger = logging.getLogger(__name__)
 # directly with no retry, unlike generate_cvs.py/generate_jobs.py which
 # use llm_retry.generate_with_retry -- patch the same per-call retry onto
 # pipeline.py's bound reference here, scoped to this eval script only, so
-# one slow call doesn't void the whole batch. Works for either backend's
-# generate() function since both share the same (model, prompt,
-# response_format, temperature) signature.
-def _make_generate_with_retry(backend_generate, attempts=3):
-    def _generate_with_retry(model, prompt, response_format=None, temperature=None):
-        last_exc: Exception | None = None
-        for attempt in range(1, attempts + 1):
-            try:
-                return backend_generate(
-                    model, prompt, response_format=response_format, temperature=temperature,
-                )
-            except (httpx.TimeoutException, httpx.HTTPError) as exc:
-                last_exc = exc
-                logger.warning(
-                    "%s call failed (attempt %s/%s): %s",
-                    backend_generate.__module__, attempt, attempts, exc,
-                )
-                if attempt < attempts:
-                    time.sleep(5)
-        raise last_exc
-    return _generate_with_retry
+# one slow call doesn't void the whole batch. make_generate_with_retry used
+# to be a private copy of this exact factory defined here; golden-dataset
+# v2 moved it to app/golden/llm_retry.py as the one shared implementation
+# (generate_cvs.py/generate_jobs.py need the same backend-swapping retry).
+_make_generate_with_retry = make_generate_with_retry
 
 
 DEFAULT_SAMPLE_SIZE = 50
@@ -201,9 +185,9 @@ def main(
             )
             examples = _examples_by_ids(session, hard_ids)
         else:
-            golden_ids = select_golden_candidate_ids(session)
-            # select_golden_candidate_ids is deterministic (same 500 ids, same
-            # order, every call) -- an --offset lets repeated small runs cover
+            golden_ids = select_existing_golden_candidate_ids(session)
+            # select_existing_golden_candidate_ids is deterministic (same ids,
+            # same order, every call) -- an --offset lets repeated small runs cover
             # fresh candidates each time (e.g. --limit 5 --offset 5 for the
             # next 5) instead of re-scoring the same first N every time. Each
             # run still writes its own ExtractionRun row (no built-in dedup
@@ -271,7 +255,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--offset", type=int, default=0,
         help="Skip the first N golden candidates (by the same deterministic ordering "
-             "select_golden_candidate_ids always returns) -- use with --limit to cover "
+             "select_existing_golden_candidate_ids always returns) -- use with --limit to cover "
              "a fresh batch each run instead of re-testing the same candidates.",
     )
     parser.add_argument(

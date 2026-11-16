@@ -1,28 +1,46 @@
 """Pure-logic tests for app/golden/build_evaluation_tree.py -- no DB."""
-from app.golden.build_evaluation_tree import _aggregate, _canonical_occupation_title
+from app.golden.build_evaluation_tree import _aggregate, _icicle_trace
 
 
-def test_canonical_title_strips_padding_suffix():
-    assert _canonical_occupation_title("Welder 4") == "Welder"
-
-
-def test_canonical_title_leaves_real_titles_unchanged():
-    assert _canonical_occupation_title("Welder") == "Welder"
-
-
-def test_canonical_title_does_not_touch_internal_digits():
-    # A real title with a trailing number embedded mid-string (not a
-    # padding suffix) should be untouched -- only a trailing " <digits>" is
-    # the padding pattern.
-    assert _canonical_occupation_title("Level 3 Support") == "Level 3 Support"
-
-
-def test_aggregate_groups_and_averages_by_key():
+def test_aggregate_groups_and_averages_by_value_key():
     rows = [
-        {"entity_type": "Candidates", "domain": "trades_logistics", "f1": 1.0},
-        {"entity_type": "Candidates", "domain": "trades_logistics", "f1": 0.5},
-        {"entity_type": "Job Posts", "domain": "trades_logistics", "f1": 0.8},
+        {"entity_type": "Candidates", "domain": "skilled_trades", "f1": 1.0},
+        {"entity_type": "Candidates", "domain": "skilled_trades", "f1": 0.5},
+        {"entity_type": "Job Posts", "domain": "skilled_trades", "f1": 0.8},
     ]
-    result = _aggregate(rows, "entity_type", "domain")
-    assert result[("Candidates", "trades_logistics")] == (2, 0.75)
-    assert result[("Job Posts", "trades_logistics")] == (1, 0.8)
+    result = _aggregate(rows, "f1", "entity_type", "domain")
+    assert result[("Candidates", "skilled_trades")] == (2, 0.75)
+    assert result[("Job Posts", "skilled_trades")] == (1, 0.8)
+
+
+def test_icicle_trace_root_value_matches_total_row_count():
+    rows = [
+        {"entity_type": "Candidates", "domain": "technology", "f1": 1.0},
+        {"entity_type": "Candidates", "domain": "healthcare", "f1": 0.5},
+        {"entity_type": "Job Posts", "domain": "technology", "f1": 0.8},
+    ]
+    trace = _icicle_trace(rows, "f1", "All examples", [("entity_type",), ("entity_type", "domain")])
+
+    assert trace.ids[0] == "root"
+    assert trace.values[0] == len(rows)
+    # branchvalues="total" requires each level's children to sum to their
+    # parent -- the two entity_type nodes (depth 0) should sum back to root.
+    entity_type_values = [v for i, v in zip(trace.ids, trace.values) if i.count("|") == 1]
+    assert sum(entity_type_values) == len(rows)
+
+
+def test_icicle_trace_parents_correctly_nested():
+    rows = [
+        {"entity_type": "Candidates", "domain": "technology", "occupation": "Cloud Engineer", "f1": 1.0},
+        {"entity_type": "Candidates", "domain": "technology", "occupation": "DevOps Engineer", "f1": 0.6},
+    ]
+    trace = _icicle_trace(
+        rows, "f1", "All examples",
+        [("entity_type",), ("entity_type", "domain"), ("entity_type", "domain", "occupation")],
+    )
+
+    by_id = dict(zip(trace.ids, trace.parents))
+    domain_node = "root|entity_type:Candidates|domain:technology"
+    occupation_node = "root|entity_type:Candidates|domain:technology|occupation:Cloud Engineer"
+    assert by_id[domain_node] == "root|entity_type:Candidates"
+    assert by_id[occupation_node] == domain_node
