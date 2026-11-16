@@ -110,6 +110,16 @@ A real gap closed, not assumed closed: `extraction_example_results` had no way t
 
 This is a real, useful finding for anyone relying on this review-queue mechanism in production: it's a precision-side safety net (catches "the model found something it's unsure about"), not a recall-side one (does nothing for "the model silently missed a requirement"). Closing that gap would need a different mechanism -- e.g. cross-referencing against an expected-requirements profile per occupation, which this project doesn't have built.
 
+**A different idea, tested the same way, does better: does a skill look out of place next to the rest of the list, rather than how confident the extraction was.** Two variants tried against the same 400 noisy / 3600 clean examples, scored on `expected_skill_ids` directly (not on what got extracted):
+
+| Approach | Best usable point | Recall | Precision | False-positive rate |
+|---|---|---|---|---|
+| Confidence heuristic (above) | only threshold that exists | 9.2% | -- | 9.1% (no separation at all) |
+| Domain-category majority vote (count of skills whose `SKILL_DOMAINS` category differs from the list's majority) | outlier count ≥ 3 | 68.0% | 48.9% | 7.9% |
+| Embedding centroid similarity (leave-one-out cosine similarity of each skill's `nomic-embed-text` embedding against the mean of the rest) | best threshold found | 84.5% | 2.5% | 53.7% |
+
+The coarse, hand-curated category labels (`SKILL_DOMAINS`) beat the embedding-based version by a wide margin, which is a real, somewhat counter-intuitive finding worth remembering: `nomic-embed-text` is a general-purpose sentence embedding model, not fine-tuned to cluster skills by domain, and averaging several skill embeddings into a centroid doesn't land on a meaningful "semantic center" for this purpose -- the two populations' average similarity barely differs (0.553 noisy vs. 0.595 clean). The domain-majority-vote version is noisy specifically because this dataset's own clean skill profiles are deliberately built with ~20-30% natural cross-domain noise (`_assign_fixed_domain_skills`), so "has an outlier" alone can't separate clean from corrupted -- only "has *several* outliers" gets real separation. Neither approach is built into the actual review-queue mechanism; both were validated here as an answer to "how would you actually catch this," not shipped as a feature.
+
 ### Live drill-down app (`app/golden/drilldown/`)
 
 A persistent, interactive counterpart to the static report above, requested directly after someone asked to actually click into a leaf (e.g. "Job Posts → healthcare → 72 Medical Assistant postings") and see every underlying record -- scores, expected/matched/unmatched skills, text preview -- not just the aggregate box. A static HTML file can't do that (no backend to query on click), so this is a small, long-running Streamlit service, three pages:
