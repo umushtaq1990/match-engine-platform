@@ -22,6 +22,8 @@ COPY app/identity/models.py ./app/identity/models.py
 COPY app/identity/__init__.py ./app/identity/__init__.py
 COPY app/audit/models.py ./app/audit/models.py
 COPY app/audit/__init__.py ./app/audit/__init__.py
+COPY app/golden/models.py ./app/golden/models.py
+COPY app/golden/__init__.py ./app/golden/__init__.py
 COPY alembic.ini ./alembic.ini
 COPY alembic/ ./alembic/
 

@@ -19,6 +19,16 @@ import json
 import logging
 import sys
 
+# Attributes stdlib `logging.LogRecord` always sets itself -- anything else
+# found on a record came from a caller's `extra={...}` and should be
+# surfaced, so one caller's `request_id` and another's `candidate_id`/
+# `example_id` (see app/golden/*.py) both get the same correlation
+# treatment without this formatter hardcoding every field name a future
+# caller might want.
+_STANDARD_RECORD_ATTRS = frozenset(logging.LogRecord(
+    "", 0, "", 0, "", (), None,
+).__dict__) | {"message", "asctime"}
+
 
 class _JSONFormatter(logging.Formatter):
     def __init__(self, service_name: str):
@@ -36,10 +46,10 @@ class _JSONFormatter(logging.Formatter):
         }
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
-        request_id = getattr(record, "request_id", None)
-        if request_id is not None:
-            payload["request_id"] = request_id
-        return json.dumps(payload)
+        for key, value in record.__dict__.items():
+            if key not in _STANDARD_RECORD_ATTRS:
+                payload[key] = value
+        return json.dumps(payload, default=str)
 
 
 def setup_logging(service_name: str, level: int = logging.INFO) -> None:

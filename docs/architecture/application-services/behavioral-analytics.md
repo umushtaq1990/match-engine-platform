@@ -134,7 +134,7 @@ fail-open gap the original instrumentation hook already had).
 
 ## Roadmap
 
-- **ML clustering, only if rule-based segmentation is shown insufficient**: real clustering (k-means/HDBSCAN) over engagement feature vectors, evaluated against the current rule-based labels the same way `docs/architecture/ai-ml-and-mlops.md` evaluates matching quality, a measured comparison, not an assumed improvement.
+- **ML clustering, only if rule-based segmentation is shown insufficient**: real clustering (k-means/HDBSCAN) over engagement feature vectors, evaluated against the current rule-based labels the same way `docs/architecture/ai-ml-and-mlops.md` evaluates matching quality, a measured comparison, not an assumed improvement. `docs/architecture/golden-evaluation-dataset.md` builds the deliberately-diverse, persona-driven behavioral history this would need.
 - A Grafana panel reusing the existing observability stack, an analytics-specific data-quality `CronJob` mirroring the matching engine's pattern, and consumer-group failure handling (`XPENDING`/claim logic for a crashed consumer) remain open, see `docs/architecture/data-platform/redis-infrastructure.md` "Known Limitations" for the Streams-specific gap.
 
 ## Resource Footprint and Scaling

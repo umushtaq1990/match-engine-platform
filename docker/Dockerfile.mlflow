@@ -11,7 +11,15 @@ EXPOSE 5000
 # Backend store URI comes from the MLFLOW_BACKEND_STORE_URI env var (set in
 # docker-compose.yml from .env) rather than being baked in here — shell form
 # so it's expanded at container start, not image build time.
+# --allowed-hosts: MLflow 3.x's default (localhost + private IPs) rejects
+# every internal request made via the Docker service name "mlflow" (a
+# hostname, not localhost or an IP) with "Invalid Host header - possible
+# DNS rebinding attack detected" -- confirmed live, every extraction eval
+# run all session silently failed to log here for exactly this reason (the
+# eval itself still succeeded; _log_to_mlflow is deliberately best-effort).
+# Scoped to the exact hostname other services actually use, not '*'.
 CMD mlflow server \
     --backend-store-uri "$MLFLOW_BACKEND_STORE_URI" \
     --default-artifact-root /mlflow-artifacts \
-    --host 0.0.0.0 --port 5000
+    --host 0.0.0.0 --port 5000 \
+    --allowed-hosts "mlflow,mlflow:5000,localhost,localhost:5000"

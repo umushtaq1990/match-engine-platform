@@ -53,6 +53,24 @@ class ExtractionExampleResult(Base):
     expected_skill_ids: Mapped[list] = mapped_column(JSONB)
     predicted_skill_ids: Mapped[list] = mapped_column(JSONB)
     unmatched_phrases: Mapped[list] = mapped_column(JSONB)
+    # Full per-stage trace, added so an AI engineer can see exactly where a
+    # given example's errors come from -- LLM-stage (never extracted a
+    # phrase for a real skill) vs embedding-stage (extracted fine, but
+    # matched to the wrong skill, or the right skill scored below
+    # similarity_threshold and got discarded) -- without this, only the
+    # final skill_id sets survive, which conflates both failure modes into
+    # one recall/precision number with no way to tell them apart.
+    # Raw LLM output before any embedding matching: [{"phrase", "requirement_level"}, ...]
+    extracted_phrases: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Successful matches with the detail predicted_skill_ids alone loses:
+    # [{"skill_id", "requirement_level", "confidence", "source_phrase"}, ...]
+    match_detail: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Extracted phrases that scored below similarity_threshold (real misses,
+    # not the LLM's fault) -- same phrases as unmatched_phrases, plus the
+    # actual score so a near-miss (0.53 when the threshold is 0.55) is
+    # visibly different from a true non-match (0.1):
+    # [{"phrase", "best_score"}, ...]
+    unmatched_detail: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     run: Mapped["ExtractionRun"] = relationship(back_populates="example_results")
 

@@ -1,0 +1,95 @@
+{
+  "title": "JME LLM Call Monitoring",
+  "uid": "jme-llm-calls",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Ollama /api/generate calls by status",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki-jme" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (status) (count_over_time({compose_service=\"ollama\"} |= \"/api/generate\" | regexp \"[|] (?P<status>[0-9]+) [|]\" [$__interval]))",
+          "legendFormat": "status {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "stacking": { "mode": "normal" } } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Failed calls (status 500) in range",
+      "type": "stat",
+      "datasource": { "type": "loki", "uid": "loki-jme" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({compose_service=\"ollama\"} |= \"/api/generate\" |= \"| 500 |\" [$__range]))",
+          "legendFormat": "failed"
+        }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "id": 3,
+      "title": "Successful calls (status 200) in range",
+      "type": "stat",
+      "datasource": { "type": "loki", "uid": "loki-jme" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({compose_service=\"ollama\"} |= \"/api/generate\" |= \"| 200 |\" [$__range]))",
+          "legendFormat": "success"
+        }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } } }
+    },
+    {
+      "id": 4,
+      "title": "DNS resolution failures (golden-* batch scripts)",
+      "type": "stat",
+      "datasource": { "type": "loki", "uid": "loki-jme" },
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({compose_service=~\"golden.*\"} |= \"Temporary failure in name resolution\" [$__range]))",
+          "legendFormat": "dns failures"
+        }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }] } } }
+    },
+    {
+      "id": 5,
+      "title": "Live log stream -- Ollama generate calls",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki-jme" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "{compose_service=\"ollama\"} |= \"/api/generate\""
+        }
+      ],
+      "options": { "showTime": true, "sortOrder": "Descending" }
+    },
+    {
+      "id": 6,
+      "title": "Live log stream -- golden-* batch script retries/failures",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki-jme" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 18 },
+      "targets": [
+        {
+          "expr": "{compose_service=~\"golden.*\"} |= \"failed\""
+        }
+      ],
+      "options": { "showTime": true, "sortOrder": "Descending" }
+    }
+  ]
+}

@@ -6,7 +6,7 @@ See docs/skill-extraction.md.
 """
 from sqlalchemy.orm import Session
 
-from app.extraction.ollama_client import embed
+from app.extraction.ollama_client import embed_batch
 from app.ingestion.source_models import Skill, SkillSynonym
 
 # Keyed by embedding_model — a different model means different vectors, so a
@@ -25,8 +25,12 @@ def get_reference_embeddings(session: Session, embedding_model: str) -> list[tup
         (syn.skill_id, syn.synonym_text) for syn in session.query(SkillSynonym).all()
     ]
 
+    # One batched call for all ~70 reference texts instead of 70 separate
+    # round trips -- same result, confirmed via Ollama's /api/embed.
+    embeddings = embed_batch(embedding_model, [text for _skill_id, text in reference_texts])
     reference = [
-        (skill_id, text, embed(embedding_model, text)) for skill_id, text in reference_texts
+        (skill_id, text, embedding)
+        for (skill_id, text), embedding in zip(reference_texts, embeddings)
     ]
     _cache[embedding_model] = reference
     return reference
