@@ -23,7 +23,7 @@ Two pre-existing generators share the same weakness: the "ground truth" is visib
 
 ### Candidate selection (`app/golden/select.py`)
 
-`select_golden_candidate_ids(session, n=500)` is a **pure, deterministic** function over already-seeded data — not a stored selection. Every other script in this package calls it, so the exact same 500 ids are re-derived every time without a manifest file or an extra table. Candidates need a real `primary_occupation_id` and at least 3 `CandidateSkill` rows; eligible ids are sorted by `(primary_occupation_id, id)` and strided evenly across that ordering so the selection spreads across all 150 occupations (confirmed: all 150 represented, 1-6 candidates each) rather than favoring whichever occupation sorts first.
+`select_golden_candidate_ids(session, n=500)` is the original, **pure, deterministic** function over already-seeded data — not a stored selection, and still used by anything that just needs "some deterministic subset." It only *reads* whatever `primary_occupation_id` a candidate already has; eligible ids are sorted by `(primary_occupation_id, id)` and strided evenly across that ordering so the selection spreads across occupations rather than favoring whichever one sorts first. As of golden-dataset v2 (below), the dataset's own candidates are chosen and populated by a different, newer function instead — `select_and_assign_golden_candidates(n=1000)`, which also *assigns* each one to a correctly domain-anchored occupation and regenerates its skills to match, not just reads what it already had. `select_existing_golden_candidate_ids` is the read-only lookup every downstream script (CVs, jobs, eval harnesses) uses to find "the golden candidates, right now."
 
 ### Golden CVs (`app/golden/generate_cvs.py`)
 
