@@ -734,6 +734,25 @@ services:
         condition: service_healthy
     profiles: ["tools"]
 
+  # Live, interactive version of golden-eval-tree's static report --
+  # app/golden/drilldown/, two pages (Candidates & Job Posts, Skills),
+  # click (or dropdown) drill-down all the way to per-record detail. A
+  # long-running server, not a one-off script, so it's started with
+  # `up -d`, not `run --rm`, even though it shares the "tools" profile with
+  # the rest of the golden-dataset tooling.
+  golden-drilldown:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden-drilldown
+    ports:
+      - "8502:8502"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
   # Backs up/restores the expensive (LLM-generated) part of the golden
   # dataset -- the 500 CVs and 1500 job postings -- to a local, git-ignored
   # directory, so a wiped Docker volume doesn't require ~2,000 Ollama calls

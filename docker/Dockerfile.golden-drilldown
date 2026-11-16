@@ -1,0 +1,27 @@
+# Internal, live drill-down explorer over golden-eval results (two pages:
+# Candidates & Job Posts, Skills) -- app/golden/drilldown/. Direct-to-
+# Postgres, read-only, no CV storage/LLM access needed (unlike the other
+# golden-* tools) since this only reads already-persisted eval results.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY app/requirements-base.txt app/requirements-golden-drilldown.txt ./
+RUN pip install --no-cache-dir -r requirements-golden-drilldown.txt
+
+COPY app/db.py ./app/db.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/common/ ./app/common/
+COPY app/ingestion/__init__.py ./app/ingestion/__init__.py
+COPY app/ingestion/source_models.py ./app/ingestion/source_models.py
+COPY app/extraction/models.py ./app/extraction/models.py
+COPY app/extraction/__init__.py ./app/extraction/__init__.py
+COPY app/golden/__init__.py ./app/golden/__init__.py
+COPY app/golden/build_evaluation_tree.py ./app/golden/build_evaluation_tree.py
+COPY app/golden/drilldown/ ./app/golden/drilldown/
+
+ENV PYTHONPATH=/app
+
+EXPOSE 8502
+
+CMD ["streamlit", "run", "app/golden/drilldown/app.py", "--server.address=0.0.0.0", "--server.port=8502"]
