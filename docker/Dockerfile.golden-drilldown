@@ -24,4 +24,4 @@ ENV PYTHONPATH=/app
 
 EXPOSE 8502
 
-CMD ["streamlit", "run", "app/golden/drilldown/app.py", "--server.address=0.0.0.0", "--server.port=8502"]
+CMD ["streamlit", "run", "app/golden/drilldown/Home.py", "--server.address=0.0.0.0", "--server.port=8502"]

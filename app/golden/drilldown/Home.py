@@ -11,6 +11,16 @@ level (the static report stops at aggregate counts/averages).
 
 Run with: docker compose up -d golden-drilldown, then open
 http://localhost:8502
+
+Named Home.py, not app.py: found live (a real `ModuleNotFoundError: 'app'
+is not a package`) -- Streamlit puts the entry script's own directory on
+sys.path, so a script literally named app.py shadows this project's
+top-level `app` package the moment anything does `from app.db import
+...`, turning every `app.*` import into "no submodules, it's not a
+package." AppTest (which this project's tests use to verify this app)
+didn't catch it because it imports the script as a module directly,
+bypassing Streamlit's own sys.path setup entirely -- a real gap between
+that test and an actual `streamlit run`, now known, not just guessed at.
 """
 import streamlit as st
 
