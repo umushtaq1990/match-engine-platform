@@ -32,13 +32,38 @@ def render_drilldown_chart(
 
     points = (event or {}).get("selection", {}).get("points", [])
     if points:
-        clicked_id = points[0].get("id", "")
-        # id format: "root|entity_type:Candidates|domain:technology|occupation:X"
-        segments = clicked_id.split("|")[1:]
-        parsed = dict(seg.split(":", 1) for seg in segments if ":" in seg)
-        for key in filter_keys:
-            if key in parsed:
-                st.session_state[f"filter_{key}"] = parsed[key]
+        point = points[0]
+        # Streamlit's on_select payload has no id/label/parent field at all
+        # (confirmed against its own documented schema: curve_number,
+        # point_number, point_index, x, y, customdata, marker_size,
+        # legendgroup) -- customdata (set to the trace's own `ids` list in
+        # _icicle_trace) is the reliable path; point_index indexing
+        # straight into the same `ids` list this trace was built from is
+        # the fallback, in case customdata isn't forwarded for this chart
+        # type either.
+        clicked_id = None
+        customdata = point.get("customdata")
+        if customdata:
+            clicked_id = customdata[0] if isinstance(customdata, list) else customdata
+        if not clicked_id:
+            point_index = point.get("point_index", point.get("point_number"))
+            if point_index is not None and point_index < len(trace.ids):
+                clicked_id = trace.ids[point_index]
+
+        if clicked_id:
+            # id format: "root|entity_type:Candidates|domain:technology|occupation:X"
+            segments = clicked_id.split("|")[1:]
+            parsed = dict(seg.split(":", 1) for seg in segments if ":" in seg)
+            for key in filter_keys:
+                if key in parsed:
+                    st.session_state[f"filter_{key}"] = parsed[key]
+        else:
+            # Neither extraction path found an id -- surface the raw event
+            # so this is diagnosable without needing to add print
+            # statements and redeploy; remove once click-to-drill is
+            # confirmed working end to end in a real browser.
+            with st.expander("Debug: chart click produced no usable id (click to inspect)"):
+                st.write(point)
 
 
 def cascading_filters(rows: pd.DataFrame, filter_keys: list[str]) -> pd.DataFrame:
