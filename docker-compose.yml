@@ -622,6 +622,25 @@ services:
         condition: service_healthy
     profiles: ["tools"]
 
+  # Decomposition-tree ("drill-down") report over a golden-eval run: overall
+  # F1 -> profession domain -> occupation, separately for candidates (500)
+  # and job posts (1500). Writes a single self-contained Plotly HTML file,
+  # no server needed -- see app/golden/build_evaluation_tree.py's docstring.
+  # Pass --run-id if the default (best-scoring 2000-sample run) isn't right.
+  golden-eval-tree:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.golden
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.golden.build_evaluation_tree"]
+    volumes:
+      - ./data/golden/reports:/app/data/golden/reports
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
   # Backs up/restores the expensive (LLM-generated) part of the golden
   # dataset -- the 500 CVs and 1500 job postings -- to a local, git-ignored
   # directory, so a wiped Docker volume doesn't require ~2,000 Ollama calls

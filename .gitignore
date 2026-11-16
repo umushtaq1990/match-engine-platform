@@ -29,6 +29,8 @@ data/seed/*
 !data/seed/.gitkeep
 data/golden/backup/*
 !data/golden/backup/.gitkeep
+data/golden/reports/*
+!data/golden/reports/.gitkeep
 dist/
 k8s/base/secret.yaml
 backups/
