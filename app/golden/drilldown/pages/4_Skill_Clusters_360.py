@@ -18,7 +18,12 @@ import plotly.express as px
 import streamlit as st
 
 from app.db import SessionLocal
-from app.golden.drilldown.chart import cascading_filters, render_k_diagnostic_chart
+from app.golden.drilldown.chart import (
+    cascading_filters,
+    render_composition_bar_chart,
+    render_count_heatmap,
+    render_k_diagnostic_chart,
+)
 from app.golden.drilldown.data import (
     DEFAULT_CLUSTER_COUNT,
     compute_behavioral_clusters,
@@ -138,7 +143,10 @@ left, right = st.columns(2)
 with left:
     st.markdown("#### Skill cluster vs. domain/occupation")
     st.caption("Does unsupervised skill clustering line up with the known domain taxonomy?")
-    st.dataframe(pd.crosstab(merged["skill_cluster_name"], merged["domain"]), use_container_width=True)
+    domain_crosstab = pd.crosstab(merged["skill_cluster_name"], merged["domain"])
+    render_composition_bar_chart(domain_crosstab, "Domain composition per skill cluster")
+    with st.expander("Show exact table"):
+        st.dataframe(domain_crosstab, use_container_width=True)
 with right:
     st.markdown("#### Skill cluster vs. Louvain community")
     st.caption(
@@ -146,18 +154,28 @@ with right:
         "not forced into one mapping, since they're independent methods and won't always agree."
     )
     louvain_crosstab = pd.crosstab(merged["skill_cluster_name"], merged["louvain_community_name"])
-    st.dataframe(louvain_crosstab, use_container_width=True)
+    render_count_heatmap(louvain_crosstab, "Skill cluster x Louvain community (candidate counts)")
+    with st.expander("Show exact table"):
+        st.dataframe(louvain_crosstab, use_container_width=True)
 
 st.markdown("#### Skill cluster vs. platform engagement (segment / persona / behavioral cluster)")
 st.caption("The 360 view: skill identity next to how candidates actually behave on the platform.")
 engagement_tabs = st.tabs(["Segment", "Persona", "Behavioral cluster"])
 with engagement_tabs[0]:
-    st.dataframe(pd.crosstab(merged["skill_cluster_name"], merged["segment"]), use_container_width=True)
+    segment_crosstab = pd.crosstab(merged["skill_cluster_name"], merged["segment"])
+    render_composition_bar_chart(segment_crosstab, "Segment composition per skill cluster")
+    with st.expander("Show exact table"):
+        st.dataframe(segment_crosstab, use_container_width=True)
 with engagement_tabs[1]:
-    st.dataframe(pd.crosstab(merged["skill_cluster_name"], merged["persona"]), use_container_width=True)
+    persona_crosstab = pd.crosstab(merged["skill_cluster_name"], merged["persona"])
+    render_composition_bar_chart(persona_crosstab, "Persona composition per skill cluster")
+    with st.expander("Show exact table"):
+        st.dataframe(persona_crosstab, use_container_width=True)
 with engagement_tabs[2]:
     behavioral_crosstab = pd.crosstab(merged["skill_cluster_name"], merged["behavioral_cluster_name"])
-    st.dataframe(behavioral_crosstab, use_container_width=True)
+    render_composition_bar_chart(behavioral_crosstab, "Behavioral cluster composition per skill cluster")
+    with st.expander("Show exact table"):
+        st.dataframe(behavioral_crosstab, use_container_width=True)
 
 st.markdown("### Drill into individual candidates")
 filtered = cascading_filters(

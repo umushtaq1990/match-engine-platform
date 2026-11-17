@@ -18,6 +18,7 @@ therefore the one real navigation mechanism, not a fallback for a
 flakier primary one.
 """
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
@@ -62,6 +63,39 @@ def render_k_diagnostic_chart(diagnostics: pd.DataFrame, current_k: int, title: 
     fig.update_xaxes(title_text="k")
     fig.update_yaxes(title_text="Inertia", secondary_y=False)
     fig.update_yaxes(title_text="Silhouette score", secondary_y=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_composition_bar_chart(crosstab: pd.DataFrame, title: str) -> None:
+    """One 100%-stacked bar per crosstab row, segment widths = proportion
+    within that row, but each segment is *labeled* with the real count --
+    composition (does this cluster skew toward one category?) is the
+    visual story, the exact number stays on the chart rather than only
+    living in a separate table."""
+    pct = crosstab.div(crosstab.sum(axis=1), axis=0) * 100
+    fig = go.Figure()
+    for col in crosstab.columns:
+        fig.add_trace(go.Bar(
+            x=crosstab.index.astype(str), y=pct[col], name=str(col),
+            text=crosstab[col], texttemplate="%{text}", textposition="inside",
+        ))
+    fig.update_layout(
+        barmode="stack", title=title, height=420, yaxis_title="% of row (count labeled)",
+        legend=dict(orientation="h", y=-0.3),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_count_heatmap(crosstab: pd.DataFrame, title: str) -> None:
+    """Cell color = count, cell text = the same count -- for a crosstab
+    too wide for a stacked bar's color-per-segment to stay legible (e.g.
+    cluster x cluster), a heatmap shows concentration at a glance while
+    keeping every exact number visible, not hidden behind a hover."""
+    fig = px.imshow(
+        crosstab, text_auto=True, aspect="auto", title=title,
+        labels={"x": crosstab.columns.name or "", "y": crosstab.index.name or "", "color": "count"},
+    )
+    fig.update_layout(height=420)
     st.plotly_chart(fig, use_container_width=True)
 
 
