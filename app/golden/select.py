@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.golden.models import GoldenPair
 from app.golden.seed_curated_occupations import NEW_TITLES, _assign_fixed_domain_skills
 from app.ingestion.generate_synthetic_data import SKILL_DOMAINS
 from app.ingestion.source_models import (
@@ -86,6 +87,14 @@ def select_existing_golden_candidate_ids(session: Session) -> list[int]:
         .where(Occupation.domain.isnot(None))
         .order_by(Candidate.id)
     ).scalars().all()
+
+
+def select_existing_golden_job_ids(session: Session) -> list[int]:
+    """The job-side counterpart to select_existing_golden_candidate_ids --
+    `golden_pairs` already is the explicit, queryable candidate->job
+    mapping (app/golden/models.py's GoldenPair), so this is a direct read,
+    no extraction-run dependency."""
+    return session.execute(select(GoldenPair.job_id).order_by(GoldenPair.job_id)).scalars().all()
 
 
 def select_and_assign_golden_candidates(session: Session, n: int = GOLDEN_V2_DEFAULT_N) -> list[int]:

@@ -30,13 +30,13 @@ from app.analytics.segmentation import (
     FREQUENCY_WINDOW_DAYS,
     compute_segment_label,
 )
-from app.clustering.models import CandidateSkillCluster
+from app.clustering.models import CandidateSkillCluster, JobSkillCluster
 from app.embeddings.models import EntityEmbedding
 from app.extraction.models import ExtractionExampleResult, ExtractionRun
 from app.golden.generate_persona_events import assign_personas
 from app.golden.models import GoldenInjectedNoise
-from app.golden.select import select_existing_golden_candidate_ids
-from app.ingestion.source_models import Candidate, CandidateSkill, Job, Occupation, Skill
+from app.golden.select import select_existing_golden_candidate_ids, select_existing_golden_job_ids
+from app.ingestion.source_models import Candidate, CandidateSkill, Job, JobSkill, Occupation, Skill
 
 _UNKNOWN = "unknown"
 
@@ -449,10 +449,11 @@ def name_clusters_by_majority(rows: pd.DataFrame, cluster_col: str, label_col: s
 
 @st.cache_data(show_spinner="Fitting k-means across a range of k for the elbow/silhouette diagnostic...")
 def compute_k_diagnostics(vectors, k_range=range(2, 13)) -> pd.DataFrame:
-    """Elbow (inertia) + silhouette score per candidate k -- the actual
-    justification for app/clustering/kmeans_skill_clusters.py's DEFAULT_K,
-    measured here rather than assumed. Deliberately lives in this
-    read-only dashboard module, not in kmeans_skill_clusters.py itself:
+    """Elbow (inertia) + silhouette score per k -- the actual justification
+    for app/clustering/kmeans_skill_clusters.py's DEFAULT_K_BY_ENTITY_TYPE
+    (either entity type -- just pass that type's vectors), measured here
+    rather than assumed. Deliberately lives in this read-only dashboard
+    module, not in kmeans_skill_clusters.py itself:
     it only needs numpy/sklearn over vectors already in hand, and pulling
     in kmeans_skill_clusters.py's fit/assign machinery would drag
     refresh_entity's ollama/mlflow dependency chain into this lightweight,
@@ -746,3 +747,79 @@ def compute_weekly_trend_vs_cluster(
     merged = target.merge(cluster_avg, on=["week_bucket", "event_type"])
     merged["cluster_size"] = len(cluster_actor_ids)
     return merged[["week_bucket", "event_type", "candidate_count", "cluster_avg", "cluster_size"]]
+
+
+def load_job_skill_cluster_rows(session: Session) -> pd.DataFrame:
+    """Job-side mirror of load_skill_cluster_rows -- one row per golden
+    job: domain/occupation, the real-time k-means skill cluster + the
+    most recent nightly Louvain community, and the raw skills embedding
+    vector for the t-SNE projection. Jobs without a skills embedding or
+    cluster assignment yet are dropped, same reasoning as the candidate
+    version."""
+    golden_ids = select_existing_golden_job_ids(session)
+
+    occupation_domain = dict(session.execute(select(Occupation.id, Occupation.domain)).all())
+    occupation_title = dict(session.execute(select(Occupation.id, Occupation.title)).all())
+    job_occupation = dict(
+        session.execute(select(Job.id, Job.occupation_id).where(Job.id.in_(golden_ids))).all()
+    )
+
+    cluster_rows = session.execute(
+        select(
+            JobSkillCluster.job_id, JobSkillCluster.cluster_label, JobSkillCluster.louvain_community_id,
+        ).where(JobSkillCluster.job_id.in_(golden_ids))
+    ).all()
+    vector_by_job = dict(
+        session.execute(
+            select(EntityEmbedding.entity_id, EntityEmbedding.vector).where(
+                EntityEmbedding.entity_type == "job",
+                EntityEmbedding.dimension == "skills",
+                EntityEmbedding.embedding_model == _SKILLS_EMBEDDING_MODEL,
+                EntityEmbedding.entity_id.in_(golden_ids),
+            )
+        ).all()
+    )
+
+    rows = []
+    for job_id, cluster_label, louvain_community_id in cluster_rows:
+        vector = vector_by_job.get(job_id)
+        if vector is None:
+            continue
+        occupation_id = job_occupation.get(job_id)
+        rows.append({
+            "job_id": job_id,
+            "domain": occupation_domain.get(occupation_id) or _UNKNOWN,
+            "occupation": occupation_title.get(occupation_id, _UNKNOWN),
+            "cluster_label": cluster_label,
+            "louvain_community_id": (
+                str(louvain_community_id) if louvain_community_id is not None else _UNKNOWN
+            ),
+            "vector": vector,
+        })
+    return pd.DataFrame(rows)
+
+
+def load_job_demographics(session: Session, job_ids: list[int]) -> pd.DataFrame:
+    """title/company/location/salary for the drill-down table -- job-side
+    mirror of load_candidate_demographics."""
+    rows = session.execute(
+        select(
+            Job.id, Job.title, Job.company_name, Job.location_city, Job.location_region,
+            Job.salary_min, Job.salary_max,
+        ).where(Job.id.in_(job_ids))
+    ).all()
+    return pd.DataFrame(rows, columns=[
+        "job_id", "title", "company_name", "location_city", "location_region", "salary_min", "salary_max",
+    ])
+
+
+def load_job_skill_names(session: Session, job_ids: list[int]) -> pd.DataFrame:
+    """One row per (job, required skill) -- real `job_skills` ground truth,
+    job-side mirror of load_candidate_skill_names, used for the trending-
+    skills section on the Job Skills Clustering 360 page."""
+    rows = session.execute(
+        select(JobSkill.job_id, Skill.name)
+        .join(Skill, Skill.id == JobSkill.skill_id)
+        .where(JobSkill.job_id.in_(job_ids))
+    ).all()
+    return pd.DataFrame(rows, columns=["job_id", "skill_name"])

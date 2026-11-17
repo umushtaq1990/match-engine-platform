@@ -10,6 +10,16 @@ from sqlalchemy.orm import Session
 
 from app.ingestion.source_models import Candidate, CandidateSkill, Job, Occupation, Skill
 
+# all-minilm's serving context is a hard 256 tokens (confirmed directly from
+# ollama's own rejection: "input (268 tokens) is too large to process") --
+# candidates' overall_text is always a short synthesized sentence, so this
+# never mattered there, but a job's real `description_raw` (LLM-written,
+# multi-paragraph for golden jobs) can run well past it. Truncated to a safe
+# character budget rather than the full text -- an embedding only needs the
+# semantic gist, not a verbatim reproduction; ~800 chars stays comfortably
+# under 256 tokens even for dense text.
+MAX_JOB_OVERALL_TEXT_CHARS = 800
+
 
 def _candidate_occupation_title(session: Session, candidate: Candidate) -> str | None:
     if candidate.primary_occupation_id is None:
@@ -51,4 +61,6 @@ def overall_text(session: Session, entity_type: str, entity_id: int) -> str | No
         return f"Candidate with {candidate.years_experience} years of experience{role_part}.{skills_part}"
 
     job = session.get(Job, entity_id)
-    return job.description_raw if job else None
+    if job is None:
+        return None
+    return (job.description_raw or "")[:MAX_JOB_OVERALL_TEXT_CHARS] or None

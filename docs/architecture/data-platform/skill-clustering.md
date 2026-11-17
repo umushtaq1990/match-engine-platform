@@ -1,24 +1,26 @@
-# Skill-Based Candidate Clustering: Real-Time k-means + Nightly Louvain
+# Skill-Based Candidate/Job Clustering: Real-Time k-means + Nightly Louvain
 
 ## Purpose & Scope
 
-Leadership wants a 360-degree view: group candidates by skillset, visualize it, assign a *new*
-candidate to a cluster the instant they sign up or edit their profile, and connect that cluster
-identity to how people actually behave on the platform. Two clustering approaches already existed
-in isolation before this: Phase 17's per-candidate skills embedding
+Leadership wants a 360-degree view: group candidates (and job postings) by skillset, visualize it,
+assign a *new* candidate/job to a cluster the instant they sign up/get posted or get edited, and
+connect that cluster identity to how people actually behave on the platform. Two clustering
+approaches already existed in isolation before this: Phase 17's per-entity skills embedding
 (`entity_embeddings`, `app/embeddings/`) was never clustered, and Phase 23's Neo4j Louvain
-candidate clustering (`app/graph/cluster_entities.py`, see
+candidate/job clustering (`app/graph/cluster_entities.py`, see
 [knowledge-graph.md](knowledge-graph.md)) only printed a report -- nothing persisted it or linked
 it to anything else. `app/clustering/` connects the two: a real-time k-means assignment path for
-new/changed candidates, and a nightly job that refits it and links each candidate's result to that
-night's fresh Louvain community, plus a new drilldown dashboard page showing both alongside real
-platform engagement.
+new/changed candidates or jobs, and a nightly job that refits it and links each entity's result to
+that night's fresh Louvain community, plus two drilldown dashboard pages (candidates, jobs) showing
+both alongside each entity type's own real-world context.
 
-**Scope**: the clustering mechanism (fit/assign/sync) runs over every candidate with a skills
-embedding -- realistic production behavior, not limited to the golden dataset. The new dashboard
-page visualizes the ~1000-candidate golden subset specifically, same as the other three drilldown
+**Scope**: the clustering mechanism (fit/assign/sync) runs over every candidate/job with a skills
+embedding -- realistic production behavior, not limited to the golden dataset. The dashboard pages
+visualize the golden subset specifically (~1000 candidates, 3000 jobs), same as the other drilldown
 pages, since that's where domain/occupation/behavioral-segment ground truth already exists for a
-clean demo.
+clean demo. Built entity-type-aware (`"candidate"` | `"job"`) from the start of the job work
+(`app/clustering/kmeans_skill_clusters.py`/`nightly_job.py`), not as two parallel modules -- the
+fit/assign/link logic is identical, only the table/id column differs.
 
 ## Architecture & Design
 
@@ -63,50 +65,76 @@ fits `KMeans` directly on the raw 384-dim vectors.
 
 ## Implementation
 
-### New tables (`app/clustering/models.py`)
+### Tables (`app/clustering/models.py`)
 
-- `skill_cluster_centroids`: one current row per `(embedding_model, cluster_label)` -- same
-  "latest wins, no history" pattern as `EntityEmbedding` itself (`app/embeddings/models.py`), not
-  an append-only log.
-- `candidate_skill_clusters`: one row per candidate -- `cluster_label` (k-means, updated by every
-  refit/real-time assignment) and `louvain_community_id`/`graph_synced_at` (null until the nightly
-  job's graph step has run at least once; a real-time assignment never touches these).
+- `skill_cluster_centroids`: one current row per `(embedding_model, entity_type, cluster_label)`
+  -- same "latest wins, no history" pattern as `EntityEmbedding` itself
+  (`app/embeddings/models.py`), not an append-only log. `entity_type` keeps candidates' and jobs'
+  centroid spaces independent, since their skill-embedding distributions (and therefore each
+  one's own best `k`) are measured separately, not assumed equal.
+- `candidate_skill_clusters` / `job_skill_clusters`: exact mirrors of each other (`candidate_id`
+  vs. `job_id` primary key) -- `cluster_label` (k-means, updated by every refit/real-time
+  assignment) and `louvain_community_id`/`graph_synced_at` (null until the nightly job's graph
+  step has run at least once; a real-time assignment never touches these).
 
 ### Fit + assign (`app/clustering/kmeans_skill_clusters.py`)
 
-- `fit_skill_clusters(session, embedding_model, k=8)`: refits `KMeans` over every candidate's
-  current skills embedding, replaces that model's centroids, reassigns everyone. `k=8` is
-  measured, not assumed -- an earlier default of 4 (chosen to match the then-documented domain
-  count) didn't survive an actual elbow/silhouette sweep
-  (`app/golden/drilldown/data.py::compute_k_diagnostics`, now also rendered on the dashboard
-  page itself): silhouette is low and fairly flat across k (weak global separation, consistent
-  with this project's own candidate/job purity findings), but with a real local peak around
-  k=7-8, and that peak lines up with Louvain's own, independently re-measured community count on
-  this same candidate population (knowledge-graph.md: 8 communities) -- two independent methods
-  landing near the same k is a real signal. 8 chosen over 7 for that direct agreement.
-- `assign_cluster_for_candidate(session, candidate_id, embedding_model)`: the real-time hot path.
-  `fit_skill_clusters` uses the same nearest-centroid logic in bulk (via `sklearn`'s own
-  `.predict()`) -- no duplicated assignment logic between the batch and single-candidate paths.
+Entity-type-aware (`"candidate"` | `"job"`) rather than two parallel modules -- the fit/assign
+logic is identical, only `CLUSTER_MODEL_BY_ENTITY_TYPE` (which ORM model/id column to write)
+differs.
+
+- `fit_skill_clusters(session, entity_type, embedding_model, k=None)`: refits `KMeans` over every
+  entity of that type's current skills embedding, replaces that `(embedding_model, entity_type)`'s
+  centroids, reassigns everyone. `k` defaults to `DEFAULT_K_BY_ENTITY_TYPE`, measured per entity
+  type, not assumed: candidates land at `k=8` (silhouette's own local peak at k=7-8, lining up
+  with Louvain's independently-found 8 candidate communities -- see below); jobs, swept the same
+  way over all 4,002 jobs' real embeddings, land at `k=8` too (silhouette 0.2422, the sweep's own
+  global optimum), close to (not forced to match) Louvain's independently-found 7 job communities
+  (modularity 0.6879). Two unrelated populations both landing near k=7-8 against their own
+  independent Louvain counts is a real pattern, not something assumed going in.
+- `assign_cluster_for_entity(session, entity_type, entity_id, embedding_model)`: the real-time hot
+  path. `fit_skill_clusters` uses the same nearest-centroid logic in bulk (via `sklearn`'s own
+  `.predict()`) -- no duplicated assignment logic between the batch and single-entity paths.
 
 ### Nightly job (`app/clustering/nightly_job.py`)
 
-Runs, in order: `refresh_all` (embeddings) -> `fit_skill_clusters` (k-means) -> `sync_graph.sync()`
-(Postgres -> Neo4j) -> `cluster_entities.cluster("candidate")` (Louvain) -> writes `communityId`
-back onto `candidate_skill_clusters`, then prints an agreement report: for each k-means cluster,
-the Louvain community its members most commonly belong to, and what fraction agree -- same
-"independent-signal check" framing as `cluster_entities.py`'s own
-`compute_mean_occupation_purity`, not assumed. Run via `docker compose run --rm cluster-nightly`
-(own image, `docker/Dockerfile.clustering` -- its dependency profile spans both the
-Ollama-embeddings world and the Neo4j-driver world, neither existing image alone covers it).
+Runs, in order: `refresh_all` (embeddings, both entity types) -> `sync_graph.sync()` (Postgres ->
+Neo4j, both) -> for each entity type: `fit_skill_clusters` (k-means) -> `cluster_entities.cluster
+(entity_type)` (Louvain, already built, one level up for jobs since Phase 23) -> writes
+`communityId` back onto that type's cluster table, then prints an agreement report: for each
+k-means cluster, the Louvain community its members most commonly belong to, and what fraction
+agree -- same "independent-signal check" framing as `cluster_entities.py`'s own
+`compute_mean_occupation_purity`, not assumed (candidates: 76-94% per cluster; jobs: 91.6-100%,
+even cleaner). Run via `docker compose run --rm cluster-nightly` (own image,
+`docker/Dockerfile.clustering` -- its dependency profile spans both the Ollama-embeddings world
+and the Neo4j-driver world, neither existing image alone covers it).
 
-### Dashboard (`app/golden/drilldown/pages/4_Candidate_Skills_Clustering_360.py`)
+**A real bug this surfaced, fixed, not routed around**: the first full job-embedding run crashed
+deterministically (not flaky -- same failure, every retry) on `all-minilm`'s hard 256-token serving
+limit. Root cause, confirmed directly from Ollama's own rejection ("input (268 tokens) is too
+large to process"): `app/embeddings/text_synthesis.py::overall_text` returned a job's full
+`description_raw` unbounded -- fine for candidates (always a short synthesized sentence) but
+golden jobs' real LLM-written, multi-paragraph postings routinely exceed it. Fixed by truncating a
+job's `overall_text` to `MAX_JOB_OVERALL_TEXT_CHARS = 800` characters (comfortably under 256
+tokens even for dense text) -- an embedding needs the semantic gist, not a verbatim reproduction.
 
-A fourth page in the existing drilldown app: a t-SNE scatter colored by k-means cluster, a
-cluster-vs-domain/occupation crosstab (does unsupervised clustering line up with known structure),
-a cluster-vs-Louvain-community crosstab (the explicit link), and a cluster-vs-engagement crosstab
-(segment/persona/behavioral cluster, reusing page 3's `load_behavioral_rows`/
-`compute_behavioral_clusters`) -- the actual 360 view, skill identity next to real platform
-behavior. Same `cascading_filters` drill-down mechanism as every other page.
+### Dashboards
+
+Two mirrored drilldown pages, same visual language, reusing every generic chart/data helper
+(`render_k_diagnostic_chart`, `render_composition_bar_chart`, `render_count_heatmap`,
+`render_top_skills_bar_chart`, `render_population_bar_chart`, `compute_top_skills`,
+`compute_k_diagnostics`, `name_clusters_by_majority`, `generate_skill_wordcloud`) unchanged:
+
+- `app/golden/drilldown/pages/4_Candidate_Skills_Clustering_360.py`: t-SNE scatter colored by
+  k-means cluster, cluster-vs-domain/occupation crosstab, cluster-vs-Louvain-community crosstab,
+  and a cluster-vs-engagement crosstab (segment/persona/behavioral cluster, reusing page 3's
+  `load_behavioral_rows`/`compute_behavioral_clusters`) -- skill identity next to real platform
+  behavior, since candidates have behavioral events.
+- `app/golden/drilldown/pages/6_Job_Skills_Clustering_360.py`: the same t-SNE/crosstab/Louvain
+  structure over required-skill embeddings instead -- no engagement crosstab or behavioral-KPI
+  diagnostic, since jobs don't log in or apply; that part of page 4 is dropped here, not faked.
+
+Same `cascading_filters` drill-down mechanism as every other page.
 
 ## Verification & Results
 
@@ -135,6 +163,14 @@ behavior. Same `cascading_filters` drill-down mechanism as every other page.
 - `python -m ruff check .` and `python -m pytest tests/ -q` pass (one pre-existing, unrelated
   failure confirmed via `git stash` to predate this work -- a local test-environment DNS limitation
   hitting an `analytics` hostname that only resolves inside the Docker network).
+- Jobs, mirroring the above once the text-truncation fix unblocked real job embeddings: full
+  population `fit_skill_clusters("job", k=8)` over all 4,002 jobs -> cluster sizes 701/508/483/
+  509/403/420/620/358. Full `cluster_entities.cluster("job")` + link-back found **7 Louvain
+  communities** at **modularity 0.6879**, linked onto all 4,002 jobs, with per-cluster agreement
+  **91.6%-100%** -- cleaner than candidates' own 79-94%. The elbow/silhouette sweep over real job
+  embeddings found its own global optimum at k=8 (silhouette 0.2422), not assumed from candidates'
+  k. `app/golden/drilldown/pages/6_Job_Skills_Clustering_360.py` verified via `AppTest` across the
+  default state, the color-by toggle, and the trending-skills dropdown -- zero exceptions.
 
 ## Known Limitations
 
