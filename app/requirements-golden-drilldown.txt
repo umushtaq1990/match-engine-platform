@@ -5,6 +5,8 @@ pandas==2.2.3
 scikit-learn==1.5.2
 # app.clustering.models / app.embeddings.models -- pgvector.sqlalchemy.Vector
 pgvector==0.5.1
+# Trending-skills word cloud on the Skill Clusters 360 page
+wordcloud==1.9.6
 # app.golden.select -> app.golden.seed_curated_occupations ->
 # app.ingestion.generate_synthetic_data imports Faker at module level even
 # though this app never calls anything that uses it.

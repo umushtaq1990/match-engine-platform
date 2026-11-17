@@ -23,14 +23,18 @@ from app.golden.drilldown.chart import (
     render_composition_bar_chart,
     render_count_heatmap,
     render_k_diagnostic_chart,
+    render_top_skills_bar_chart,
 )
 from app.golden.drilldown.data import (
     DEFAULT_CLUSTER_COUNT,
     compute_behavioral_clusters,
     compute_behavioral_k_diagnostics,
     compute_k_diagnostics,
+    compute_top_skills,
     compute_tsne_projection,
+    generate_skill_wordcloud,
     load_behavioral_rows,
+    load_candidate_skill_names,
     load_skill_cluster_rows,
     name_clusters_by_majority,
 )
@@ -51,6 +55,12 @@ if rows.empty:
         "run `docker compose run --rm cluster-nightly` first."
     )
     st.stop()
+
+session = SessionLocal()
+try:
+    skill_name_rows = load_candidate_skill_names(session, rows["candidate_id"].tolist())
+finally:
+    session.close()
 
 behavioral_rows["behavioral_cluster"] = compute_behavioral_clusters(behavioral_rows)
 merged = rows.merge(
@@ -138,6 +148,33 @@ fig = px.scatter(
 )
 fig.update_layout(height=550)
 st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("#### Trending skills")
+st.caption(
+    "Real `candidate_skills` ground truth (not the embedding that drives clustering) -- top 10 "
+    "skills by the proportion of candidates who have them, overall or within one cluster, plus "
+    "a word cloud (sized the same way) for a faster visual read."
+)
+skill_view_options = ["Overall (all clustered candidates)"] + sorted(merged["skill_cluster_name"].unique())
+skill_view_choice = st.selectbox("Show trending skills for", skill_view_options)
+if skill_view_choice == "Overall (all clustered candidates)":
+    scoped_candidate_ids = set(merged["candidate_id"])
+else:
+    scoped_candidate_ids = set(merged.loc[merged["skill_cluster_name"] == skill_view_choice, "candidate_id"])
+scoped_skill_rows = skill_name_rows[skill_name_rows["candidate_id"].isin(scoped_candidate_ids)]
+top_skills = compute_top_skills(scoped_skill_rows, population_size=len(scoped_candidate_ids))
+
+skills_left, skills_right = st.columns([3, 2])
+with skills_left:
+    render_top_skills_bar_chart(top_skills, f"Top 10 skills -- {skill_view_choice}", height=450)
+with skills_right:
+    if top_skills.empty:
+        st.info("No skill data for this selection.")
+    else:
+        wc_image = generate_skill_wordcloud(
+            scoped_skill_rows["skill_name"].value_counts()
+        )
+        st.image(wc_image, caption=f"Word cloud -- {skill_view_choice}", use_column_width=True)
 
 st.markdown("#### Skill cluster vs. domain/occupation")
 st.caption("Does unsupervised skill clustering line up with the known domain taxonomy?")

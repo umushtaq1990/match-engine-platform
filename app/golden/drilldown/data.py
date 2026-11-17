@@ -36,7 +36,7 @@ from app.extraction.models import ExtractionExampleResult, ExtractionRun
 from app.golden.generate_persona_events import assign_personas
 from app.golden.models import GoldenInjectedNoise
 from app.golden.select import select_existing_golden_candidate_ids
-from app.ingestion.source_models import Candidate, Job, Occupation, Skill
+from app.ingestion.source_models import Candidate, CandidateSkill, Job, Occupation, Skill
 
 _UNKNOWN = "unknown"
 
@@ -470,3 +470,43 @@ def compute_k_diagnostics(vectors, k_range=range(2, 13)) -> pd.DataFrame:
             "silhouette": silhouette_score(vectors, km.labels_),
         })
     return pd.DataFrame(rows)
+
+
+def load_candidate_skill_names(session: Session, candidate_ids: list[int]) -> pd.DataFrame:
+    """One row per (candidate, skill) pair -- real `candidate_skills` ground
+    truth (positive evidence only, see CandidateSkill's own docstring),
+    for the "which skills are actually trending" sections on the Skill
+    Clusters 360 page. Joined by name here, not skill_id, so the caller
+    never needs a second lookup."""
+    rows = session.execute(
+        select(CandidateSkill.candidate_id, Skill.name)
+        .join(Skill, Skill.id == CandidateSkill.skill_id)
+        .where(CandidateSkill.candidate_id.in_(candidate_ids))
+    ).all()
+    return pd.DataFrame(rows, columns=["candidate_id", "skill_name"])
+
+
+def compute_top_skills(skill_rows: pd.DataFrame, population_size: int, top_n: int = 10) -> pd.DataFrame:
+    """Top N skills by how many candidates (in whatever population
+    `skill_rows` already represents -- overall, or pre-filtered to one
+    cluster) have them, with the real proportion of that population, not
+    just a raw count that reads differently for a cluster of 150 vs 500.
+    """
+    if skill_rows.empty or population_size == 0:
+        return pd.DataFrame(columns=["skill_name", "count", "proportion"])
+    counts = skill_rows["skill_name"].value_counts().head(top_n)
+    return pd.DataFrame({
+        "skill_name": counts.index, "count": counts.to_numpy(),
+        "proportion": counts.to_numpy() / population_size,
+    })
+
+
+def generate_skill_wordcloud(skill_counts: "pd.Series"):
+    """A word cloud sized by how many candidates have each skill -- same
+    underlying counts as compute_top_skills, just a visual, not a second
+    source of truth. Returns a PIL Image (via WordCloud.to_image(), no
+    matplotlib pyplot call needed) for st.image to render directly."""
+    from wordcloud import WordCloud
+
+    wc = WordCloud(width=900, height=350, background_color="white", colormap="viridis")
+    return wc.generate_from_frequencies(skill_counts.to_dict()).to_image()

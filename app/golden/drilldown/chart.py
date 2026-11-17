@@ -101,6 +101,22 @@ def render_count_heatmap(crosstab: pd.DataFrame, title: str, height: int = 420) 
     st.plotly_chart(fig, use_container_width=True)
 
 
+def render_top_skills_bar_chart(top_skills: pd.DataFrame, title: str, height: int = 420) -> None:
+    """Horizontal bar, one per top skill, sorted so the most common ends
+    up on top -- the bar's length is the real proportion of the
+    population that has it, labeled with both proportion and the
+    underlying count (a count alone reads differently for a cluster of
+    150 vs. 500)."""
+    ordered = top_skills.sort_values("proportion")
+    fig = go.Figure(go.Bar(
+        x=ordered["proportion"] * 100, y=ordered["skill_name"], orientation="h",
+        text=[f"{p:.0%} (n={c})" for p, c in zip(ordered["proportion"], ordered["count"])],
+        textposition="outside",
+    ))
+    fig.update_layout(title=title, height=height, xaxis_title="% of population with this skill")
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def cascading_filters(rows: pd.DataFrame, filter_keys: list[str]) -> pd.DataFrame:
     """Renders one selectbox per key in `filter_keys`, each narrowed to
     values still possible given the previous ones. Returns the fully
