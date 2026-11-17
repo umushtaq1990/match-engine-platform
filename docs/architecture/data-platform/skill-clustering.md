@@ -74,11 +74,16 @@ fits `KMeans` directly on the raw 384-dim vectors.
 
 ### Fit + assign (`app/clustering/kmeans_skill_clusters.py`)
 
-- `fit_skill_clusters(session, embedding_model, k=4)`: refits `KMeans` over every candidate's
-  current skills embedding, replaces that model's centroids, reassigns everyone. `k=4` by default
-  to match the real domain count this project's candidate graph already converges to
-  (knowledge-graph.md), so the fit can be checked against known structure -- same framing as the
-  behavioral page's `k=5` (matched to persona count).
+- `fit_skill_clusters(session, embedding_model, k=8)`: refits `KMeans` over every candidate's
+  current skills embedding, replaces that model's centroids, reassigns everyone. `k=8` is
+  measured, not assumed -- an earlier default of 4 (chosen to match the then-documented domain
+  count) didn't survive an actual elbow/silhouette sweep
+  (`app/golden/drilldown/data.py::compute_k_diagnostics`, now also rendered on the dashboard
+  page itself): silhouette is low and fairly flat across k (weak global separation, consistent
+  with this project's own candidate/job purity findings), but with a real local peak around
+  k=7-8, and that peak lines up with Louvain's own, independently re-measured community count on
+  this same candidate population (knowledge-graph.md: 8 communities) -- two independent methods
+  landing near the same k is a real signal. 8 chosen over 7 for that direct agreement.
 - `assign_cluster_for_candidate(session, candidate_id, embedding_model)`: the real-time hot path.
   `fit_skill_clusters` uses the same nearest-centroid logic in bulk (via `sklearn`'s own
   `.predict()`) -- no duplicated assignment logic between the batch and single-candidate paths.
@@ -105,43 +110,48 @@ behavior. Same `cascading_filters` drill-down mechanism as every other page.
 
 ## Verification & Results
 
-- `fit_skill_clusters`/`assign_cluster_for_candidate` verified against a real 50-candidate sample
-  (real `all-minilm` embeddings via the local `ollama` service, not mocked): 4 clusters of sizes
-  8/6/27/9, a new assignment call correctly re-embeds and returns a centroid-nearest label, and the
-  persisted row's `louvain_community_id` stays untouched by a k-means-only call (verified directly
-  against Postgres).
+- `fit_skill_clusters`/`assign_cluster_for_candidate` verified against the full population (real
+  `all-minilm` embeddings for all 2,001 candidates, via the local `ollama` service, not mocked).
+  `fit_skill_clusters(k=8)`: cluster sizes 186/187/510/251/176/159/196/336, a ~4.4s fit over all
+  2,001 vectors. A real-time `assign_cluster_for_candidate` call correctly re-embeds and returns
+  a centroid-nearest label, and the persisted row's `louvain_community_id` stays untouched by a
+  k-means-only call (verified directly against Postgres).
 - The full pipeline (`sync_graph.sync` -> `cluster_entities.cluster("candidate")` -> link-back) run
-  for real against the full graph (2,001 `Candidate` / 4,002 `Job` nodes, 173,910 similarity edges)
-  found **8 Louvain communities** at **modularity 0.5447**, linked back onto the 50 sample
-  candidates' rows, with per-cluster agreement (each k-means cluster's most common Louvain
-  community) ranging **55.6%-87.5%** -- a real, measured, non-degenerate signal, not assumed. (The
-  50-candidate scope here is this verification pass's sample size, not a production limit --
-  `fit_skill_clusters`/`refresh_all` operate over every candidate with a skills embedding; a full
-  population run was interrupted mid-flight by a transient `ollama` 500 during this same
-  verification session, a known resource-constrained-local-Ollama flakiness unrelated to this
-  code, not re-attempted here since the pipeline's correctness was already established at the
-  sample scale.)
+  for real against the full graph (2,001 `Candidate` / 4,002 `Job` nodes, 173,910 similarity edges;
+  `sync_graph.sync` 20.0s, Louvain 24.4s, link-back 0.1s) found **8 Louvain communities** at
+  **modularity 0.5447**, linked back onto all 2,001 candidates, with per-cluster agreement (each
+  k-means cluster's most common Louvain community) ranging **78.6%-93.8%** at k=8 -- a real,
+  measured, non-degenerate signal, markedly higher than the 55.6%-87.5% an earlier (wrong) k=4 fit
+  gave on the same data.
+- The k selection itself was checked, not assumed: an elbow/silhouette sweep (k=2..12) over the
+  real embeddings found silhouette low and fairly flat (0.12-0.16) with a local peak at k=7-8,
+  not at the originally-assumed k=4 -- caught directly from the dashboard's own t-SNE plot
+  visually showing more separated regions than the k=4 coloring implied, then confirmed
+  numerically. `DEFAULT_K` was corrected from 4 to 8 as a direct result.
 - The new drilldown page verified headlessly via Streamlit's own `AppTest` utility (executes the
   page script and surfaces exceptions without a browser) against the same real data: no exceptions,
-  all three crosstabs and the t-SNE scatter populate with real, non-degenerate values.
+  the elbow/silhouette charts, all three crosstabs, and the t-SNE scatter all populate with real,
+  non-degenerate values.
 - `python -m ruff check .` and `python -m pytest tests/ -q` pass (one pre-existing, unrelated
   failure confirmed via `git stash` to predate this work -- a local test-environment DNS limitation
   hitting an `analytics` hostname that only resolves inside the Docker network).
 
 ## Known Limitations
 
-- The agreement numbers above are from a 50-candidate verification sample, not the full ~3,000-
-  candidate population -- re-run `docker compose run --rm cluster-nightly` end to end once in a
-  real environment to get production-scale agreement numbers.
-- `k=4` is a judgment call (matched to known domain structure), not swept/optimized via silhouette
-  score or similar -- a reasonable follow-up if this is pushed further.
+- Silhouette scores are low across every k tested (0.12-0.16) -- real structure exists (Louvain
+  and k-means agree 79-94% per cluster at k=8), but it's not a tightly-separated clustering
+  problem; don't over-read small differences between adjacent k values as meaningful.
+- `k=8` is still a choice among several locally-plausible values (k=7 scored almost identically),
+  picked for its direct agreement with Louvain's independently-found community count, not a
+  single unambiguous optimum -- the dashboard's own elbow/silhouette charts make that visible
+  rather than hiding it behind a fixed default.
 - Same batch-sync staleness limitation as the underlying graph (knowledge-graph.md): the dashboard
   reflects whenever `cluster-nightly` last ran, not the current instant.
 
 ## Roadmap
 
-- Sweep `k` via silhouette score instead of a fixed default, if cluster quality at this project's
-  scale is ever pushed further.
+- Re-sweep `k` (and re-check Louvain's community count) periodically as the candidate population
+  grows or drifts -- today's k=8 is a measurement of the current dataset, not a permanent constant.
 - Wire `assign_cluster_for_candidate` into the actual profile-update/signup path (currently a
   library function, not yet called from any API route) once there's a concrete consumer for "which
   cluster is this candidate in, right now."

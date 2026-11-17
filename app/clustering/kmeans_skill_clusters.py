@@ -25,12 +25,18 @@ from app.clustering.models import CandidateSkillCluster, SkillClusterCentroid
 from app.embeddings.compute_embeddings import DEFAULT_EMBEDDING_MODEL, refresh_entity
 from app.embeddings.models import EntityEmbedding
 
-# Matches the 4 real domains the candidate graph already converges to
-# (docs/architecture/data-platform/knowledge-graph.md "Candidate/job
-# clustering") -- chosen so this unsupervised fit can be checked against
-# known structure, same "does it rediscover what we know" framing as
-# app/golden/drilldown/data.py's behavioral k=5 (matched to persona count).
-DEFAULT_K = 4
+# Measured, not assumed -- an earlier default of 4 (to match the known
+# domain count) was checked against a real elbow/silhouette sweep
+# (app/golden/drilldown/data.py's compute_k_diagnostics, same vectors)
+# and didn't hold up: silhouette is low and fairly flat across k (weak
+# global separation, consistent with knowledge-graph.md's own candidate/
+# job purity findings), but with a real local peak around k=7-8, not
+# k=4. That peak also lines up with Louvain's own, independently
+# discovered community count on this same candidate population
+# (knowledge-graph.md "Candidate/job clustering": 8 communities) -- two
+# independent methods landing near the same k is a real signal, not
+# coincidence. 8 chosen over 7 for that direct agreement with Louvain.
+DEFAULT_K = 8
 
 
 def _cluster_label(k_index: int) -> str:

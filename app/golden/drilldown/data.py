@@ -305,26 +305,45 @@ CLUSTER_FEATURE_COLUMNS = [
 DEFAULT_CLUSTER_COUNT = 5
 
 
-def compute_behavioral_clusters(rows: pd.DataFrame, k: int = DEFAULT_CLUSTER_COUNT) -> pd.Series:
-    """K-means over the same behavioral KPIs segmentation.py's rule-based
-    labels are built from. `days_since_last_event` is None for candidates
-    with zero events (dormant_never_engaged who got unlucky on the 50%
-    coin flip) -- imputed to a large constant (far outside the real 1-150
-    day range observed) rather than 0, since 0 would wrongly read as
-    "active today." Features are standardized (StandardScaler) since the
-    five KPIs are on wildly different scales (days: 0-150, conversion
-    rate: 0-1) and k-means is distance-based.
+def _scaled_behavioral_features(rows: pd.DataFrame):
+    """Shared by compute_behavioral_clusters and compute_k_diagnostics (via
+    the page) -- factored out so the elbow/silhouette sweep is checked
+    against the exact same feature prep the real fit uses, not a
+    close-enough approximation. `days_since_last_event` is None for
+    candidates with zero events (dormant_never_engaged who got unlucky on
+    the 50% coin flip) -- imputed to a large constant (far outside the
+    real 1-150 day range observed) rather than 0, since 0 would wrongly
+    read as "active today." Standardized (StandardScaler) since the five
+    KPIs are on wildly different scales (days: 0-150, conversion rate:
+    0-1) and k-means is distance-based.
     """
-    from sklearn.cluster import KMeans
     from sklearn.preprocessing import StandardScaler
 
     features = rows[CLUSTER_FEATURE_COLUMNS].copy()
     features["days_since_last_event"] = features["days_since_last_event"].fillna(999)
     features["conversion_rate"] = features["conversion_rate"].fillna(0)
+    return StandardScaler().fit_transform(features.to_numpy())
 
-    scaled = StandardScaler().fit_transform(features.to_numpy())
+
+def compute_behavioral_clusters(rows: pd.DataFrame, k: int = DEFAULT_CLUSTER_COUNT) -> pd.Series:
+    """K-means over the same behavioral KPIs segmentation.py's rule-based
+    labels are built from -- see _scaled_behavioral_features for the
+    feature prep this fits on."""
+    from sklearn.cluster import KMeans
+
+    scaled = _scaled_behavioral_features(rows)
     labels = KMeans(n_clusters=k, random_state=42, n_init=10).fit_predict(scaled)
     return pd.Series([f"cluster_{label}" for label in labels], index=rows.index, name="cluster")
+
+
+@st.cache_data(show_spinner="Fitting k-means across a range of k for the behavioral diagnostic...")
+def compute_behavioral_k_diagnostics(rows: pd.DataFrame, k_range=range(2, 13)) -> pd.DataFrame:
+    """Same elbow/silhouette check as compute_k_diagnostics, over the
+    behavioral KPIs instead of skills embeddings -- fits on
+    _scaled_behavioral_features(rows), the exact preprocessing
+    compute_behavioral_clusters itself uses, so this sweep is checked
+    against what the real fit sees, not a stand-in."""
+    return compute_k_diagnostics(_scaled_behavioral_features(rows), k_range=k_range)
 
 
 # Mirrors app/embeddings/compute_embeddings.py's own DEFAULT_EMBEDDING_MODEL
@@ -406,3 +425,48 @@ def compute_tsne_projection(vectors, random_state: int = 42):
     perplexity = min(30, max(2, len(vectors) - 1))
     coords = TSNE(n_components=2, random_state=random_state, perplexity=perplexity).fit_transform(vectors)
     return coords[:, 0], coords[:, 1]
+
+
+def name_clusters_by_majority(rows: pd.DataFrame, cluster_col: str, label_col: str) -> dict:
+    """Maps each raw cluster id (k-means label, Louvain community id, or
+    behavioral cluster id -- all otherwise-opaque to a non-technical
+    reader) to a human name: whichever `label_col` value is most common
+    among that cluster's members, with the raw id kept in parentheses for
+    traceability back to the crosstabs/filters that still key on it. Not
+    a claim that every member shares that label -- same "most common,
+    stated honestly as a majority, not a unanimous fact" framing as
+    app/graph/cluster_entities.py's compute_mean_occupation_purity.
+    """
+    mapping = {}
+    for cluster_id, group in rows.groupby(cluster_col):
+        if group[label_col].dropna().empty:
+            mapping[cluster_id] = f"Unlabeled ({cluster_id})"
+            continue
+        top_label = group[label_col].value_counts().idxmax()
+        mapping[cluster_id] = f"{top_label} ({cluster_id})"
+    return mapping
+
+
+@st.cache_data(show_spinner="Fitting k-means across a range of k for the elbow/silhouette diagnostic...")
+def compute_k_diagnostics(vectors, k_range=range(2, 13)) -> pd.DataFrame:
+    """Elbow (inertia) + silhouette score per candidate k -- the actual
+    justification for app/clustering/kmeans_skill_clusters.py's DEFAULT_K,
+    measured here rather than assumed. Deliberately lives in this
+    read-only dashboard module, not in kmeans_skill_clusters.py itself:
+    it only needs numpy/sklearn over vectors already in hand, and pulling
+    in kmeans_skill_clusters.py's fit/assign machinery would drag
+    refresh_entity's ollama/mlflow dependency chain into this lightweight,
+    direct-to-Postgres app (docker/Dockerfile.golden-drilldown) for
+    nothing this function needs.
+    """
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+
+    rows = []
+    for k in k_range:
+        km = KMeans(n_clusters=k, random_state=42, n_init=10).fit(vectors)
+        rows.append({
+            "k": k, "inertia": km.inertia_,
+            "silhouette": silhouette_score(vectors, km.labels_),
+        })
+    return pd.DataFrame(rows)

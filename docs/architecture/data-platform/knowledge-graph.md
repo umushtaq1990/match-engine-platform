@@ -107,9 +107,30 @@ Category-coherent skill sampling was introduced as part of a broader scale/reali
 
 ### Candidate/job clustering
 
-Clustering candidates and clustering jobs, two *independent* runs, over two different graphs, both converged on exactly **4 communities**. That's not a coincidence; it's the same 4 domains the generator anchors skill assignment to (`software_engineering`, `business_ops`, `trades_logistics`, `people_services`), recovered purely from candidate-candidate and job-job co-skill patterns, with no domain label ever written to the database. This is the most direct demonstration yet that the domain-anchoring fix produces structure a graph algorithm can actually discover, not just a number (purity) that moved in the right direction.
+Clustering candidates and clustering jobs, two *independent* runs, over two different graphs. At
+the time this was first written (pre golden-dataset-v2), both converged on exactly 4 communities,
+matching the 4 domains the generator anchored skill assignment to at the time. **That number is
+now stale, for a traceable reason, not an unexplained drift**: golden-dataset-v2 expanded the
+curated taxonomy from 4 domains to 8 (`technology`, `healthcare`, `skilled_trades`,
+`business_finance`, `sales_marketing`, `education`, `creative_media`, `logistics_operations` --
+see `docs/architecture/data-platform/data-at-scale.md`), and re-running the exact same clustering
+today (`app/clustering/nightly_job.py`'s graph step, see [skill-clustering.md](skill-clustering.md))
+finds **8 candidate communities** (modularity 0.5447, mean occupation purity 0.2278) and **7 job
+communities** (modularity 0.6879, mean occupation purity 0.1262) -- naming each community by its
+majority domain (`app/golden/drilldown/data.py::name_clusters_by_majority`, shown directly on the
+new dashboard page) confirms candidate communities still map cleanly onto the domain taxonomy, 8
+domains -> 8 communities, the same clean recovery this section originally reported at 4, now
+re-verified at the new scale rather than left as a stale number once noticed.
 
-**Reading the purity numbers honestly, a granularity mismatch, not a clustering failure**: candidate purity (0.2891) is noticeably higher than job purity (0.0495) against the same kind of check (most-common `occupation_title` per community). Occupation is a much finer-grained label (150 distinct occupations) than the 4 broad domains these communities actually represent, even a *perfectly* domain-pure job community spanning ~37 occupations evenly would cap out near 1/37 ≈ 0.027 purity under that ground truth, so 0.0495 is modestly *above* that naive floor, not evidence of no structure (confirmed separately: modularity 0.6065, a well-separated graph). The candidate/job purity gap itself is an open question, not chased further in this pass, a real avenue for future work if this capability is pushed further.
+**Reading the purity numbers honestly, a granularity mismatch, not a clustering failure**:
+candidate purity is consistently higher than job purity against the same kind of check
+(most-common `occupation_title` per community) across both the original and re-measured numbers.
+Occupation is a much finer-grained label (150+ distinct occupations) than the handful of broad
+communities these methods actually find, even a *perfectly* community-pure job cluster spanning
+dozens of occupations evenly would cap out at a low purity floor under that ground truth, so these
+numbers being modestly above that naive floor is not evidence of no structure. The candidate/job
+purity gap itself is an open question, not chased further in this pass, a real avenue for future
+work if this capability is pushed further.
 
 ### Persisted and linked to a faster, independent clustering method
 

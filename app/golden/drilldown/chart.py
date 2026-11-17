@@ -20,6 +20,7 @@ flakier primary one.
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 from app.golden.build_evaluation_tree import _icicle_trace
 
@@ -31,6 +32,36 @@ def render_drilldown_chart(rows: pd.DataFrame, value_key: str, levels: list[tupl
     trace = _icicle_trace(row_dicts, value_key, "All", levels)
     fig = go.Figure(trace)
     fig.update_layout(margin={"t": 10, "l": 10, "r": 10, "b": 10}, height=500)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_k_diagnostic_chart(diagnostics: pd.DataFrame, current_k: int, title: str) -> None:
+    """Elbow (inertia) + silhouette score on one figure, two y-axes --
+    inertia on the left (its own scale, thousands), silhouette on the
+    right (always 0-1) -- so both curves' shapes are readable together
+    without one swamping the other's axis. Used identically for the
+    skill-embedding sweep and the behavioral-KPI sweep (see
+    app/golden/drilldown/data.py's compute_k_diagnostics/
+    compute_behavioral_k_diagnostics) so the two are visually comparable
+    side by side."""
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(
+        go.Scatter(
+            x=diagnostics["k"], y=diagnostics["inertia"], name="Inertia (elbow)", mode="lines+markers",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=diagnostics["k"], y=diagnostics["silhouette"], name="Silhouette score", mode="lines+markers",
+        ),
+        secondary_y=True,
+    )
+    fig.add_vline(x=current_k, line_dash="dash", annotation_text=f"current k={current_k}")
+    fig.update_layout(title=title, height=380, legend=dict(orientation="h", y=-0.2))
+    fig.update_xaxes(title_text="k")
+    fig.update_yaxes(title_text="Inertia", secondary_y=False)
+    fig.update_yaxes(title_text="Silhouette score", secondary_y=True)
     st.plotly_chart(fig, use_container_width=True)
 
 
