@@ -17,7 +17,11 @@ read on each job-demanded missing skill (emerging/rare-among-peers vs.
 catching-up/common-among-peers -- a heuristic, labeled as such, not
 validated market data) and real course recommendations
 (app/matching/course_recommendations.py, Use Case E, unmodified) tagged
-against that same signal. See
+against that same signal, then a weekly behavioral trend (logins, jobs
+viewed, applications over the last 4 non-overlapping 7-day buckets,
+oldest to newest) against the candidate's own skill cluster's average,
+straight from `analytics.behavioral_events` -- the same event log every
+other behavioral feature in this project already reads from. See
 docs/architecture/data-platform/skill-clustering.md.
 """
 import pandas as pd
@@ -29,9 +33,13 @@ from app.db import SessionLocal
 from app.golden.drilldown.chart import render_top_skills_bar_chart
 from app.golden.drilldown.data import (
     EMERGING_SKILL_PEER_THRESHOLD,
+    TREND_EVENT_LABELS,
+    WEEK_BUCKET_LABELS,
+    WEEK_BUCKET_ORDER,
     compute_job_skill_gap,
     compute_peer_skill_gap,
     compute_skill_market_signal,
+    compute_weekly_trend_vs_cluster,
     find_similar_candidates,
     load_behavioral_rows,
     load_candidate_demographics,
@@ -39,6 +47,7 @@ from app.golden.drilldown.data import (
     load_candidate_skill_names,
     load_job_occupation_titles,
     load_skill_cluster_rows,
+    load_weekly_event_trend,
     name_clusters_by_majority,
 )
 from app.golden.select import select_existing_golden_candidate_ids
@@ -274,3 +283,46 @@ elif course_recs:
     st.dataframe(pd.DataFrame(course_rows), use_container_width=True, hide_index=True)
 else:
     st.info("No courses found that cover this candidate's occupation skill gap.")
+
+st.markdown("#### Behavioral trend vs. skill cluster")
+cluster_actor_ids = cluster_rows.loc[
+    cluster_rows["cluster_label"] == profile["cluster_label"], "candidate_id"
+].tolist()
+st.caption(
+    f"Logins, jobs viewed, and applications over the last 4 non-overlapping 7-day periods "
+    f"(oldest to newest), against the average for this candidate's skill cluster "
+    f"({profile['skill_cluster_name']}, {len(cluster_actor_ids)} candidates) -- a straight "
+    f"aggregation of real `analytics.behavioral_events` rows, same source every other "
+    f"behavioral feature in this app already reads from. A small cluster's average is noisier "
+    f"than a large one's -- the candidate count above is the context for reading it."
+)
+session = SessionLocal()
+try:
+    trend_df = load_weekly_event_trend(session, cluster_actor_ids)
+finally:
+    session.close()
+
+if trend_df.empty:
+    st.info("No behavioral events in the last 28 days for this candidate's cluster.")
+else:
+    trend_result = compute_weekly_trend_vs_cluster(trend_df, candidate_id, cluster_actor_ids)
+    trend_result["week_label"] = trend_result["week_bucket"].map(WEEK_BUCKET_LABELS)
+    trend_result["event_label"] = trend_result["event_type"].map(TREND_EVENT_LABELS)
+    trend_long = trend_result.melt(
+        id_vars=["week_bucket", "week_label", "event_label"],
+        value_vars=["candidate_count", "cluster_avg"],
+        var_name="series", value_name="count",
+    )
+    trend_long["series"] = trend_long["series"].map({
+        "candidate_count": "This candidate", "cluster_avg": "Cluster average",
+    })
+    trend_fig = px.line(
+        trend_long, x="week_label", y="count", color="series", facet_col="event_label",
+        markers=True, category_orders={
+            "week_label": [WEEK_BUCKET_LABELS[b] for b in WEEK_BUCKET_ORDER],
+            "event_label": list(TREND_EVENT_LABELS.values()),
+        },
+    )
+    trend_fig.update_layout(height=400, legend=dict(orientation="h", y=-0.3))
+    trend_fig.update_yaxes(matches=None)
+    st.plotly_chart(trend_fig, use_container_width=True)

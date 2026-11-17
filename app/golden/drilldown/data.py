@@ -673,3 +673,76 @@ def compute_skill_market_signal(
         "skill_name": job_gap["skill_name"], "job_demand_proportion": job_gap["proportion"],
         "peer_prevalence": peer_prevalence, "market_signal": market_signal,
     }).reset_index(drop=True)
+
+
+# The three candidate-facing event types that make sense as a weekly engagement
+# trend here -- excludes "recommendation_clicked"/"job_saved" (real, but a
+# secondary signal, not core to "did they log in, see jobs, apply") to keep
+# the trend section to the three metrics the user actually asked for.
+TREND_EVENT_TYPES = ["login", "recommendation_shown", "job_applied"]
+TREND_EVENT_LABELS = {
+    "login": "Logins", "recommendation_shown": "Jobs viewed", "job_applied": "Jobs applied",
+}
+# Bucket 1 = most recent 7 days, bucket 4 = 22-28 days ago -- oldest-to-newest
+# order for a left-to-right chronological chart.
+WEEK_BUCKET_LABELS = {1: "Last 7 days", 2: "8-14 days ago", 3: "15-21 days ago", 4: "22-28 days ago"}
+WEEK_BUCKET_ORDER = [4, 3, 2, 1]
+
+
+def load_weekly_event_trend(session: Session, actor_ids: list[int], num_weeks: int = 4) -> pd.DataFrame:
+    """Raw per-actor-per-week-per-event-type counts over the last
+    `num_weeks` x 7 days, bucketed into non-overlapping weekly periods --
+    the standard way to show a real trend (up/down/flat), not a
+    cumulative "last N days" total that can only grow. Reuses
+    `analytics.behavioral_events` directly, the same source every other
+    behavioral feature in this project already reads from
+    (app/analytics/models.py) -- no new event log, no new infra.
+    """
+    if not actor_ids:
+        return pd.DataFrame(columns=["actor_id", "week_bucket", "event_type", "count"])
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(days=num_weeks * 7)
+    rows = session.execute(
+        select(BehavioralEvent.actor_id, BehavioralEvent.event_type, BehavioralEvent.received_at).where(
+            BehavioralEvent.actor_type == "candidate",
+            BehavioralEvent.actor_id.in_(actor_ids),
+            BehavioralEvent.received_at >= window_start,
+            BehavioralEvent.event_type.in_(TREND_EVENT_TYPES),
+        )
+    ).all()
+    if not rows:
+        return pd.DataFrame(columns=["actor_id", "week_bucket", "event_type", "count"])
+    df = pd.DataFrame(rows, columns=["actor_id", "event_type", "received_at"])
+    received_at = pd.to_datetime(df["received_at"], utc=True)
+    days_ago = (now - received_at).dt.days
+    df["week_bucket"] = (days_ago // 7 + 1).clip(upper=num_weeks)
+    return df.groupby(["actor_id", "week_bucket", "event_type"]).size().reset_index(name="count")
+
+
+def compute_weekly_trend_vs_cluster(
+    trend_df: pd.DataFrame, candidate_id: int, cluster_actor_ids: list[int], num_weeks: int = 4
+) -> pd.DataFrame:
+    """Reindexes load_weekly_event_trend's output so every
+    (actor, week, event_type) combination exists, a true 0 where nothing
+    happened rather than a missing row -- required before averaging, same
+    reasoning app/analytics/segmentation.py's own aggregations already
+    rely on elsewhere (absence of an event is 0, not unknown). Returns one
+    row per (week_bucket, event_type): this candidate's own count, the
+    cluster's mean count, and the cluster's population size, so a reader
+    can judge how stable that average actually is (a 48-candidate
+    cluster's average is noisier than a 510-candidate one's).
+    """
+    weeks = list(range(1, num_weeks + 1))
+    full_index = pd.MultiIndex.from_product(
+        [cluster_actor_ids, weeks, TREND_EVENT_TYPES], names=["actor_id", "week_bucket", "event_type"]
+    )
+    full = (
+        trend_df.set_index(["actor_id", "week_bucket", "event_type"])
+        .reindex(full_index, fill_value=0)["count"]
+        .reset_index()
+    )
+    cluster_avg = full.groupby(["week_bucket", "event_type"])["count"].mean().reset_index(name="cluster_avg")
+    target = full.loc[full["actor_id"] == candidate_id].rename(columns={"count": "candidate_count"})
+    merged = target.merge(cluster_avg, on=["week_bucket", "event_type"])
+    merged["cluster_size"] = len(cluster_actor_ids)
+    return merged[["week_bucket", "event_type", "candidate_count", "cluster_avg", "cluster_size"]]
