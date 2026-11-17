@@ -596,20 +596,44 @@ def find_similar_candidates(rows: pd.DataFrame, target_candidate_id: int, top_n:
 
 
 def compute_peer_skill_gap(
-    target_skills: set, peer_skill_rows: pd.DataFrame, peer_count: int, min_peer_proportion: float = 0.3
+    target_skills: set, peer_skill_rows: pd.DataFrame, peer_count: int, top_n: int = 10
 ) -> pd.DataFrame:
-    """Skills at least `min_peer_proportion` of the target's similar
-    candidates have that the target doesn't -- the "gap vs. neighbors"
-    half of the Candidate Profile 360 page's skill-gap section (the other
-    half, vs. matching jobs, comes straight from the real matching
-    engine's own SkillGapReport, not duplicated here)."""
+    """The gap-vs-neighbors half of the Candidate Profile 360 page's
+    skill-gap section: a frequency table ranking every skill the target's
+    ~10 nearest similar candidates have (how many of them have it),
+    skills the target already has subtracted out first, top N of
+    whatever remains -- same shape (`skill_name, count, proportion`) as
+    compute_top_skills, so it can go straight into
+    render_top_skills_bar_chart without reshaping.
+    """
     if peer_skill_rows.empty or peer_count == 0:
-        return pd.DataFrame(columns=["skill_name", "peer_count", "peer_proportion"])
+        return pd.DataFrame(columns=["skill_name", "count", "proportion"])
     counts = peer_skill_rows["skill_name"].value_counts()
-    counts = counts[~counts.index.isin(target_skills)]
-    proportions = counts / peer_count
-    gap = proportions[proportions >= min_peer_proportion]
+    counts = counts[~counts.index.isin(target_skills)].head(top_n)
     return pd.DataFrame({
-        "skill_name": gap.index, "peer_count": counts.loc[gap.index].to_numpy(),
-        "peer_proportion": gap.to_numpy(),
-    }).sort_values("peer_proportion", ascending=False).reset_index(drop=True)
+        "skill_name": counts.index, "count": counts.to_numpy(), "proportion": counts.to_numpy() / peer_count,
+    }).reset_index(drop=True)
+
+
+def compute_job_skill_gap(
+    target_skills: set, job_required_skill_names: list[set], top_n: int = 10
+) -> pd.DataFrame:
+    """The gap-vs-matching-jobs half: a popularity ranking of every
+    required skill across the candidate's top matching jobs (how many of
+    those jobs require it -- `job_required_skill_names` is one set of
+    skill names per job, already resolved from
+    ScoreBreakdown.matching_required_skill_ids | missing_required_skill_ids,
+    the full required set regardless of whether the candidate already has
+    each one), skills the target already has subtracted out first, top N
+    of whatever remains. Same shape as compute_peer_skill_gap/
+    compute_top_skills, for the same bar-chart helper.
+    """
+    job_count = len(job_required_skill_names)
+    if job_count == 0:
+        return pd.DataFrame(columns=["skill_name", "count", "proportion"])
+    all_required = pd.Series([name for skills in job_required_skill_names for name in skills])
+    counts = all_required.value_counts()
+    counts = counts[~counts.index.isin(target_skills)].head(top_n)
+    return pd.DataFrame({
+        "skill_name": counts.index, "count": counts.to_numpy(), "proportion": counts.to_numpy() / job_count,
+    }).reset_index(drop=True)

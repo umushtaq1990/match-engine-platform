@@ -8,14 +8,13 @@ against the real matching engine (app/matching/rank.py, unmodified, same
 call the production API uses), who's most similar to them by skills
 embedding (a genuinely new capability -- no candidate-to-candidate
 similarity existed anywhere in this repo before this page), and two
-independent skill-gap views: what their nearest peers have that they
-don't, and what their own top matching jobs require that they're
-missing (straight from the matching engine's own SkillGapReport, not a
-second implementation of skill-gap logic). See
+skill-gap views built the same way over two different populations:
+rank skills by how many of the ~10 similar candidates (or top matching
+jobs, via each job's real required-skill set from the matching engine's
+own ScoreBreakdown) have/require them, subtract skills this candidate
+already has, and whatever's left is the gap. See
 docs/architecture/data-platform/skill-clustering.md.
 """
-from collections import Counter
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -24,6 +23,7 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.golden.drilldown.chart import render_top_skills_bar_chart
 from app.golden.drilldown.data import (
+    compute_job_skill_gap,
     compute_peer_skill_gap,
     find_similar_candidates,
     load_behavioral_rows,
@@ -162,7 +162,12 @@ st.dataframe(
 )
 
 st.markdown("#### Skill gap")
-st.caption("Two independent sources, side by side -- what this candidate's own data doesn't show.")
+st.caption(
+    "Same method, two independent populations: rank skills by how many of the ~10 similar "
+    "candidates (or top matching jobs) have/require them, subtract skills this candidate "
+    "already has, and whatever's left -- ranked by that popularity -- is the gap."
+)
+target_skill_names = set(skills_detail["skill_name"])
 gap_left, gap_right = st.columns(2)
 with gap_left:
     st.markdown("##### vs. similar candidates")
@@ -171,55 +176,29 @@ with gap_left:
         peer_skill_rows = load_candidate_skill_names(session, similar["candidate_id"].tolist())
     finally:
         session.close()
-    target_skill_names = set(skills_detail["skill_name"])
-    peer_gap = compute_peer_skill_gap(
-        target_skill_names, peer_skill_rows, peer_count=len(similar), min_peer_proportion=0.3
-    )
+    peer_gap = compute_peer_skill_gap(target_skill_names, peer_skill_rows, peer_count=len(similar))
     if peer_gap.empty:
-        st.info("No skills meet the 30% peer-proportion threshold.")
+        st.info("This candidate already has every skill their similar candidates have.")
     else:
-        peer_gap_for_chart = peer_gap.rename(
-            columns={"peer_count": "count", "peer_proportion": "proportion"}
-        )
         render_top_skills_bar_chart(
-            peer_gap_for_chart, "Skills peers have that this candidate doesn't", height=350
+            peer_gap, "Skills peers have that this candidate doesn't", height=350
         )
 with gap_right:
     st.markdown("##### vs. top matching jobs")
     if not matches:
         st.info("No matching jobs to compare against.")
     else:
-        confirmed_counter: Counter = Counter()
-        not_recorded_counter: Counter = Counter()
-        for m in matches:
-            for skill_id in m.skill_gap.confirmed_absent_required:
-                confirmed_counter[skill_name_by_id.get(skill_id, f"#{skill_id}")] += 1
-            for skill_id in m.skill_gap.not_recorded_required:
-                not_recorded_counter[skill_name_by_id.get(skill_id, f"#{skill_id}")] += 1
-        st.caption(
-            "\"Confirmed absent\" (explicitly assessed, not demonstrated) vs. \"not recorded\" "
-            "(no evidence either way, not a confirmed gap) -- kept separate, not merged, same "
-            "distinction app/matching/skill_gap.py's SkillGapReport itself makes."
-        )
-        job_gap_tabs = st.tabs(["Confirmed absent", "Not recorded"])
-        with job_gap_tabs[0]:
-            if confirmed_counter:
-                df = pd.DataFrame({
-                    "skill_name": list(confirmed_counter.keys()), "count": list(confirmed_counter.values()),
-                    "proportion": [c / len(matches) for c in confirmed_counter.values()],
-                }).sort_values("count", ascending=False)
-                render_top_skills_bar_chart(df, "Missing from N of top 10 matching jobs", height=350)
-            else:
-                st.info("No confirmed-absent required skills across the top matching jobs.")
-        with job_gap_tabs[1]:
-            if not_recorded_counter:
-                df = pd.DataFrame({
-                    "skill_name": list(not_recorded_counter.keys()),
-                    "count": list(not_recorded_counter.values()),
-                    "proportion": [c / len(matches) for c in not_recorded_counter.values()],
-                }).sort_values("count", ascending=False)
-                render_top_skills_bar_chart(
-                    df, "Missing (unrecorded) from N of top 10 matching jobs", height=350
-                )
-            else:
-                st.info("No unrecorded required skills across the top matching jobs.")
+        job_required_skill_names = [
+            {
+                skill_name_by_id.get(i, f"#{i}")
+                for i in (m.score.matching_required_skill_ids | m.score.missing_required_skill_ids)
+            }
+            for m in matches
+        ]
+        job_gap = compute_job_skill_gap(target_skill_names, job_required_skill_names)
+        if job_gap.empty:
+            st.info("This candidate already has every required skill across their top matching jobs.")
+        else:
+            render_top_skills_bar_chart(
+                job_gap, "Required skills missing from top matching jobs", height=350
+            )
