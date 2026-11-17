@@ -1,7 +1,7 @@
 """Golden-eval drill-down explorer -- entry point / landing page. The two
-real pages (Candidates & Job Posts, Skills) live in pages/, Streamlit's
-own multipage convention (auto-discovered from this script's sibling
-`pages/` directory).
+evaluation pages (Evaluation Candidates-Jobs, Evaluation Skills) live in
+pages/, Streamlit's own multipage convention (auto-discovered from this
+script's sibling `pages/` directory).
 
 An internal tool for people with DB access to explore a golden-eval run
 top-to-bottom -- the same decomposition tree app/golden/
@@ -31,8 +31,8 @@ st.set_page_config(page_title="Golden Eval Drill-Down", layout="wide")
 st.title("Golden Evaluation Drill-Down")
 
 st.markdown(
-    "Pick a run in the sidebar, then open **Candidates & Job Posts** or **Skills** there. "
-    "Both pages share whichever run you pick on any page."
+    "Pick a run in the sidebar, then open **Evaluation Candidates-Jobs** or **Evaluation Skills** "
+    "there. Both pages share whichever run you pick on any page."
 )
 
 session = SessionLocal()

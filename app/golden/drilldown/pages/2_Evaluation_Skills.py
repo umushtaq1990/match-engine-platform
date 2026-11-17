@@ -1,9 +1,9 @@
-"""Skills drill-down: entity type -> domain -> occupation -> skill type
-(technical/soft), colored by average match confidence. Leaves are
-*matched skill mentions*, not whole examples -- a single CV/job can have
-both technical and soft skills, so this is a separate hierarchy from the
-Candidates & Job Posts page's per-example tree (see app/golden/
-build_evaluation_tree.py's module docstring for why).
+"""Evaluation Skills drill-down: entity type -> domain -> occupation ->
+skill type (technical/soft), colored by average match confidence.
+Leaves are *matched skill mentions*, not whole examples -- a single
+CV/job can have both technical and soft skills, so this is a separate
+hierarchy from the Evaluation Candidates-Jobs page's per-example tree
+(see app/golden/build_evaluation_tree.py's module docstring for why).
 """
 import streamlit as st
 
@@ -16,8 +16,8 @@ from app.golden.drilldown.data import (
     select_run_in_sidebar,
 )
 
-st.set_page_config(page_title="Skills", layout="wide")
-st.title("Skills -- by match confidence")
+st.set_page_config(page_title="Evaluation Skills", layout="wide")
+st.title("Evaluation Skills -- by match confidence")
 
 mlflow_base_url = mlflow_base_url_in_sidebar()
 

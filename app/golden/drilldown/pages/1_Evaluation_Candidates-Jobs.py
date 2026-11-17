@@ -1,4 +1,4 @@
-"""Candidates & Job Posts drill-down: entity type -> domain -> occupation,
+"""Evaluation Candidates-Jobs drill-down: entity type -> domain -> occupation,
 colored by F1 (chart above, read-only -- see app/golden/drilldown/
 chart.py's module docstring for why it can't drive the filters below it).
 Use the dropdowns to narrow down to the full per-example table --
@@ -16,8 +16,8 @@ from app.golden.drilldown.data import (
     select_run_in_sidebar,
 )
 
-st.set_page_config(page_title="Candidates & Job Posts", layout="wide")
-st.title("Candidates & Job Posts -- by F1")
+st.set_page_config(page_title="Evaluation Candidates-Jobs", layout="wide")
+st.title("Evaluation Candidates-Jobs -- by F1")
 
 mlflow_base_url = mlflow_base_url_in_sidebar()
 

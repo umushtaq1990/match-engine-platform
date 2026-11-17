@@ -1,7 +1,7 @@
 """Shared DB-query helpers for the golden-eval drill-down app (two Streamlit
-pages: Candidates & Job Posts, Skills) -- both pages need the same run
-picker and the same per-example/per-skill-match data, so it lives here
-once rather than duplicated per page.
+pages: Evaluation Candidates-Jobs, Evaluation Skills) -- both pages need
+the same run picker and the same per-example/per-skill-match data, so it
+lives here once rather than duplicated per page.
 
 Deliberately read-only and direct-to-Postgres (no HTTP hop through the
 extraction/api services) -- this is an internal exploration tool for
