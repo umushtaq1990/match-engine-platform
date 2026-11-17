@@ -513,3 +513,103 @@ def generate_skill_wordcloud(skill_counts: "pd.Series", width: int = 600, height
 
     wc = WordCloud(width=width, height=height, background_color="white", colormap="viridis")
     return wc.generate_from_frequencies(skill_counts.to_dict()).to_image()
+
+
+def load_candidate_skill_detail(session: Session, candidate_id: int) -> pd.DataFrame:
+    """One candidate's own skills with proficiency -- load_candidate_skill_names
+    (name-only, built for the population-level trending-skills section)
+    doesn't carry this; the Candidate Profile 360 page's skills table
+    needs it."""
+    rows = session.execute(
+        select(Skill.name, CandidateSkill.proficiency)
+        .join(Skill, Skill.id == CandidateSkill.skill_id)
+        .where(CandidateSkill.candidate_id == candidate_id)
+        .order_by(Skill.name)
+    ).all()
+    return pd.DataFrame(
+        [{"skill_name": name, "proficiency": proficiency.value} for name, proficiency in rows]
+    )
+
+
+def load_job_occupation_titles(session: Session, job_ids: list[int]) -> dict[int, str]:
+    """job_id -> occupation title, for labeling the matching-jobs table on
+    the Candidate Profile 360 page -- MatchResult.label is already the
+    job title, this is the one extra lookup it doesn't carry."""
+    rows = session.execute(
+        select(Job.id, Occupation.title)
+        .join(Occupation, Occupation.id == Job.occupation_id, isouter=True)
+        .where(Job.id.in_(job_ids))
+    ).all()
+    return {job_id: title or _UNKNOWN for job_id, title in rows}
+
+
+def load_candidate_demographics(session: Session, candidate_ids: list[int]) -> pd.DataFrame:
+    """Name/location/years_experience for the Candidate Profile 360 page's
+    header -- `years_experience`, not age, is shown labeled as such: no
+    age field exists anywhere in this schema (confirmed), and no photo/
+    avatar field either (the page draws a decorative initials avatar
+    instead, not a real image)."""
+    rows = session.execute(
+        select(
+            Candidate.id, Candidate.full_name, Candidate.location_city,
+            Candidate.location_region, Candidate.years_experience,
+        ).where(Candidate.id.in_(candidate_ids))
+    ).all()
+    return pd.DataFrame(
+        rows, columns=["candidate_id", "full_name", "location_city", "location_region", "years_experience"]
+    )
+
+
+def find_similar_candidates(rows: pd.DataFrame, target_candidate_id: int, top_n: int = 10) -> pd.DataFrame:
+    """Nearest neighbors of `target_candidate_id` by Euclidean distance
+    over the same skills-embedding vectors load_skill_cluster_rows already
+    returns -- a genuinely new capability (no candidate-to-candidate
+    embedding similarity exists anywhere else in this repo;
+    app/graph/cluster_entities.py's CANDIDATE_SIMILAR_TO is shared-
+    skill-count based, graph-side only, never queried from here). Instant
+    rather than a fresh query, since `rows` is whatever's already loaded
+    for the page (the same vectors driving the t-SNE plot on page 4).
+    Returns same_skill_cluster/same_louvain_community alongside the raw
+    distance, so a reader can cross-check this embedding-based notion of
+    "similar" against the graph-based one, same two-method framing as the
+    rest of this feature.
+    """
+    import numpy as np
+
+    target_row = rows.loc[rows["candidate_id"] == target_candidate_id]
+    if target_row.empty:
+        return pd.DataFrame(columns=[
+            "candidate_id", "distance", "same_skill_cluster", "same_louvain_community",
+        ])
+    target = target_row.iloc[0]
+    target_vector = np.array(target["vector"], dtype=np.float64)
+
+    others = rows.loc[rows["candidate_id"] != target_candidate_id].copy()
+    others["distance"] = others["vector"].apply(
+        lambda v: float(np.linalg.norm(np.array(v, dtype=np.float64) - target_vector))
+    )
+    others["same_skill_cluster"] = others["cluster_label"] == target["cluster_label"]
+    others["same_louvain_community"] = others["louvain_community_id"] == target["louvain_community_id"]
+    return others.sort_values("distance").head(top_n)[[
+        "candidate_id", "distance", "same_skill_cluster", "same_louvain_community",
+    ]].reset_index(drop=True)
+
+
+def compute_peer_skill_gap(
+    target_skills: set, peer_skill_rows: pd.DataFrame, peer_count: int, min_peer_proportion: float = 0.3
+) -> pd.DataFrame:
+    """Skills at least `min_peer_proportion` of the target's similar
+    candidates have that the target doesn't -- the "gap vs. neighbors"
+    half of the Candidate Profile 360 page's skill-gap section (the other
+    half, vs. matching jobs, comes straight from the real matching
+    engine's own SkillGapReport, not duplicated here)."""
+    if peer_skill_rows.empty or peer_count == 0:
+        return pd.DataFrame(columns=["skill_name", "peer_count", "peer_proportion"])
+    counts = peer_skill_rows["skill_name"].value_counts()
+    counts = counts[~counts.index.isin(target_skills)]
+    proportions = counts / peer_count
+    gap = proportions[proportions >= min_peer_proportion]
+    return pd.DataFrame({
+        "skill_name": gap.index, "peer_count": counts.loc[gap.index].to_numpy(),
+        "peer_proportion": gap.to_numpy(),
+    }).sort_values("peer_proportion", ascending=False).reset_index(drop=True)

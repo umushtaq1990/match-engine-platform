@@ -23,6 +23,7 @@ COPY app/clustering/__init__.py ./app/clustering/__init__.py
 COPY app/clustering/models.py ./app/clustering/models.py
 COPY app/embeddings/__init__.py ./app/embeddings/__init__.py
 COPY app/embeddings/models.py ./app/embeddings/models.py
+COPY app/matching/ ./app/matching/
 COPY app/golden/__init__.py ./app/golden/__init__.py
 COPY app/golden/build_evaluation_tree.py ./app/golden/build_evaluation_tree.py
 COPY app/golden/models.py ./app/golden/models.py
