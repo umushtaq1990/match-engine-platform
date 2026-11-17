@@ -15,6 +15,7 @@ DB; candidate CVs show their resolved skill lists only, not full prose.
 This is a documented simplification, not an oversight -- see
 docs/architecture/golden-evaluation-dataset.md's drill-down app section.
 """
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -556,6 +557,21 @@ def load_candidate_skill_detail(session: Session, candidate_id: int) -> pd.DataF
     )
 
 
+def load_job_skill_detail(session: Session, job_id: int) -> pd.DataFrame:
+    """One job's own required skills with requirement level -- job-side
+    mirror of load_candidate_skill_detail, for the Job Profile 360
+    page's skills table."""
+    rows = session.execute(
+        select(Skill.name, JobSkill.requirement_level)
+        .join(Skill, Skill.id == JobSkill.skill_id)
+        .where(JobSkill.job_id == job_id)
+        .order_by(Skill.name)
+    ).all()
+    return pd.DataFrame(
+        [{"skill_name": name, "requirement_level": level.value} for name, level in rows]
+    )
+
+
 def load_job_occupation_titles(session: Session, job_ids: list[int]) -> dict[int, str]:
     """job_id -> occupation title, for labeling the matching-jobs table on
     the Candidate Profile 360 page -- MatchResult.label is already the
@@ -585,38 +601,38 @@ def load_candidate_demographics(session: Session, candidate_ids: list[int]) -> p
     )
 
 
-def find_similar_candidates(rows: pd.DataFrame, target_candidate_id: int, top_n: int = 10) -> pd.DataFrame:
-    """Nearest neighbors of `target_candidate_id` by Euclidean distance
-    over the same skills-embedding vectors load_skill_cluster_rows already
-    returns -- a genuinely new capability (no candidate-to-candidate
-    embedding similarity exists anywhere else in this repo;
-    app/graph/cluster_entities.py's CANDIDATE_SIMILAR_TO is shared-
-    skill-count based, graph-side only, never queried from here). Instant
-    rather than a fresh query, since `rows` is whatever's already loaded
-    for the page (the same vectors driving the t-SNE plot on page 4).
-    Returns same_skill_cluster/same_louvain_community alongside the raw
-    distance, so a reader can cross-check this embedding-based notion of
-    "similar" against the graph-based one, same two-method framing as the
-    rest of this feature.
+def find_similar_entities(rows: pd.DataFrame, id_col: str, target_id: int, top_n: int = 10) -> pd.DataFrame:
+    """Nearest neighbors of `target_id` by Euclidean distance over
+    whatever skills-embedding vectors `rows` already carries (works for
+    either load_skill_cluster_rows' candidate_id or
+    load_job_skill_cluster_rows' job_id -- same method, either entity
+    type) -- a genuinely new capability (no candidate-to-candidate or
+    job-to-job embedding similarity exists anywhere else in this repo;
+    app/graph/cluster_entities.py's *_SIMILAR_TO relationships are
+    shared-skill-count based, graph-side only, never queried from here).
+    Instant rather than a fresh query, since `rows` is whatever's
+    already loaded for the page (the same vectors driving its t-SNE
+    plot). Returns same_skill_cluster/same_louvain_community alongside
+    the raw distance, so a reader can cross-check this embedding-based
+    notion of "similar" against the graph-based one, same two-method
+    framing as the rest of this feature.
     """
     import numpy as np
 
-    target_row = rows.loc[rows["candidate_id"] == target_candidate_id]
+    target_row = rows.loc[rows[id_col] == target_id]
     if target_row.empty:
-        return pd.DataFrame(columns=[
-            "candidate_id", "distance", "same_skill_cluster", "same_louvain_community",
-        ])
+        return pd.DataFrame(columns=[id_col, "distance", "same_skill_cluster", "same_louvain_community"])
     target = target_row.iloc[0]
     target_vector = np.array(target["vector"], dtype=np.float64)
 
-    others = rows.loc[rows["candidate_id"] != target_candidate_id].copy()
+    others = rows.loc[rows[id_col] != target_id].copy()
     others["distance"] = others["vector"].apply(
         lambda v: float(np.linalg.norm(np.array(v, dtype=np.float64) - target_vector))
     )
     others["same_skill_cluster"] = others["cluster_label"] == target["cluster_label"]
     others["same_louvain_community"] = others["louvain_community_id"] == target["louvain_community_id"]
     return others.sort_values("distance").head(top_n)[[
-        "candidate_id", "distance", "same_skill_cluster", "same_louvain_community",
+        id_col, "distance", "same_skill_cluster", "same_louvain_community",
     ]].reset_index(drop=True)
 
 
@@ -916,3 +932,69 @@ def compute_weekly_job_engagement_trend(
     week_bucket = (days_ago // 7 + 1).clip(upper=num_weeks)
     counts = week_bucket.value_counts().reindex(weeks, fill_value=0)
     return pd.DataFrame({"week_bucket": weeks, "count": counts.to_numpy()})
+
+
+def compute_unmet_requirement_frequency(
+    skill_name_by_id: dict, matches: list, top_n: int = 10
+) -> pd.DataFrame:
+    """For the Job Profile 360 page: across a job's own top matching
+    candidates (app.matching.rank.rank_candidates_for_job's own
+    MatchResult.skill_gap -- not a second implementation), how often
+    each required skill shows up as missing (confirmed absent or not
+    recorded). "Even your best-matching candidates often lack X" is a
+    real hiring-relevant signal straight from the matching engine, the
+    reverse direction of compute_job_skill_gap (which aggregates a
+    candidate's missing skills across their top matching jobs).
+    """
+    if not matches:
+        return pd.DataFrame(columns=["skill_name", "count", "proportion"])
+    counter: Counter = Counter()
+    for m in matches:
+        missing = m.skill_gap.confirmed_absent_required | m.skill_gap.not_recorded_required
+        for skill_id in missing:
+            counter[skill_name_by_id.get(skill_id, f"#{skill_id}")] += 1
+    if not counter:
+        return pd.DataFrame(columns=["skill_name", "count", "proportion"])
+    top = counter.most_common(top_n)
+    return pd.DataFrame({
+        "skill_name": [name for name, _ in top], "count": [count for _, count in top],
+        "proportion": [count / len(matches) for _, count in top],
+    })
+
+
+def compute_job_engagement_trend_vs_cluster(
+    session: Session, job_id: int, cluster_job_ids: list[int], num_weeks: int = 4
+) -> pd.DataFrame:
+    """This one job's own weekly engagement-event count against its
+    cluster's average -- same reindex-for-true-zeros reasoning as
+    compute_weekly_trend_vs_cluster, just over
+    compute_weekly_job_engagement_trend's single metric (entity_type=
+    "job" event volume) instead of three candidate event types, since
+    there's one metric here, not three.
+    """
+    weeks = list(range(1, num_weeks + 1))
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(days=num_weeks * 7)
+    rows = session.execute(
+        select(BehavioralEvent.entity_id, BehavioralEvent.received_at).where(
+            BehavioralEvent.entity_type == "job",
+            BehavioralEvent.entity_id.in_(cluster_job_ids),
+            BehavioralEvent.received_at >= window_start,
+        )
+    ).all()
+    df = pd.DataFrame(rows, columns=["job_id", "received_at"])
+    if df.empty:
+        counts = pd.Series(dtype="int64")
+    else:
+        received_at = pd.to_datetime(df["received_at"], utc=True)
+        days_ago = (now - received_at).dt.days
+        df["week_bucket"] = (days_ago // 7 + 1).clip(upper=num_weeks)
+        counts = df.groupby(["job_id", "week_bucket"]).size()
+
+    full_index = pd.MultiIndex.from_product([cluster_job_ids, weeks], names=["job_id", "week_bucket"])
+    full = counts.reindex(full_index, fill_value=0).rename("count").reset_index()
+    cluster_avg = full.groupby("week_bucket")["count"].mean().reset_index(name="cluster_avg")
+    target = full.loc[full["job_id"] == job_id].rename(columns={"count": "job_count"})
+    merged = target.merge(cluster_avg, on="week_bucket")
+    merged["cluster_size"] = len(cluster_job_ids)
+    return merged[["week_bucket", "job_count", "cluster_avg", "cluster_size"]]

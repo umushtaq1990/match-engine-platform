@@ -40,7 +40,7 @@ from app.golden.drilldown.data import (
     compute_peer_skill_gap,
     compute_skill_market_signal,
     compute_weekly_trend_vs_cluster,
-    find_similar_candidates,
+    find_similar_entities,
     load_behavioral_rows,
     load_candidate_demographics,
     load_candidate_skill_detail,
@@ -166,7 +166,7 @@ st.caption(
     "existed anywhere in this repo before this page), with same-cluster/same-Louvain-community "
     "flags alongside as a cross-check against the graph-based notion of similarity."
 )
-similar = find_similar_candidates(cluster_rows, candidate_id, top_n=10)
+similar = find_similar_entities(cluster_rows, "candidate_id", candidate_id, top_n=10)
 similar = similar.merge(demographics, on="candidate_id", how="left").merge(
     cluster_rows[["candidate_id", "domain", "occupation"]], on="candidate_id", how="left"
 )
