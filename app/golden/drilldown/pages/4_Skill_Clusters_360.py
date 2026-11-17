@@ -174,14 +174,16 @@ with skills_right:
     if top_skills.empty:
         st.info("No skill data for this selection.")
     else:
-        # Portrait aspect (narrower than tall), not the library's wide
-        # default -- this column is 2/5 the page width vs. the bar
-        # chart's 3/5, so a tall image fills roughly the same vertical
-        # space once Streamlit scales it to the column's width.
+        # Rendered at a fixed pixel width (not use_column_width, which
+        # stretches to the column's actual rendered width and overshot
+        # this image's height well past the bar chart's) -- generated at
+        # the exact same aspect ratio as the displayed size, so nothing
+        # gets stretched in either dimension.
+        wc_width = 450
         wc_image = generate_skill_wordcloud(
-            scoped_skill_rows["skill_name"].value_counts(), width=380, height=skills_chart_height,
+            scoped_skill_rows["skill_name"].value_counts(), width=wc_width, height=skills_chart_height,
         )
-        st.image(wc_image, caption=f"Word cloud -- {skill_view_choice}", use_column_width=True)
+        st.image(wc_image, caption=f"Word cloud -- {skill_view_choice}", width=wc_width)
 
 st.markdown("#### Skill cluster vs. domain/occupation")
 st.caption("Does unsupervised skill clustering line up with the known domain taxonomy?")
