@@ -183,6 +183,16 @@ Same `cascading_filters` drill-down mechanism as every other page.
   rather than hiding it behind a fixed default.
 - Same batch-sync staleness limitation as the underlying graph (knowledge-graph.md): the dashboard
   reflects whenever `cluster-nightly` last ran, not the current instant.
+- Cluster-vs-cluster linking (`link_clusters_by_domain`) is by shared majority domain, not a
+  direct similarity measure between the two independent embedding spaces -- confirmed clean 1:1
+  across all 8 clusters on both sides for this dataset, but that's a property of this data's
+  domain structure, not a guarantee the method holds at a different scale/distribution.
+- `Job.posted_at` is unusable as a trend signal for this dataset: all 3,000 golden jobs share one
+  recent generation timestamp (confirmed directly against Postgres -- a dataset-seeding artifact,
+  not organic posting activity). The per-cluster trend charts use real candidate-engagement event
+  volume (`analytics.behavioral_events`, `entity_type="job"`) instead, which does have genuine
+  week-to-week variation -- but that's a proxy for "interest in this job segment," not literally
+  "jobs being posted."
 
 ## Roadmap
 

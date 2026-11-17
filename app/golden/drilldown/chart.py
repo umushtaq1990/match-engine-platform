@@ -66,6 +66,23 @@ def render_k_diagnostic_chart(diagnostics: pd.DataFrame, current_k: int, title: 
     st.plotly_chart(fig, use_container_width=True)
 
 
+def render_dual_trend_chart(
+    week_labels: list[str], series_a, name_a: str, series_b, name_b: str, title: str, height: int = 380
+) -> None:
+    """Two weekly count series on one figure, two y-axes -- used for
+    things on very different scales (new-candidate counts vs. job
+    engagement-event counts at this dataset's size) so both trends'
+    shapes are readable together, same dual-axis pattern as
+    render_k_diagnostic_chart."""
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Scatter(x=week_labels, y=series_a, name=name_a, mode="lines+markers"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=week_labels, y=series_b, name=name_b, mode="lines+markers"), secondary_y=True)
+    fig.update_layout(title=title, height=height, legend=dict(orientation="h", y=-0.3))
+    fig.update_yaxes(title_text=name_a, secondary_y=False)
+    fig.update_yaxes(title_text=name_b, secondary_y=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def render_composition_bar_chart(crosstab: pd.DataFrame, title: str, height: int = 420) -> None:
     """One 100%-stacked bar per crosstab row, segment widths = proportion
     within that row, but each segment is *labeled* with the real count --

@@ -19,14 +19,19 @@ from app.golden.drilldown.chart import (
     cascading_filters,
     render_composition_bar_chart,
     render_count_heatmap,
+    render_dual_trend_chart,
     render_k_diagnostic_chart,
     render_population_bar_chart,
     render_top_skills_bar_chart,
 )
 from app.golden.drilldown.data import (
+    WEEK_BUCKET_LABELS,
+    WEEK_BUCKET_ORDER,
     compute_k_diagnostics,
     compute_top_skills,
     compute_tsne_projection,
+    compute_weekly_creation_trend,
+    compute_weekly_job_engagement_trend,
     generate_skill_wordcloud,
     link_clusters_by_domain,
     load_candidate_skill_names,
@@ -36,6 +41,7 @@ from app.golden.drilldown.data import (
     load_skill_cluster_rows,
     name_clusters_by_majority,
 )
+from app.ingestion.source_models import Candidate
 
 st.set_page_config(page_title="Job Skills Clustering 360", layout="wide")
 st.title("Job Skills Clustering 360 -- job skill identity and taxonomy")
@@ -203,6 +209,32 @@ else:
     render_top_skills_bar_chart(
         pool_skills, f"Top 10 skills in the talent pool -- {linked_label}", height=450
     )
+
+st.markdown("#### Trend: candidate interest in this cluster + growth of the linked talent pool")
+st.caption(
+    "Real candidate engagement with jobs in this cluster -- views/clicks/applications/saves, "
+    "`analytics.behavioral_events` (left axis) -- against new candidates joining the linked "
+    "candidate cluster (real `Candidate.created_at`, right axis). Not `Job.posted_at` for this "
+    "cluster's own jobs -- checked first and found unusable: all 3,000 golden jobs share one "
+    "recent generation timestamp, a dataset-seeding artifact, not organic posting activity."
+)
+session = SessionLocal()
+try:
+    job_engagement_trend = compute_weekly_job_engagement_trend(session, list(scoped_job_ids))
+    candidate_trend = compute_weekly_creation_trend(
+        session, Candidate, Candidate.created_at, list(linked_candidate_ids)
+    )
+finally:
+    session.close()
+week_labels = [WEEK_BUCKET_LABELS[b] for b in WEEK_BUCKET_ORDER]
+job_series = [job_engagement_trend.set_index("week_bucket")["count"].get(b, 0) for b in WEEK_BUCKET_ORDER]
+candidate_series = [
+    candidate_trend.set_index("week_bucket")["count"].get(b, 0) for b in WEEK_BUCKET_ORDER
+]
+render_dual_trend_chart(
+    week_labels, job_series, "Job engagement events", candidate_series, "New candidates",
+    f"{skill_view_choice} job engagement vs. {linked_label} candidate growth",
+)
 
 st.markdown("#### Job cluster vs. domain/occupation")
 st.caption("Does unsupervised job clustering line up with the known domain taxonomy?")

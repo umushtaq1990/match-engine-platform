@@ -847,3 +847,72 @@ def load_job_skill_names(session: Session, job_ids: list[int]) -> pd.DataFrame:
         .where(JobSkill.job_id.in_(job_ids))
     ).all()
     return pd.DataFrame(rows, columns=["job_id", "skill_name"])
+
+
+def compute_weekly_creation_trend(
+    session: Session, model, timestamp_column, entity_ids: list[int], num_weeks: int = 4
+) -> pd.DataFrame:
+    """How many of `entity_ids` were created in each of the last
+    `num_weeks` non-overlapping 7-day buckets (bucket 1 = most recent) --
+    "how fast is this cluster growing," using whichever real timestamp
+    the entity already has (`Candidate.created_at`, `Job.posted_at`), not
+    a new field. Same bucket scheme as load_weekly_event_trend
+    (WEEK_BUCKET_LABELS/_ORDER) so an inflow chart and a behavioral-event
+    chart read the same way. Missing weeks are real zeros, not absent
+    rows -- reindexed so every week in range appears even with no
+    creations in it.
+    """
+    weeks = list(range(1, num_weeks + 1))
+    if not entity_ids:
+        return pd.DataFrame({"week_bucket": weeks, "count": [0] * num_weeks})
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(days=num_weeks * 7)
+    rows = session.execute(
+        select(timestamp_column).where(
+            model.id.in_(entity_ids), timestamp_column >= window_start,
+        )
+    ).scalars().all()
+    if not rows:
+        return pd.DataFrame({"week_bucket": weeks, "count": [0] * num_weeks})
+    timestamps = pd.to_datetime(pd.Series(rows), utc=True)
+    days_ago = (now - timestamps).dt.days
+    week_bucket = (days_ago // 7 + 1).clip(upper=num_weeks)
+    counts = week_bucket.value_counts().reindex(weeks, fill_value=0)
+    return pd.DataFrame({"week_bucket": weeks, "count": counts.to_numpy()})
+
+
+def compute_weekly_job_engagement_trend(
+    session: Session, job_ids: list[int], num_weeks: int = 4
+) -> pd.DataFrame:
+    """How many real candidate-side behavioral events (views/clicks/
+    applications/saves -- `BehavioralEvent.entity_type="job"`) referenced
+    these jobs in each of the last `num_weeks` non-overlapping 7-day
+    buckets. NOT `Job.posted_at`, deliberately -- checked first, and it
+    turned out unusable: all 3,000 golden jobs share one recent
+    generation timestamp (confirmed directly against Postgres), a
+    dataset-seeding artifact, not organic posting activity; every
+    cluster would show an identical single-week spike and nothing else,
+    which would be presenting an artifact as a finding. Real candidate
+    engagement with these jobs (received_at genuinely spread across all
+    4 buckets, confirmed) is the honest trend signal for "how much
+    interest is this job segment actually getting," not a new field.
+    """
+    weeks = list(range(1, num_weeks + 1))
+    if not job_ids:
+        return pd.DataFrame({"week_bucket": weeks, "count": [0] * num_weeks})
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(days=num_weeks * 7)
+    rows = session.execute(
+        select(BehavioralEvent.received_at).where(
+            BehavioralEvent.entity_type == "job",
+            BehavioralEvent.entity_id.in_(job_ids),
+            BehavioralEvent.received_at >= window_start,
+        )
+    ).scalars().all()
+    if not rows:
+        return pd.DataFrame({"week_bucket": weeks, "count": [0] * num_weeks})
+    timestamps = pd.to_datetime(pd.Series(rows), utc=True)
+    days_ago = (now - timestamps).dt.days
+    week_bucket = (days_ago // 7 + 1).clip(upper=num_weeks)
+    counts = week_bucket.value_counts().reindex(weeks, fill_value=0)
+    return pd.DataFrame({"week_bucket": weeks, "count": counts.to_numpy()})
