@@ -40,8 +40,8 @@ from app.golden.drilldown.data import (
     name_clusters_by_majority,
 )
 
-st.set_page_config(page_title="Skill Clusters 360", layout="wide")
-st.title("Skill Clusters 360 -- skill identity, taxonomy, and real engagement")
+st.set_page_config(page_title="Candidate Skills Clustering 360", layout="wide")
+st.title("Candidate Skills Clustering 360 -- skill identity, taxonomy, and real engagement")
 
 session = SessionLocal()
 try:

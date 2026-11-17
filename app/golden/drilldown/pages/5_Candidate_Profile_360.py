@@ -1,5 +1,5 @@
 """Candidate Profile 360: the "zoom all the way in" complement to page 4's
-population-level Skill Clusters 360. Pick one golden candidate and see,
+population-level Candidate Skills Clustering 360. Pick one golden candidate and see,
 in one place: who they are (name/location/years of experience -- no age
 or photo field exists anywhere in this schema, confirmed; a decorative
 initials avatar stands in for a photo, colored by their skill cluster),

@@ -99,7 +99,7 @@ the Louvain community its members most commonly belong to, and what fraction agr
 (own image, `docker/Dockerfile.clustering` -- its dependency profile spans both the
 Ollama-embeddings world and the Neo4j-driver world, neither existing image alone covers it).
 
-### Dashboard (`app/golden/drilldown/pages/4_Skill_Clusters_360.py`)
+### Dashboard (`app/golden/drilldown/pages/4_Candidate_Skills_Clustering_360.py`)
 
 A fourth page in the existing drilldown app: a t-SNE scatter colored by k-means cluster, a
 cluster-vs-domain/occupation crosstab (does unsupervised clustering line up with known structure),
