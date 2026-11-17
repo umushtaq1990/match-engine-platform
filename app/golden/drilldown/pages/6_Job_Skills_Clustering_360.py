@@ -28,9 +28,12 @@ from app.golden.drilldown.data import (
     compute_top_skills,
     compute_tsne_projection,
     generate_skill_wordcloud,
+    link_clusters_by_domain,
+    load_candidate_skill_names,
     load_job_demographics,
     load_job_skill_cluster_rows,
     load_job_skill_names,
+    load_skill_cluster_rows,
     name_clusters_by_majority,
 )
 
@@ -54,6 +57,10 @@ session = SessionLocal()
 try:
     demographics = load_job_demographics(session, rows["job_id"].tolist())
     skill_name_rows = load_job_skill_names(session, rows["job_id"].tolist())
+    candidate_cluster_rows = load_skill_cluster_rows(session)
+    candidate_skill_name_rows = load_candidate_skill_names(
+        session, candidate_cluster_rows["candidate_id"].tolist()
+    )
 finally:
     session.close()
 
@@ -67,6 +74,17 @@ merged["job_cluster_name"] = merged["cluster_label"].map(
 )
 merged["louvain_community_name"] = merged["louvain_community_id"].map(
     name_clusters_by_majority(merged, "louvain_community_id", "domain")
+)
+
+# The job-side mirror of page 4's candidate-to-job link -- each cluster
+# is its own independent k-means fit, never the same cluster by index,
+# but both land on the same real domain taxonomy. See
+# data.py's link_clusters_by_domain.
+job_to_candidate_cluster = link_clusters_by_domain(
+    rows, "cluster_label", candidate_cluster_rows, "cluster_label"
+)
+candidate_cluster_rows["candidate_cluster_name"] = candidate_cluster_rows["cluster_label"].map(
+    name_clusters_by_majority(candidate_cluster_rows, "cluster_label", "domain")
 )
 
 col1, col2, col3 = st.columns(3)
@@ -155,6 +173,36 @@ with skills_right:
             scoped_skill_rows["skill_name"].value_counts(), width=wc_width, height=skills_chart_height,
         )
         st.image(wc_image, caption=f"Word cloud -- {skill_view_choice}", width=wc_width)
+
+st.markdown("#### Candidate pool link: who's available for this job segment")
+if skill_view_choice == "Overall (all clustered jobs)":
+    linked_candidate_ids = set(candidate_cluster_rows["candidate_id"])
+    linked_label = "all clustered candidates (no single job cluster selected above)"
+else:
+    raw_cluster_label = merged.loc[
+        merged["job_cluster_name"] == skill_view_choice, "cluster_label"
+    ].iloc[0]
+    linked_candidate_clusters = job_to_candidate_cluster.get(raw_cluster_label, [])
+    in_linked_clusters = candidate_cluster_rows["cluster_label"].isin(linked_candidate_clusters)
+    linked_names = sorted(candidate_cluster_rows.loc[in_linked_clusters, "candidate_cluster_name"].unique())
+    linked_candidate_ids = set(candidate_cluster_rows.loc[in_linked_clusters, "candidate_id"])
+    linked_label = ", ".join(linked_names) if linked_names else "(no candidate cluster shares this domain)"
+st.caption(
+    f"Linked candidate cluster(s) by shared majority domain: **{linked_label}**. Popularity-ranked "
+    "skills across those candidates (same compute_top_skills method as the trending-skills chart "
+    "above, just on the linked candidate population) -- what the available talent pool for this "
+    "job segment already has, not an assumption."
+)
+linked_candidate_skill_rows = candidate_skill_name_rows[
+    candidate_skill_name_rows["candidate_id"].isin(linked_candidate_ids)
+]
+pool_skills = compute_top_skills(linked_candidate_skill_rows, population_size=len(linked_candidate_ids))
+if pool_skills.empty:
+    st.info("No linked candidate data for this selection.")
+else:
+    render_top_skills_bar_chart(
+        pool_skills, f"Top 10 skills in the talent pool -- {linked_label}", height=450
+    )
 
 st.markdown("#### Job cluster vs. domain/occupation")
 st.caption("Does unsupervised job clustering line up with the known domain taxonomy?")

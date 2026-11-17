@@ -34,8 +34,11 @@ from app.golden.drilldown.data import (
     compute_top_skills,
     compute_tsne_projection,
     generate_skill_wordcloud,
+    link_clusters_by_domain,
     load_behavioral_rows,
     load_candidate_skill_names,
+    load_job_skill_cluster_rows,
+    load_job_skill_names,
     load_skill_cluster_rows,
     name_clusters_by_majority,
 )
@@ -60,8 +63,20 @@ if rows.empty:
 session = SessionLocal()
 try:
     skill_name_rows = load_candidate_skill_names(session, rows["candidate_id"].tolist())
+    job_cluster_rows = load_job_skill_cluster_rows(session)
+    job_skill_name_rows = load_job_skill_names(session, job_cluster_rows["job_id"].tolist())
 finally:
     session.close()
+
+# Each cluster is its own independent k-means fit over its own embedding
+# space -- never the same cluster by index -- but both land on the same
+# real domain taxonomy, so this is the cheap, already-available link
+# between "this candidate segment" and "the job market for it." See
+# data.py's link_clusters_by_domain.
+candidate_to_job_cluster = link_clusters_by_domain(rows, "cluster_label", job_cluster_rows, "cluster_label")
+job_cluster_rows["job_cluster_name"] = job_cluster_rows["cluster_label"].map(
+    name_clusters_by_majority(job_cluster_rows, "cluster_label", "domain")
+)
 
 behavioral_rows["behavioral_cluster"] = compute_behavioral_clusters(behavioral_rows)
 merged = rows.merge(
@@ -192,6 +207,32 @@ with skills_right:
             scoped_skill_rows["skill_name"].value_counts(), width=wc_width, height=skills_chart_height,
         )
         st.image(wc_image, caption=f"Word cloud -- {skill_view_choice}", width=wc_width)
+
+st.markdown("#### Job market link: hot skills for this candidate segment")
+if skill_view_choice == "Overall (all clustered candidates)":
+    linked_job_ids = set(job_cluster_rows["job_id"])
+    linked_label = "all clustered jobs (no single candidate cluster selected above)"
+else:
+    raw_cluster_label = merged.loc[
+        merged["skill_cluster_name"] == skill_view_choice, "cluster_label"
+    ].iloc[0]
+    linked_job_clusters = candidate_to_job_cluster.get(raw_cluster_label, [])
+    in_linked_clusters = job_cluster_rows["cluster_label"].isin(linked_job_clusters)
+    linked_names = sorted(job_cluster_rows.loc[in_linked_clusters, "job_cluster_name"].unique())
+    linked_job_ids = set(job_cluster_rows.loc[in_linked_clusters, "job_id"])
+    linked_label = ", ".join(linked_names) if linked_names else "(no job cluster shares this domain)"
+st.caption(
+    f"Linked job cluster(s) by shared majority domain: **{linked_label}**. Popularity-ranked "
+    "required skills across those jobs (app/golden/drilldown/data.py's compute_top_skills, same "
+    "method as the trending-skills chart above, just on the linked job population) -- what the "
+    "job market actually wants from candidates in this segment, not an assumption."
+)
+linked_job_skill_rows = job_skill_name_rows[job_skill_name_rows["job_id"].isin(linked_job_ids)]
+hot_skills = compute_top_skills(linked_job_skill_rows, population_size=len(linked_job_ids))
+if hot_skills.empty:
+    st.info("No linked job data for this selection.")
+else:
+    render_top_skills_bar_chart(hot_skills, f"Top 10 hot skills -- {linked_label}", height=450)
 
 st.markdown("#### Skill cluster vs. domain/occupation")
 st.caption("Does unsupervised skill clustering line up with the known domain taxonomy?")

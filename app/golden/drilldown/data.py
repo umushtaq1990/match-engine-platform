@@ -447,6 +447,30 @@ def name_clusters_by_majority(rows: pd.DataFrame, cluster_col: str, label_col: s
     return mapping
 
 
+def link_clusters_by_domain(
+    source_rows: pd.DataFrame, source_cluster_col: str, target_rows: pd.DataFrame, target_cluster_col: str,
+) -> dict:
+    """The cheap, already-available link between independently-fit
+    candidate and job clusterings: each is its own k-means fit over its
+    own embedding space, never the same cluster by index, but both land
+    on the same real domain taxonomy -- so a source cluster links to
+    whichever target cluster(s) share its majority domain (plural,
+    returned as a list, since the two fits aren't guaranteed to be
+    perfectly 1:1, even though they measured out clean here). See
+    docs/architecture/data-platform/skill-clustering.md.
+    """
+    source_domain = {
+        cid: g["domain"].value_counts().idxmax() for cid, g in source_rows.groupby(source_cluster_col)
+    }
+    target_domain = {
+        cid: g["domain"].value_counts().idxmax() for cid, g in target_rows.groupby(target_cluster_col)
+    }
+    return {
+        s_cluster: [t for t, t_domain in target_domain.items() if t_domain == s_domain]
+        for s_cluster, s_domain in source_domain.items()
+    }
+
+
 @st.cache_data(show_spinner="Fitting k-means across a range of k for the elbow/silhouette diagnostic...")
 def compute_k_diagnostics(vectors, k_range=range(2, 13)) -> pd.DataFrame:
     """Elbow (inertia) + silhouette score per k -- the actual justification
