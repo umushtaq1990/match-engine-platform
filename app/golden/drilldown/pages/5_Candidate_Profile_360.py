@@ -12,7 +12,12 @@ skill-gap views built the same way over two different populations:
 rank skills by how many of the ~10 similar candidates (or top matching
 jobs, via each job's real required-skill set from the matching engine's
 own ScoreBreakdown) have/require them, subtract skills this candidate
-already has, and whatever's left is the gap. See
+already has, and whatever's left is the gap. Closes with a market-signal
+read on each job-demanded missing skill (emerging/rare-among-peers vs.
+catching-up/common-among-peers -- a heuristic, labeled as such, not
+validated market data) and real course recommendations
+(app/matching/course_recommendations.py, Use Case E, unmodified) tagged
+against that same signal. See
 docs/architecture/data-platform/skill-clustering.md.
 """
 import pandas as pd
@@ -23,8 +28,10 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.golden.drilldown.chart import render_top_skills_bar_chart
 from app.golden.drilldown.data import (
+    EMERGING_SKILL_PEER_THRESHOLD,
     compute_job_skill_gap,
     compute_peer_skill_gap,
+    compute_skill_market_signal,
     find_similar_candidates,
     load_behavioral_rows,
     load_candidate_demographics,
@@ -36,6 +43,7 @@ from app.golden.drilldown.data import (
 )
 from app.golden.select import select_existing_golden_candidate_ids
 from app.ingestion.source_models import Skill
+from app.matching.course_recommendations import recommend_courses_for_candidate
 from app.matching.rank import rank_jobs_for_candidate
 
 st.set_page_config(page_title="Candidate Profile 360", layout="wide")
@@ -183,22 +191,86 @@ with gap_left:
         render_top_skills_bar_chart(
             peer_gap, "Skills peers have that this candidate doesn't", height=350
         )
+job_required_skill_names = [
+    {
+        skill_name_by_id.get(i, f"#{i}")
+        for i in (m.score.matching_required_skill_ids | m.score.missing_required_skill_ids)
+    }
+    for m in matches
+]
+job_gap = compute_job_skill_gap(target_skill_names, job_required_skill_names)
 with gap_right:
     st.markdown("##### vs. top matching jobs")
     if not matches:
         st.info("No matching jobs to compare against.")
+    elif job_gap.empty:
+        st.info("This candidate already has every required skill across their top matching jobs.")
     else:
-        job_required_skill_names = [
-            {
-                skill_name_by_id.get(i, f"#{i}")
-                for i in (m.score.matching_required_skill_ids | m.score.missing_required_skill_ids)
-            }
-            for m in matches
-        ]
-        job_gap = compute_job_skill_gap(target_skill_names, job_required_skill_names)
-        if job_gap.empty:
-            st.info("This candidate already has every required skill across their top matching jobs.")
-        else:
-            render_top_skills_bar_chart(
-                job_gap, "Required skills missing from top matching jobs", height=350
-            )
+        render_top_skills_bar_chart(
+            job_gap, "Required skills missing from top matching jobs", height=350
+        )
+
+st.markdown("#### Market signal: emerging vs. catching-up skills")
+st.caption(
+    "A heuristic, not validated market intelligence: for each skill this candidate's top matching "
+    "jobs need but they don't have, what fraction of their similar candidates already have it. "
+    "Low peer adoption + real job demand suggests an emerging/differentiating skill worth learning "
+    "ahead of the curve; high peer adoption means most peers already cleared that baseline -- "
+    "this candidate is behind on it, not ahead of a trend."
+)
+market_signal = compute_skill_market_signal(job_gap, peer_skill_rows, peer_count=len(similar))
+if market_signal.empty:
+    st.info("No job-demanded skill gap to analyze for a market signal.")
+else:
+    signal_fig = px.scatter(
+        market_signal, x="peer_prevalence", y="job_demand_proportion", color="market_signal",
+        text="skill_name",
+        labels={
+            "peer_prevalence": "% of similar candidates who have it",
+            "job_demand_proportion": "% of top matching jobs requiring it",
+        },
+    )
+    signal_fig.update_traces(textposition="top center")
+    signal_fig.add_vline(
+        x=EMERGING_SKILL_PEER_THRESHOLD, line_dash="dash", annotation_text="emerging threshold"
+    )
+    signal_fig.update_layout(height=450)
+    st.plotly_chart(signal_fig, use_container_width=True)
+    st.dataframe(market_signal, use_container_width=True, hide_index=True)
+
+st.markdown("#### Recommended courses")
+st.caption(
+    "Real course-recommendation logic (app/matching/course_recommendations.py, Use Case E), not "
+    "a new implementation -- ranks courses by how much of the gap vs. this candidate's own target "
+    "occupation's skill profile each one covers. Candidates without a stated target occupation "
+    "(~5% of the dataset, by design) can't get this recommendation type."
+)
+session = SessionLocal()
+try:
+    course_recs: list = []
+    no_target_occupation_error: str | None = None
+    try:
+        _, course_recs = recommend_courses_for_candidate(session, candidate_id, top_k=5)
+    except ValueError as e:
+        no_target_occupation_error = str(e)
+finally:
+    session.close()
+
+if no_target_occupation_error:
+    st.info(no_target_occupation_error)
+elif course_recs:
+    course_rows = []
+    for rec in course_recs:
+        covered_names = sorted(skill_name_by_id.get(i, f"#{i}") for i in rec.covered_skill_ids)
+        tags = sorted(set(
+            market_signal.loc[market_signal["skill_name"].isin(covered_names), "market_signal"]
+        )) if not market_signal.empty else []
+        course_rows.append({
+            "course": rec.title,
+            "coverage_score": rec.coverage_score,
+            "covered_skills": ", ".join(covered_names),
+            "market_signal_tags": "; ".join(tags) if tags else "(not in top job-demand gap)",
+        })
+    st.dataframe(pd.DataFrame(course_rows), use_container_width=True, hide_index=True)
+else:
+    st.info("No courses found that cover this candidate's occupation skill gap.")

@@ -637,3 +637,39 @@ def compute_job_skill_gap(
     return pd.DataFrame({
         "skill_name": counts.index, "count": counts.to_numpy(), "proportion": counts.to_numpy() / job_count,
     }).reset_index(drop=True)
+
+
+EMERGING_SKILL_PEER_THRESHOLD = 0.2
+
+
+def compute_skill_market_signal(
+    job_gap: pd.DataFrame, peer_skill_rows: pd.DataFrame, peer_count: int,
+    emerging_threshold: float = EMERGING_SKILL_PEER_THRESHOLD,
+) -> pd.DataFrame:
+    """A heuristic, not validated market intelligence (labeled as such
+    wherever shown): for each job-demanded skill this candidate is
+    missing, what fraction of their similar candidates already have it.
+    Low peer adoption + the job demand `job_gap` already establishes
+    suggests an emerging/differentiating skill worth learning ahead of
+    the curve; high peer adoption suggests a baseline most peers have
+    already cleared -- this candidate is behind on it, not ahead of a
+    trend. Closes the loop the user asked for: course recommendations
+    should be informed by both "what jobs want" and "what my peers
+    already have," not just the first alone.
+    """
+    if job_gap.empty:
+        return pd.DataFrame(columns=[
+            "skill_name", "job_demand_proportion", "peer_prevalence", "market_signal",
+        ])
+    peer_counts = peer_skill_rows["skill_name"].value_counts()
+    peer_prevalence = job_gap["skill_name"].map(
+        lambda name: (peer_counts.get(name, 0) / peer_count) if peer_count else 0.0
+    )
+    market_signal = peer_prevalence.apply(
+        lambda p: "Emerging (rare among peers, in demand)" if p < emerging_threshold
+        else "Catching up (common among peers)"
+    )
+    return pd.DataFrame({
+        "skill_name": job_gap["skill_name"], "job_demand_proportion": job_gap["proportion"],
+        "peer_prevalence": peer_prevalence, "market_signal": market_signal,
+    }).reset_index(drop=True)
