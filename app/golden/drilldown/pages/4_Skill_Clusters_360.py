@@ -23,6 +23,7 @@ from app.golden.drilldown.chart import (
     render_composition_bar_chart,
     render_count_heatmap,
     render_k_diagnostic_chart,
+    render_population_bar_chart,
     render_top_skills_bar_chart,
 )
 from app.golden.drilldown.data import (
@@ -148,6 +149,13 @@ fig = px.scatter(
 )
 fig.update_layout(height=550)
 st.plotly_chart(fig, use_container_width=True)
+
+st.markdown(f"#### Population distribution by {color_choice.lower()}")
+st.caption(
+    "Cluster sizes are rarely even -- this is the raw candidate count behind every crosstab/"
+    "composition chart below, for whichever coloring is selected above."
+)
+render_population_bar_chart(merged, color_column, f"Candidates per {color_choice.lower()}")
 
 st.markdown("#### Trending skills")
 st.caption(

@@ -101,6 +101,20 @@ def render_count_heatmap(crosstab: pd.DataFrame, title: str, height: int = 420) 
     st.plotly_chart(fig, use_container_width=True)
 
 
+def render_population_bar_chart(rows: pd.DataFrame, group_col: str, title: str, height: int = 350) -> None:
+    """How many candidates fall into each value of `group_col` -- cluster
+    sizes are rarely even, and a reader comparing a 48-candidate cluster
+    against a 510-candidate one in a crosstab/composition chart needs
+    this raw-size context right next to it, not just proportions."""
+    counts = rows[group_col].value_counts().sort_index()
+    fig = go.Figure(go.Bar(
+        x=counts.index.astype(str), y=counts.to_numpy(),
+        text=counts.to_numpy(), textposition="outside",
+    ))
+    fig.update_layout(title=title, height=height, xaxis_title=group_col, yaxis_title="Candidate count")
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def render_top_skills_bar_chart(top_skills: pd.DataFrame, title: str, height: int = 420) -> None:
     """Horizontal bar, one per top skill, sorted so the most common ends
     up on top -- the bar's length is the real proportion of the
