@@ -139,24 +139,22 @@ fig = px.scatter(
 fig.update_layout(height=550)
 st.plotly_chart(fig, use_container_width=True)
 
-left, right = st.columns(2)
-with left:
-    st.markdown("#### Skill cluster vs. domain/occupation")
-    st.caption("Does unsupervised skill clustering line up with the known domain taxonomy?")
-    domain_crosstab = pd.crosstab(merged["skill_cluster_name"], merged["domain"])
-    render_composition_bar_chart(domain_crosstab, "Domain composition per skill cluster")
-    with st.expander("Show exact table"):
-        st.dataframe(domain_crosstab, use_container_width=True)
-with right:
-    st.markdown("#### Skill cluster vs. Louvain community")
-    st.caption(
-        "The explicit link between the two clustering methods -- shown as a real crosstab, "
-        "not forced into one mapping, since they're independent methods and won't always agree."
-    )
-    louvain_crosstab = pd.crosstab(merged["skill_cluster_name"], merged["louvain_community_name"])
-    render_count_heatmap(louvain_crosstab, "Skill cluster x Louvain community (candidate counts)")
-    with st.expander("Show exact table"):
-        st.dataframe(louvain_crosstab, use_container_width=True)
+st.markdown("#### Skill cluster vs. domain/occupation")
+st.caption("Does unsupervised skill clustering line up with the known domain taxonomy?")
+domain_crosstab = pd.crosstab(merged["skill_cluster_name"], merged["domain"])
+render_composition_bar_chart(domain_crosstab, "Domain composition per skill cluster", height=650)
+with st.expander("Show exact table"):
+    st.dataframe(domain_crosstab, use_container_width=True)
+
+st.markdown("#### Skill cluster vs. Louvain community")
+st.caption(
+    "The explicit link between the two clustering methods -- shown as a real crosstab, "
+    "not forced into one mapping, since they're independent methods and won't always agree."
+)
+louvain_crosstab = pd.crosstab(merged["skill_cluster_name"], merged["louvain_community_name"])
+render_count_heatmap(louvain_crosstab, "Skill cluster x Louvain community (candidate counts)", height=650)
+with st.expander("Show exact table"):
+    st.dataframe(louvain_crosstab, use_container_width=True)
 
 st.markdown("#### Skill cluster vs. platform engagement (segment / persona / behavioral cluster)")
 st.caption("The 360 view: skill identity next to how candidates actually behave on the platform.")

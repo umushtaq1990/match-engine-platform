@@ -66,12 +66,14 @@ def render_k_diagnostic_chart(diagnostics: pd.DataFrame, current_k: int, title: 
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_composition_bar_chart(crosstab: pd.DataFrame, title: str) -> None:
+def render_composition_bar_chart(crosstab: pd.DataFrame, title: str, height: int = 420) -> None:
     """One 100%-stacked bar per crosstab row, segment widths = proportion
     within that row, but each segment is *labeled* with the real count --
     composition (does this cluster skew toward one category?) is the
     visual story, the exact number stays on the chart rather than only
-    living in a separate table."""
+    living in a separate table. Stacked (not grouped) deliberately: the
+    point is comparing a category's share *within* each cluster, which a
+    grouped bar doesn't show as directly."""
     pct = crosstab.div(crosstab.sum(axis=1), axis=0) * 100
     fig = go.Figure()
     for col in crosstab.columns:
@@ -80,13 +82,13 @@ def render_composition_bar_chart(crosstab: pd.DataFrame, title: str) -> None:
             text=crosstab[col], texttemplate="%{text}", textposition="inside",
         ))
     fig.update_layout(
-        barmode="stack", title=title, height=420, yaxis_title="% of row (count labeled)",
+        barmode="stack", title=title, height=height, yaxis_title="% of row (count labeled)",
         legend=dict(orientation="h", y=-0.3),
     )
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_count_heatmap(crosstab: pd.DataFrame, title: str) -> None:
+def render_count_heatmap(crosstab: pd.DataFrame, title: str, height: int = 420) -> None:
     """Cell color = count, cell text = the same count -- for a crosstab
     too wide for a stacked bar's color-per-segment to stay legible (e.g.
     cluster x cluster), a heatmap shows concentration at a glance while
@@ -95,7 +97,7 @@ def render_count_heatmap(crosstab: pd.DataFrame, title: str) -> None:
         crosstab, text_auto=True, aspect="auto", title=title,
         labels={"x": crosstab.columns.name or "", "y": crosstab.index.name or "", "color": "count"},
     )
-    fig.update_layout(height=420)
+    fig.update_layout(height=height)
     st.plotly_chart(fig, use_container_width=True)
 
 
