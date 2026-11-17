@@ -501,12 +501,15 @@ def compute_top_skills(skill_rows: pd.DataFrame, population_size: int, top_n: in
     })
 
 
-def generate_skill_wordcloud(skill_counts: "pd.Series"):
+def generate_skill_wordcloud(skill_counts: "pd.Series", width: int = 600, height: int = 450):
     """A word cloud sized by how many candidates have each skill -- same
     underlying counts as compute_top_skills, just a visual, not a second
     source of truth. Returns a PIL Image (via WordCloud.to_image(), no
-    matplotlib pyplot call needed) for st.image to render directly."""
+    matplotlib pyplot call needed) for st.image to render directly.
+    Default width/height is taller than wide (600x450, not the library's
+    wide default) so it fills a narrower column's height rather than
+    leaving empty space below it next to a taller bar chart."""
     from wordcloud import WordCloud
 
-    wc = WordCloud(width=900, height=350, background_color="white", colormap="viridis")
+    wc = WordCloud(width=width, height=height, background_color="white", colormap="viridis")
     return wc.generate_from_frequencies(skill_counts.to_dict()).to_image()

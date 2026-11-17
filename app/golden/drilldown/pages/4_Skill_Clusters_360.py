@@ -164,15 +164,22 @@ else:
 scoped_skill_rows = skill_name_rows[skill_name_rows["candidate_id"].isin(scoped_candidate_ids)]
 top_skills = compute_top_skills(scoped_skill_rows, population_size=len(scoped_candidate_ids))
 
+skills_chart_height = 500
 skills_left, skills_right = st.columns([3, 2])
 with skills_left:
-    render_top_skills_bar_chart(top_skills, f"Top 10 skills -- {skill_view_choice}", height=450)
+    render_top_skills_bar_chart(
+        top_skills, f"Top 10 skills -- {skill_view_choice}", height=skills_chart_height
+    )
 with skills_right:
     if top_skills.empty:
         st.info("No skill data for this selection.")
     else:
+        # Portrait aspect (narrower than tall), not the library's wide
+        # default -- this column is 2/5 the page width vs. the bar
+        # chart's 3/5, so a tall image fills roughly the same vertical
+        # space once Streamlit scales it to the column's width.
         wc_image = generate_skill_wordcloud(
-            scoped_skill_rows["skill_name"].value_counts()
+            scoped_skill_rows["skill_name"].value_counts(), width=380, height=skills_chart_height,
         )
         st.image(wc_image, caption=f"Word cloud -- {skill_view_choice}", use_column_width=True)
 
