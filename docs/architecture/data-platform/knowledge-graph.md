@@ -111,6 +111,19 @@ Clustering candidates and clustering jobs, two *independent* runs, over two diff
 
 **Reading the purity numbers honestly, a granularity mismatch, not a clustering failure**: candidate purity (0.2891) is noticeably higher than job purity (0.0495) against the same kind of check (most-common `occupation_title` per community). Occupation is a much finer-grained label (150 distinct occupations) than the 4 broad domains these communities actually represent, even a *perfectly* domain-pure job community spanning ~37 occupations evenly would cap out near 1/37 ≈ 0.027 purity under that ground truth, so 0.0495 is modestly *above* that naive floor, not evidence of no structure (confirmed separately: modularity 0.6065, a well-separated graph). The candidate/job purity gap itself is an open question, not chased further in this pass, a real avenue for future work if this capability is pushed further.
 
+### Persisted and linked to a faster, independent clustering method
+
+`cluster_entities.cluster("candidate")`'s `communityId` only ever lived in Neo4j and this script's
+own printed report, until `app/clustering/nightly_job.py` (see
+[skill-clustering.md](skill-clustering.md)) started writing it back onto Postgres's new
+`candidate_skill_clusters` table, alongside a k-means cluster fit directly over each candidate's
+skills embedding. The two are independent methods (Louvain over the graph vs. k-means over a
+dense vector space) and don't always agree 1:1 -- the new drilldown page crosstabs them side by
+side rather than forcing a single mapping. The reason for running both: Louvain gives a more
+explainable, shared-skill-grounded community, but (like any global community-detection pass) has
+no cheap way to place a single new point, so it's a nightly batch step; k-means' nearest-centroid
+lookup is the real-time assignment a new signup or profile edit actually gets.
+
 ## Known Limitations
 
 - Batch sync only, the graph can be stale relative to Postgres between sync runs. Acceptable since nothing queries the graph live yet.
@@ -129,4 +142,5 @@ Clustering candidates and clustering jobs, two *independent* runs, over two diff
 - [`docs/architecture/data-platform/data-at-scale.md`](data-at-scale.md): the domain-anchored synthetic data generator this subsystem's clustering signal depends on.
 - [`docs/architecture/data-platform/embedding-matching.md`](embedding-matching.md): the multi-dimensional blend a future graph-based relatedness signal would feed into.
 - [`docs/architecture/application-services/behavioral-analytics.md`](../application-services/behavioral-analytics.md): the event log the `ENGAGED_WITH` edge aggregates.
+- [`docs/architecture/data-platform/skill-clustering.md`](skill-clustering.md): the real-time k-means assignment path this graph's Louvain clustering is now persisted and linked against.
 - [`docs/architecture.md`](../../architecture.md): system-wide overview.

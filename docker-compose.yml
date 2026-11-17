@@ -1024,6 +1024,34 @@ services:
         condition: service_healthy
     profiles: ["tools"]
 
+  # The "evening job": refreshes skills embeddings, refits the real-time
+  # k-means assignment centroids, re-syncs + re-clusters the Neo4j graph
+  # (graph-sync + graph-cluster-entities, reused directly, not
+  # reimplemented), and links each candidate's fresh Louvain community
+  # back onto its k-means row. See app/clustering/nightly_job.py and
+  # docs/architecture/data-platform/skill-clustering.md. No real
+  # scheduler in this repo (confirmed, same as every other `docker
+  # compose run --rm` batch job here) -- this is the job a real
+  # deployment would put on a nightly cron.
+  # Run explicitly: docker compose run --rm cluster-nightly
+  cluster-nightly:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.clustering
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      OLLAMA_URL: http://ollama:11434
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    profiles: ["tools"]
+
 volumes:
   jme_db_data:
   mlflow_artifacts:

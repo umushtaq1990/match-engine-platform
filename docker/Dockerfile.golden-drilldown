@@ -19,6 +19,10 @@ COPY app/extraction/__init__.py ./app/extraction/__init__.py
 COPY app/analytics/__init__.py ./app/analytics/__init__.py
 COPY app/analytics/models.py ./app/analytics/models.py
 COPY app/analytics/segmentation.py ./app/analytics/segmentation.py
+COPY app/clustering/__init__.py ./app/clustering/__init__.py
+COPY app/clustering/models.py ./app/clustering/models.py
+COPY app/embeddings/__init__.py ./app/embeddings/__init__.py
+COPY app/embeddings/models.py ./app/embeddings/models.py
 COPY app/golden/__init__.py ./app/golden/__init__.py
 COPY app/golden/build_evaluation_tree.py ./app/golden/build_evaluation_tree.py
 COPY app/golden/models.py ./app/golden/models.py

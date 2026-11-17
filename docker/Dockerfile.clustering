@@ -1,0 +1,29 @@
+# The nightly skill-clustering job (app/clustering/): refits k-means over
+# candidates' skills embeddings and links each candidate's Neo4j Louvain
+# community back onto that assignment. Own image because its dependency
+# profile spans two existing services' worlds at once -- Ollama-backed
+# embeddings (app.embeddings, same ollama_client/skill_cache
+# docker/Dockerfile.extraction already needs) AND the Neo4j driver
+# (docker/Dockerfile.graph) -- neither existing image alone covers it, and
+# neither of those services needs scikit-learn. See
+# docs/architecture/data-platform/skill-clustering.md.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY app/requirements-base.txt app/requirements-clustering.txt ./
+RUN pip install --no-cache-dir -r requirements-clustering.txt
+
+COPY app/db.py ./app/db.py
+COPY app/__init__.py ./app/__init__.py
+COPY app/ingestion/__init__.py ./app/ingestion/__init__.py
+COPY app/ingestion/source_models.py ./app/ingestion/source_models.py
+COPY app/analytics/__init__.py ./app/analytics/__init__.py
+COPY app/analytics/models.py ./app/analytics/models.py
+COPY app/extraction/ ./app/extraction/
+COPY app/embeddings/ ./app/embeddings/
+COPY app/graph/ ./app/graph/
+COPY app/clustering/ ./app/clustering/
+COPY data/golden/ ./data/golden/
+
+CMD ["python", "-m", "app.clustering.nightly_job"]

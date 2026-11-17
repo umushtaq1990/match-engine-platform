@@ -47,10 +47,10 @@ See the Technical Architecture diagram for the full picture. By layer:
 | Demo frontend | `frontend` (Streamlit, separate image, Candidate upload-CV/view-matches and Employer view-matches flows over `api`/`extraction`) | `docs/architecture/frontend.md` |
 | Application services | `api` (matching engine, 4 workers), `analytics` (event ingestion + Streams consumer), `extraction` (skill parsing) | `docs/architecture/application-services/matching-engine.md`, `docs/architecture/application-services/behavioral-analytics.md`, `docs/architecture/application-services/skill-extraction.md` |
 | AI/ML serving | `ollama` (qwen2.5:1.5b generation; nomic-embed-text, all-minilm embeddings) | `docs/architecture/ai-ml-and-mlops.md` |
-| Data platform | PostgreSQL 16 + pgvector (relational + vector), Neo4j 5 + GDS (knowledge graph), Redis 7 (rate limit/cache/streams), SeaweedFS (S3-compatible object storage for CV uploads) | `docs/architecture/data-platform/data-model.md`, `docs/architecture/data-platform/knowledge-graph.md`, `docs/architecture/data-platform/redis-infrastructure.md`, `docs/architecture/application-services/skill-extraction.md` |
+| Data platform | PostgreSQL 16 + pgvector (relational + vector), Neo4j 5 + GDS (knowledge graph), Redis 7 (rate limit/cache/streams), SeaweedFS (S3-compatible object storage for CV uploads) | `docs/architecture/data-platform/data-model.md`, `docs/architecture/data-platform/knowledge-graph.md`, `docs/architecture/data-platform/skill-clustering.md`, `docs/architecture/data-platform/redis-infrastructure.md`, `docs/architecture/application-services/skill-extraction.md` |
 | MLOps | MLflow (experiment tracking, its own Postgres-backed store) | `docs/architecture/ai-ml-and-mlops.md` |
 | Observability | Prometheus, cAdvisor, Grafana | `docs/architecture/observability-and-logging.md` |
-| Batch/one-off jobs | `migrate`, `seed`, `dataquality`, `analytics-seed`, `embeddings-compute`, `graph-sync`, `graph-cluster`, `graph-cluster-entities`, `extraction-eval`, `ollama-pull` | each phase's own doc |
+| Batch/one-off jobs | `migrate`, `seed`, `dataquality`, `analytics-seed`, `embeddings-compute`, `graph-sync`, `graph-cluster`, `graph-cluster-entities`, `cluster-nightly`, `extraction-eval`, `ollama-pull` | each phase's own doc |
 
 ## 5. Runtime view
 

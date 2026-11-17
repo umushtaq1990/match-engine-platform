@@ -30,6 +30,8 @@ from app.analytics.segmentation import (
     FREQUENCY_WINDOW_DAYS,
     compute_segment_label,
 )
+from app.clustering.models import CandidateSkillCluster
+from app.embeddings.models import EntityEmbedding
 from app.extraction.models import ExtractionExampleResult, ExtractionRun
 from app.golden.generate_persona_events import assign_personas
 from app.golden.models import GoldenInjectedNoise
@@ -323,3 +325,84 @@ def compute_behavioral_clusters(rows: pd.DataFrame, k: int = DEFAULT_CLUSTER_COU
     scaled = StandardScaler().fit_transform(features.to_numpy())
     labels = KMeans(n_clusters=k, random_state=42, n_init=10).fit_predict(scaled)
     return pd.Series([f"cluster_{label}" for label in labels], index=rows.index, name="cluster")
+
+
+# Mirrors app/embeddings/compute_embeddings.py's own DEFAULT_EMBEDDING_MODEL
+# -- duplicated as a literal rather than imported so this read-only,
+# direct-to-Postgres app (docker/Dockerfile.golden-drilldown) doesn't have
+# to pull in that module's ollama/mlflow dependency chain for one string.
+_SKILLS_EMBEDDING_MODEL = "all-minilm"
+
+
+def load_skill_cluster_rows(session: Session) -> pd.DataFrame:
+    """One row per golden candidate: domain/occupation (same taxonomy as
+    the other pages), the real-time k-means skill cluster + the most
+    recent nightly Louvain community it's been linked to
+    (app/clustering -- see docs/architecture/data-platform/
+    skill-clustering.md), and the raw skills embedding vector itself (for
+    this page's t-SNE projection -- never persisted, see
+    compute_tsne_projection below).
+
+    Candidates without a skills embedding or cluster assignment yet
+    (nightly job hasn't run for them) are dropped, not shown as a
+    misleading "unknown" bucket -- same spirit as the other loaders'
+    `_UNKNOWN` fallback, but a cluster/vector can't be synthesized the way
+    a label can.
+    """
+    golden_ids = select_existing_golden_candidate_ids(session)
+
+    occupation_domain = dict(session.execute(select(Occupation.id, Occupation.domain)).all())
+    occupation_title = dict(session.execute(select(Occupation.id, Occupation.title)).all())
+    candidate_occupation = dict(
+        session.execute(
+            select(Candidate.id, Candidate.primary_occupation_id).where(Candidate.id.in_(golden_ids))
+        ).all()
+    )
+
+    cluster_rows = session.execute(
+        select(
+            CandidateSkillCluster.candidate_id, CandidateSkillCluster.cluster_label,
+            CandidateSkillCluster.louvain_community_id,
+        ).where(CandidateSkillCluster.candidate_id.in_(golden_ids))
+    ).all()
+    vector_by_candidate = dict(
+        session.execute(
+            select(EntityEmbedding.entity_id, EntityEmbedding.vector).where(
+                EntityEmbedding.entity_type == "candidate",
+                EntityEmbedding.dimension == "skills",
+                EntityEmbedding.embedding_model == _SKILLS_EMBEDDING_MODEL,
+                EntityEmbedding.entity_id.in_(golden_ids),
+            )
+        ).all()
+    )
+
+    rows = []
+    for candidate_id, cluster_label, louvain_community_id in cluster_rows:
+        vector = vector_by_candidate.get(candidate_id)
+        if vector is None:
+            continue
+        occupation_id = candidate_occupation.get(candidate_id)
+        rows.append({
+            "candidate_id": candidate_id,
+            "domain": occupation_domain.get(occupation_id) or _UNKNOWN,
+            "occupation": occupation_title.get(occupation_id, _UNKNOWN),
+            "cluster_label": cluster_label,
+            "louvain_community_id": (
+                str(louvain_community_id) if louvain_community_id is not None else _UNKNOWN
+            ),
+            "vector": vector,
+        })
+    return pd.DataFrame(rows)
+
+
+def compute_tsne_projection(vectors, random_state: int = 42):
+    """2D projection for the scatter plot only -- t-SNE has no `.predict()`
+    for a new point (unlike the k-means centroids in
+    app/clustering/kmeans_skill_clusters.py), so this is recomputed fresh
+    from whatever rows are being shown, never stored, and never part of
+    cluster *assignment*."""
+    from sklearn.manifold import TSNE
+
+    perplexity = min(30, max(2, len(vectors) - 1))
+    coords = TSNE(n_components=2, random_state=random_state, perplexity=perplexity).fit_transform(vectors)
+    return coords[:, 0], coords[:, 1]

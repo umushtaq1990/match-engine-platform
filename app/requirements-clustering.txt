@@ -1,0 +1,9 @@
+-r requirements-base.txt
+# app.embeddings.compute_embeddings -> app.extraction.ollama_client/skill_cache
+httpx==0.27.2
+mlflow-skinny==3.17.2
+pgvector==0.5.1
+# app.graph.sync_graph / cluster_entities
+neo4j==6.4.1
+# k-means over skills embeddings (app.clustering.kmeans_skill_clusters)
+scikit-learn==1.5.2

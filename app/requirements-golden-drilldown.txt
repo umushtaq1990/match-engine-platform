@@ -3,6 +3,8 @@ streamlit==1.39.0
 plotly==5.24.1
 pandas==2.2.3
 scikit-learn==1.5.2
+# app.clustering.models / app.embeddings.models -- pgvector.sqlalchemy.Vector
+pgvector==0.5.1
 # app.golden.select -> app.golden.seed_curated_occupations ->
 # app.ingestion.generate_synthetic_data imports Faker at module level even
 # though this app never calls anything that uses it.
