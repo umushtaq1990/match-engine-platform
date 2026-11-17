@@ -347,6 +347,14 @@ def compute_behavioral_k_diagnostics(rows: pd.DataFrame, k_range=range(2, 13)) -
     return compute_k_diagnostics(_scaled_behavioral_features(rows), k_range=k_range)
 
 
+def compute_behavioral_feature_vectors(rows: pd.DataFrame):
+    """Public entry point to the same scaled KPI vectors
+    compute_behavioral_clusters fits on -- for the Behavioral Analytics
+    page's t-SNE projection (compute_tsne_projection takes any vector
+    array, same as the skills-embedding pages use it for)."""
+    return _scaled_behavioral_features(rows)
+
+
 # Mirrors app/embeddings/compute_embeddings.py's own DEFAULT_EMBEDDING_MODEL
 # -- duplicated as a literal rather than imported so this read-only,
 # direct-to-Postgres app (docker/Dockerfile.golden-drilldown) doesn't have
@@ -787,6 +795,40 @@ def compute_weekly_trend_vs_cluster(
     merged = target.merge(cluster_avg, on=["week_bucket", "event_type"])
     merged["cluster_size"] = len(cluster_actor_ids)
     return merged[["week_bucket", "event_type", "candidate_count", "cluster_avg", "cluster_size"]]
+
+
+def compute_cluster_weekly_trend_vs_population(
+    trend_df: pd.DataFrame, cluster_actor_ids: list[int], population_actor_ids: list[int],
+    num_weeks: int = 4,
+) -> pd.DataFrame:
+    """Behavioral Analytics page mirror of compute_weekly_trend_vs_cluster
+    -- there, one candidate's own trend against their cluster's average;
+    here, one behavioral *cluster's* average against the whole golden
+    population's average, since page 3's clusters already partition the
+    entire population (no single "this one, vs. everyone else" target
+    the way an individual candidate drill-down has). Same reindex-for-
+    true-zeros reasoning.
+    """
+    weeks = list(range(1, num_weeks + 1))
+    full_index = pd.MultiIndex.from_product(
+        [population_actor_ids, weeks, TREND_EVENT_TYPES], names=["actor_id", "week_bucket", "event_type"]
+    )
+    full = (
+        trend_df.set_index(["actor_id", "week_bucket", "event_type"])
+        .reindex(full_index, fill_value=0)["count"]
+        .reset_index()
+    )
+    population_avg = (
+        full.groupby(["week_bucket", "event_type"])["count"].mean().reset_index(name="population_avg")
+    )
+    cluster_avg = (
+        full.loc[full["actor_id"].isin(cluster_actor_ids)]
+        .groupby(["week_bucket", "event_type"])["count"].mean().reset_index(name="cluster_avg")
+    )
+    merged = cluster_avg.merge(population_avg, on=["week_bucket", "event_type"])
+    merged["cluster_size"] = len(cluster_actor_ids)
+    merged["population_size"] = len(population_actor_ids)
+    return merged
 
 
 def load_job_skill_cluster_rows(session: Session) -> pd.DataFrame:
