@@ -120,21 +120,44 @@ tokens even for dense text) -- an embedding needs the semantic gist, not a verba
 
 ### Dashboards
 
-Two mirrored drilldown pages, same visual language, reusing every generic chart/data helper
-(`render_k_diagnostic_chart`, `render_composition_bar_chart`, `render_count_heatmap`,
-`render_top_skills_bar_chart`, `render_population_bar_chart`, `compute_top_skills`,
-`compute_k_diagnostics`, `name_clusters_by_majority`, `generate_skill_wordcloud`) unchanged:
+Four pages across this feature, plus the pre-existing Behavioral Analytics page brought up to the
+same depth -- all reusing the same generic chart/data helpers (`render_k_diagnostic_chart`,
+`render_composition_bar_chart`, `render_count_heatmap`, `render_top_skills_bar_chart`,
+`render_population_bar_chart`, `render_dual_trend_chart`, `compute_top_skills`,
+`compute_k_diagnostics`, `name_clusters_by_majority`, `generate_skill_wordcloud`) rather than each
+page reimplementing its own chart logic.
 
-- `app/golden/drilldown/pages/4_Candidate_Skills_Clustering_360.py`: t-SNE scatter colored by
-  k-means cluster, cluster-vs-domain/occupation crosstab, cluster-vs-Louvain-community crosstab,
-  and a cluster-vs-engagement crosstab (segment/persona/behavioral cluster, reusing page 3's
-  `load_behavioral_rows`/`compute_behavioral_clusters`) -- skill identity next to real platform
-  behavior, since candidates have behavioral events.
-- `app/golden/drilldown/pages/6_Job_Skills_Clustering_360.py`: the same t-SNE/crosstab/Louvain
-  structure over required-skill embeddings instead -- no engagement crosstab or behavioral-KPI
-  diagnostic, since jobs don't log in or apply; that part of page 4 is dropped here, not faked.
+**Population-level** (`app/golden/drilldown/pages/4_Candidate_Skills_Clustering_360.py` and
+`6_Job_Skills_Clustering_360.py`): t-SNE scatter colored by k-means cluster (or domain, or Louvain
+community), population distribution, trending skills (overall or per-cluster, bar chart + word
+cloud), domain/occupation composition and cluster-vs-Louvain-community crosstabs (as a
+100%-stacked bar chart and a heatmap respectively, after plain tables proved hard to read at 8
+clusters), and -- the explicit link between the two independently-fit clusterings
+(`link_clusters_by_domain`, by shared majority domain, not index) -- picking a cluster shows the
+linked cluster's "hot skills"/"talent pool" plus a weekly trend (new candidates/candidate
+engagement vs. the linked population). The candidate page additionally has the behavioral-KPI
+diagnostic/engagement crosstab (reusing page 3's `load_behavioral_rows`); the job page drops that
+part, since jobs don't log in or apply.
 
-Same `cascading_filters` drill-down mechanism as every other page.
+**Single-entity** (`5_Candidate_Profile_360.py` and `7_Job_Profile_360.py`): pick one candidate or
+job and see everything -- profile header, own skills, real matching-engine results in each
+direction (`rank_jobs_for_candidate` / `rank_candidates_for_job`, both unmodified), nearest similar
+entities by embedding distance (`find_similar_entities` -- a genuinely new capability, no
+candidate-to-candidate or job-to-job similarity existed anywhere in this repo before), two
+skill-gap views per page (vs. similar entities, and vs. the matching engine's own results in the
+opposite direction), and a weekly engagement trend against the entity's own cluster average. The
+candidate page additionally closes with a market-signal view (emerging-vs-catching-up skills, a
+labeled heuristic) tied to real course recommendations (`recommend_courses_for_candidate`, Use
+Case E); the job page has no equivalent, since courses are for people, not postings.
+
+**Behavioral Analytics** (`3_Behavioral_Analytics.py`, pre-existing, completed to this same depth):
+persona vs. real rule-based segment, now with named clusters (majority persona), its own
+elbow/silhouette diagnostic, a t-SNE scatter of the same KPI vectors, population distribution,
+composition bar charts in place of the original plain crosstab tables, and a weekly trend per
+cluster against the overall population average (not a linked *other* population, since these
+clusters already partition the whole golden set).
+
+Same `cascading_filters` drill-down mechanism as every other page throughout.
 
 ## Verification & Results
 
