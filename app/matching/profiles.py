@@ -28,6 +28,27 @@ from app.ingestion.source_models import (
 
 @dataclass
 class CandidateProfile:
+    """Attributes:
+    id: the candidate's primary key.
+    full_name: display name.
+    skill_ids: every skill the candidate has (regardless of proficiency).
+    confirmed_absent_skill_ids: skills explicitly assessed with
+        `result=absent` — a subset of "not in skill_ids", used by
+        `app.matching.skill_gap` to distinguish a confirmed gap from
+        unrecorded data.
+    location_city: display/filter only, not scored (issue #21).
+    location_region: display/filter only, not scored.
+    desired_salary_min: display/filter only, not scored.
+    desired_salary_max: display/filter only, not scored.
+    primary_occupation_id: the candidate's target occupation, if any —
+        read by `app.matching.course_recommendations`, not by scoring.
+    years_experience: display/filter only, not scored.
+    highest_degree_level: scored by `_education_component`; `None` means
+        not recorded (treated as neutral, not failing).
+    field_of_study: display/filter only, like location_city above — no
+        Job-side "required field of study" exists to score it against.
+    """
+
     id: int
     full_name: str
     skill_ids: set[int]
@@ -38,16 +59,30 @@ class CandidateProfile:
     desired_salary_max: int | None
     primary_occupation_id: int | None
     years_experience: int
-    # Issue #21: highest_degree_level is scored (scoring.py's
-    # _education_component); field_of_study is display/filter only, like
-    # location_city above, carried through for completeness but read by
-    # nothing in app/matching/.
     highest_degree_level: "DegreeLevel | None" = None
     field_of_study: str | None = None
 
 
 @dataclass
 class JobProfile:
+    """Attributes:
+    id: the job's primary key.
+    title: display title.
+    company_name: display name.
+    required_skill_ids: skills a candidate must have to be eligible
+        (see `app.matching.eligibility`) and that weigh more heavily in
+        `_skill_component` than preferred skills.
+    preferred_skill_ids: skills that improve the score but aren't a hard
+        requirement.
+    location_city: display/filter only, not scored.
+    location_region: display/filter only, not scored.
+    salary_min: display/filter only, not scored.
+    salary_max: display/filter only, not scored.
+    occupation_id: display/filter only, not scored.
+    min_degree_level: scored by `_education_component`; `None` means no
+        requirement (trivially satisfied).
+    """
+
     id: int
     title: str
     company_name: str
@@ -58,16 +93,28 @@ class JobProfile:
     salary_min: int | None = None
     salary_max: int | None = None
     occupation_id: int | None = None
-    # Issue #21: scored (scoring.py's _education_component). None = no
-    # requirement.
     min_degree_level: "DegreeLevel | None" = None
 
 
 def load_skill_names(session: Session) -> dict[int, str]:
+    """Returns `{skill_id: name}` for every skill in the taxonomy."""
     return dict(session.execute(select(Skill.id, Skill.name)).all())
 
 
 def load_candidate_profile(session: Session, candidate_id: int) -> CandidateProfile | None:
+    """Loads one candidate and translates it into a `CandidateProfile`.
+
+    3 queries (candidate row, skill ids, confirmed-absent ids) — for more
+    than a handful of candidates, prefer `load_all_candidate_profiles`
+    (batch-loaded, not one call per candidate).
+
+    Args:
+        session: an active SQLAlchemy session.
+        candidate_id: the candidate's primary key.
+
+    Returns:
+        CandidateProfile | None: `None` if no candidate with that id exists.
+    """
     candidate = session.get(Candidate, candidate_id)
     if candidate is None:
         return None
@@ -103,6 +150,18 @@ def load_candidate_profile(session: Session, candidate_id: int) -> CandidateProf
 
 
 def load_job_profile(session: Session, job_id: int) -> JobProfile | None:
+    """Loads one job and translates it into a `JobProfile`.
+
+    2 queries (job row, job_skills) — for more than a handful of jobs,
+    prefer `load_all_job_profiles`/`load_job_profiles_by_ids` (batch-loaded).
+
+    Args:
+        session: an active SQLAlchemy session.
+        job_id: the job's primary key.
+
+    Returns:
+        JobProfile | None: `None` if no job with that id exists.
+    """
     job = session.get(Job, job_id)
     if job is None:
         return None
@@ -133,7 +192,17 @@ def load_job_profiles_by_ids(session: Session, job_ids: list[int]) -> dict[int, 
     fix), scoped to a specific id subset — 2 queries regardless of subset
     size, not one `load_job_profile` call per id. Added in Phase 20 after a
     real stress test found `app/embeddings/retrieval.py` was still calling
-    `load_job_profile` in a per-job loop (docs/data-at-scale.md)."""
+    `load_job_profile` in a per-job loop (docs/data-at-scale.md).
+
+    Args:
+        session: an active SQLAlchemy session.
+        job_ids: the jobs to load; an empty list short-circuits to `{}`
+            with no queries issued.
+
+    Returns:
+        dict[int, JobProfile]: keyed by job id. Ids in `job_ids` that
+            don't exist are simply absent from the result, not an error.
+    """
     if not job_ids:
         return {}
 
@@ -246,6 +315,19 @@ def load_all_candidate_profiles(session: Session) -> list[CandidateProfile]:
 
 
 def load_occupation_skill_profile(session: Session, occupation_id: int) -> dict[int, float]:
+    """Returns `{skill_id: importance}` for one occupation, the
+    importance-weighted skill profile
+    `app.matching.course_recommendations.analyze_occupation_skill_gap`
+    compares a candidate's skills against.
+
+    Args:
+        session: an active SQLAlchemy session.
+        occupation_id: the occupation's primary key.
+
+    Returns:
+        dict[int, float]: empty if the occupation has no `OccupationSkill`
+            rows (not an error — just an occupation with no profile yet).
+    """
     rows = session.execute(
         select(OccupationSkill.skill_id, OccupationSkill.importance).where(
             OccupationSkill.occupation_id == occupation_id
@@ -266,4 +348,5 @@ def load_course_skill_coverage(session: Session) -> dict[int, dict[int, float]]:
 
 
 def load_course_titles(session: Session) -> dict[int, str]:
+    """Returns `{course_id: title}` for every course."""
     return dict(session.execute(select(Course.id, Course.title)).all())
