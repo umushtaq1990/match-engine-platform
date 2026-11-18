@@ -2,14 +2,21 @@
 consistent with every other service's env-var-driven configuration in this
 project.
 """
-import os
-
 from neo4j import Driver, GraphDatabase
 
-NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
-NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "dev-local-password-change-me")
+from app.common.config import settings
+
+NEO4J_URI = settings.neo4j_uri
+NEO4J_USER = settings.neo4j_user
+NEO4J_PASSWORD = settings.neo4j_password
 
 
 def get_driver() -> Driver:
+    """Builds a new Neo4j `Driver` from `settings.neo4j_{uri,user,password}`.
+
+    Returns:
+        neo4j.Driver: an unconnected driver — callers open sessions from it
+            (`driver.session()`) and are responsible for closing the driver
+            when done (e.g. via a `with` block or `driver.close()`).
+    """
     return GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))

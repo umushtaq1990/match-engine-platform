@@ -18,6 +18,15 @@ NEAR_MISS_FILE = Path(__file__).resolve().parents[2] / "data" / "golden" / "embe
 
 
 def load_near_miss_pairs() -> list[dict]:
+    """Loads the hand-authored near-miss skill-pair dataset from
+    `data/golden/embedding_near_miss.yaml`.
+
+    Returns:
+        list[dict]: each item has (at minimum) a `pair` of skill names and
+            an `expected` similarity judgment — see the YAML file itself
+            for the exact schema. Returns `[]` if the file doesn't exist
+            or is empty, never raises on a missing file.
+    """
     if not NEAR_MISS_FILE.exists():
         return []
     with open(NEAR_MISS_FILE, encoding="utf-8") as f:

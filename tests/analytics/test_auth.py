@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.analytics import deps
 from app.analytics.deps import require_api_key
 from app.analytics.main import app
 
@@ -39,5 +40,5 @@ def test_require_api_key_rejects_none():
 
 
 def test_require_api_key_accepts_configured_value(monkeypatch):
-    monkeypatch.setenv("JME_API_KEY", "test-key-123")
+    monkeypatch.setattr(deps.settings, "jme_api_key", "test-key-123")
     require_api_key("test-key-123")  # does not raise

@@ -5,20 +5,20 @@ caller (Use Case C extraction) has nothing useful to return without a real
 result, a deliberate difference documented in docs/model-serving.md's
 consumer-pattern section and docs/skill-extraction.md's service boundary.
 """
-import os
-
 import httpx
 import mlflow
 from mlflow.entities import SpanType
 
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
+from app.common.config import settings
+
+OLLAMA_URL = settings.ollama_url
 # 60s was tuned around qwen2.5:1.5b's typical decode speed -- confirmed
 # live it's genuinely too short for bigger CPU-served models (qwen2.5:7b,
 # gemma2:9b): real single calls exceeded 60s, triggering the caller's
 # retry wrapper and inflating apparent latency rather than reflecting
 # actual generation speed. Configurable so a bigger-model comparison can
 # raise it without touching this shared client's code.
-_TIMEOUT_SECONDS = float(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "60"))
+_TIMEOUT_SECONDS = settings.ollama_timeout_seconds
 
 
 def _set_span_attributes(**attrs) -> None:

@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements-ingestion.txt
 
 COPY app/db.py ./app/db.py
 COPY app/__init__.py ./app/__init__.py
+COPY app/common/ ./app/common/
 COPY app/ingestion/ ./app/ingestion/
 
 CMD ["python", "-m", "app.ingestion.generate_synthetic_data"]

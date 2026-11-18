@@ -14,24 +14,40 @@ in this app.
 """
 import base64
 import json
-import os
 
 import requests
 
-OIDC_CLIENT_ID = "jme-frontend"
-OIDC_INTERNAL_ISSUER = os.environ.get("OIDC_INTERNAL_ISSUER", "http://keycloak:8080/realms/jme")
+from app.common.config import settings
+
+OIDC_CLIENT_ID = settings.oidc_client_id
+OIDC_INTERNAL_ISSUER = settings.oidc_internal_issuer
 
 
 def password_grant_login(username: str, password: str) -> dict:
-    """Resource Owner Password grant: the app itself collects the username/
-    password (text_input fields on the main page, see streamlit_app.py's
-    _require_login) and exchanges them directly for tokens — no redirect to
-    Keycloak's own hosted login page. OAuth2/Keycloak discourage this
-    pattern for browser apps (the app sees the raw password, instead of
-    never seeing it); accepted here as a known tradeoff so the login form
-    renders on the same page under the app's own heading, not a separate
-    window. See docs/architecture/ingress-and-identity.md Known
-    Limitations. Raises ValueError on a non-200 response.
+    """Logs a user in via OAuth2 Resource Owner Password grant against
+    `OIDC_INTERNAL_ISSUER`'s token endpoint.
+
+    The app itself collects the username/password (text_input fields on the
+    main page, see streamlit_app.py's `_require_login`) and exchanges them
+    directly for tokens — no redirect to Keycloak's own hosted login page.
+    OAuth2/Keycloak discourage this pattern for browser apps (the app sees
+    the raw password, instead of never seeing it); accepted here as a known
+    tradeoff so the login form renders on the same page under the app's own
+    heading, not a separate window. See
+    docs/architecture/ingress-and-identity.md Known Limitations.
+
+    Args:
+        username: the account's username (this realm uses the email address
+            as username, set at registration — see `create_user` below).
+        password: the account's plaintext password, sent once over this
+            single request and not retained by this function.
+
+    Returns:
+        dict: the token endpoint's JSON response — at minimum
+            `access_token`, `refresh_token`, `id_token`, `expires_in`.
+
+    Raises:
+        ValueError: if the credentials are rejected (any non-200 response).
     """
     token_resp = requests.post(
         f"{OIDC_INTERNAL_ISSUER}/protocol/openid-connect/token",
@@ -50,12 +66,24 @@ def password_grant_login(username: str, password: str) -> dict:
 
 
 def refresh_access_token(refresh_token: str) -> dict:
-    """Issue #26: exchanges a refresh_token for a new access_token/refresh_token
-    pair, same token endpoint as password_grant_login. Keycloak access tokens
-    are short-lived, so app/frontend/auth_helpers.py calls this on a 401 to
-    keep a long demo session working without a re-login. Raises ValueError
-    if the refresh_token itself has expired (the caller has no recourse but
-    to send the user back to the login screen).
+    """Exchanges a refresh token for a new access/refresh token pair.
+
+    Keycloak access tokens are short-lived, so `app/frontend/auth_helpers.py`
+    calls this on a 401 to keep a long demo session working without a
+    re-login (issue #26).
+
+    Args:
+        refresh_token: a refresh token previously issued by
+            `password_grant_login` (or a prior call to this function).
+
+    Returns:
+        dict: the token endpoint's JSON response, same shape as
+            `password_grant_login`'s.
+
+    Raises:
+        ValueError: if the refresh token itself has expired or is invalid —
+            the caller has no recourse but to send the user back to the
+            login screen.
     """
     token_resp = requests.post(
         f"{OIDC_INTERNAL_ISSUER}/protocol/openid-connect/token",
@@ -72,8 +100,17 @@ def refresh_access_token(refresh_token: str) -> dict:
 
 
 def decode_id_token(id_token: str) -> dict:
-    """Decodes the JWT payload without verifying its signature — accepted gap
-    for a local demo, see streamlit_app.py's _require_login docstring."""
+    """Decodes a JWT's payload (middle segment) without verifying its
+    signature — an accepted gap for a local demo frontend; real signature
+    verification happens server-side in `app/api/jwt_auth.py`. See
+    streamlit_app.py's `_require_login` docstring for the full rationale.
+
+    Args:
+        id_token: a compact-serialized JWT (`header.payload.signature`).
+
+    Returns:
+        dict: the decoded payload claims (e.g. `sub`, `email`, `name`).
+    """
     payload_b64 = id_token.split(".")[1]
     payload_b64 += "=" * (-len(payload_b64) % 4)
     return json.loads(base64.urlsafe_b64decode(payload_b64))

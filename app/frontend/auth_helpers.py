@@ -12,10 +12,34 @@ from app.frontend.oidc import refresh_access_token
 
 
 def call_with_refresh(func, *args, **kwargs):
-    """Handles both calling styles used in this app: a client-module
-    function that calls `.raise_for_status()` (raises `requests.HTTPError`
-    on a 401) and a raw `requests.get`/`.post` call site that just returns
-    the `Response` object for the caller to inspect `.status_code` on.
+    """Calls `func(*args, **kwargs)`, transparently retrying once with a
+    refreshed access token if the call fails with a 401.
+
+    Handles both calling styles used in this app: a client-module function
+    that calls `.raise_for_status()` (raises `requests.HTTPError` on a
+    401) and a raw `requests.get`/`.post` call site that just returns the
+    `Response` object for the caller to inspect `.status_code` on.
+
+    Args:
+        func: the callable to invoke — typically one of the
+            `app.frontend.*_client` module functions. On retry, it's
+            called again with `access_token` added/overwritten in
+            `kwargs` to the freshly refreshed token.
+        *args: forwarded to `func` on every call.
+        **kwargs: forwarded to `func` on every call; `access_token` is
+            overwritten on the retry call only.
+
+    Returns:
+        Whatever `func` returns — unchanged on success, or the retry
+            call's return value after a refresh. Side effect: on a 401,
+            updates `st.session_state["access_token"]`/`["refresh_token"]`
+            to the refreshed pair before retrying.
+
+    Note:
+        If the refresh token itself has expired, this clears
+        `st.session_state`, shows an error, and calls `st.rerun()` —
+        which raises internally (Streamlit's rerun mechanism), so this
+        function does not return normally in that case.
     """
     needs_refresh = False
     result = None

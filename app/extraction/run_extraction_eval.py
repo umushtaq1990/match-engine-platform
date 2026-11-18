@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 
 import mlflow
 
+from app.common.config import settings
 from app.db import SessionLocal
 from app.extraction.golden_dataset import load_generator_injected, load_hand_authored
 from app.extraction.metrics import requirement_level_accuracy, set_f1, set_precision, set_recall
@@ -35,7 +36,7 @@ from app.extraction.skill_cache import get_reference_embeddings
 logger = logging.getLogger(__name__)
 
 MLFLOW_EXPERIMENT_NAME = "jme-skill-extraction"
-MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_TRACKING_URI = settings.mlflow_tracking_uri
 # Modest sample of the generator-injected set, not the full 1,000 jobs — each
 # example costs a real LLM call plus one embedding call per extracted
 # phrase, so a full-population run is minutes, not seconds (see

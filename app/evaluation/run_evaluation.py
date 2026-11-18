@@ -29,6 +29,7 @@ import mlflow
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.common.config import settings
 from app.db import SessionLocal
 from app.evaluation.eval_models import EvaluationCandidateResult, EvaluationRun
 from app.evaluation.ground_truth import build_ground_truth
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_K = 10
 DEFAULT_SAMPLE_SIZE = 2000  # full candidate population; see module docstring
 MLFLOW_EXPERIMENT_NAME = "jme-matching"
-MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_TRACKING_URI = settings.mlflow_tracking_uri
 
 
 def _config_label() -> str:

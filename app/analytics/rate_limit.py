@@ -2,15 +2,15 @@
 full rationale and the Phase 21 Redis-backed storage decision; duplicated
 per service by the same deliberate design.
 """
-import os
-
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from app.common.config import settings
+
 DEFAULT_RATE_LIMIT = "100/minute"
 
-REDIS_URL = os.environ.get("REDIS_URL")
+REDIS_URL = settings.redis_url
 
 
 def rate_limit_key(request: Request) -> str:

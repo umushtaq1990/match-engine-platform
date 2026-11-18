@@ -11,6 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.common.enums import DegreeLevel
 from app.db import Base
 
 
@@ -48,17 +49,9 @@ class InteractionType(str, enum.Enum):
     saved = "saved"
 
 
-class DegreeLevel(str, enum.Enum):
-    """Issue #21: the one dimension of "education" this project actually
-    models — ordinal ranking lives in app/matching/scoring.py, not here,
-    since this is a plain str enum (this project's convention) rather
-    than an IntEnum."""
-
-    high_school = "high_school"
-    associate = "associate"
-    bachelor = "bachelor"
-    master = "master"
-    doctorate = "doctorate"
+# DegreeLevel lives in app.common.enums now (imported above) -- both this
+# ORM layer and app.matching.scoring's pure functions need its values, so
+# neither owns it; see that module's docstring for why.
 
 
 # --- Canonical taxonomy -----------------------------------------------------

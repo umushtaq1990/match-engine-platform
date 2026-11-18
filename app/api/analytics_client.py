@@ -16,15 +16,15 @@ logged, never raised — an outage in analytics or Redis must never break a
 real matching response.
 """
 import logging
-import os
 
 import httpx
 
 from app.api.stream_client import publish_events
+from app.common.config import settings
 
 logger = logging.getLogger(__name__)
 
-ANALYTICS_URL = os.environ.get("ANALYTICS_URL", "http://analytics:8001")
+ANALYTICS_URL = settings.analytics_url
 _TIMEOUT_SECONDS = 2.0
 _ALGORITHM_VERSION = "rule-based-v1"
 
@@ -37,7 +37,7 @@ def _publish_or_post(events: list[dict]) -> None:
     if publish_events(events):
         return
 
-    api_key = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
+    api_key = settings.jme_api_key
     try:
         httpx.post(
             f"{ANALYTICS_URL}/events/batch",

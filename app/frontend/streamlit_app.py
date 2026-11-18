@@ -12,11 +12,10 @@ existing job_id. Candidates can also edit the scoring-relevant fields the
 matching engine reads (location, salary, occupation, skills) via "Your
 profile" (issue #18). See docs/architecture/frontend.md.
 """
-import os
-
 import requests
 import streamlit as st
 
+from app.common.config import settings
 from app.common.logging import setup_logging
 from app.frontend.audit_client import get_change_log
 from app.frontend.auth_helpers import call_with_refresh
@@ -46,9 +45,9 @@ setup_logging("frontend")
 # routed through the API Gateway (docker/nginx-gateway/nginx.conf),
 # not called directly — api/extraction still see identical paths, the
 # Gateway strips its routing prefix. See docs/architecture/ingress-and-identity.md.
-API_URL = os.environ.get("API_URL", "http://gateway/matching")
-EXTRACTION_URL = os.environ.get("EXTRACTION_URL", "http://gateway/extraction")
-API_KEY = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
+API_URL = settings.api_url
+EXTRACTION_URL = settings.extraction_url
+API_KEY = settings.jme_api_key
 HEADERS = {"X-API-Key": API_KEY}
 MAX_CV_SIZE_BYTES = 2 * 1024 * 1024
 

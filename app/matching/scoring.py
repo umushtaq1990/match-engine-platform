@@ -17,7 +17,7 @@ not a new one.
 """
 from dataclasses import dataclass, field
 
-from app.ingestion.source_models import DegreeLevel
+from app.common.enums import DegreeLevel
 from app.matching.profiles import CandidateProfile, JobProfile
 
 # Skill stays the dominant signal (was the largest of four components at
@@ -39,9 +39,8 @@ PREFERRED_SKILL_WEIGHT = 0.3
 UNKNOWN_DATA_SCORE = 0.5
 
 # Ordinal ranking for the "candidate meets or exceeds the job's minimum
-# degree level" comparison — DegreeLevel itself is a plain str enum (this
-# project's existing convention for every enum, see source_models.py), not
-# an IntEnum, so the ordering lives here instead.
+# degree level" comparison — DegreeLevel itself is a plain str enum (see
+# app.common.enums), not an IntEnum, so the ordering lives here instead.
 _DEGREE_LEVEL_RANK = {
     DegreeLevel.high_school: 0,
     DegreeLevel.associate: 1,
@@ -53,6 +52,22 @@ _DEGREE_LEVEL_RANK = {
 
 @dataclass
 class ScoreBreakdown:
+    """The result of `score_candidate_job`: both the final weighted score
+    and enough detail (which skills matched/were missing) to render a
+    human-readable explanation without recomputing anything.
+
+    Attributes:
+        skill: the 0.0-1.0 skill-component score (see `_skill_component`).
+        education: the 0.0/0.5/1.0 education-component score (see
+            `_education_component`).
+        total: `WEIGHTS["skill"] * skill + WEIGHTS["education"] * education`,
+            rounded to 4 decimal places (as are `skill`/`education`).
+        matching_required_skill_ids: required job skills the candidate has.
+        missing_required_skill_ids: required job skills the candidate lacks.
+        matching_preferred_skill_ids: preferred job skills the candidate has.
+        missing_preferred_skill_ids: preferred job skills the candidate lacks.
+    """
+
     skill: float
     education: float
     total: float
@@ -63,6 +78,21 @@ class ScoreBreakdown:
 
 
 def _skill_component(candidate: CandidateProfile, job: JobProfile) -> tuple[float, dict]:
+    """Scores how well a candidate's skills cover a job's required/preferred
+    skills.
+
+    Args:
+        candidate: the candidate's profile (reads `skill_ids`).
+        job: the job's profile (reads `required_skill_ids`/`preferred_skill_ids`).
+
+    Returns:
+        tuple[float, dict]: a `(score, detail)` pair. `score` is
+            `REQUIRED_SKILL_WEIGHT * required_ratio + PREFERRED_SKILL_WEIGHT
+            * preferred_ratio`, each ratio in `[0.0, 1.0]` (a job with no
+            skills in that bucket is trivially satisfied, ratio `1.0`).
+            `detail` has the four `*_skill_ids` keys `ScoreBreakdown` expects
+            as keyword arguments.
+    """
     matching_required = candidate.skill_ids & job.required_skill_ids
     missing_required = job.required_skill_ids - candidate.skill_ids
     matching_preferred = candidate.skill_ids & job.preferred_skill_ids
@@ -106,6 +136,17 @@ def _education_component(candidate: CandidateProfile, job: JobProfile) -> float:
 
 
 def score_candidate_job(candidate: CandidateProfile, job: JobProfile) -> ScoreBreakdown:
+    """Scores one candidate against one job. The single entry point this
+    module exists for — pure, deterministic, no DB/network access, safe to
+    call in a tight loop (see `app.matching.rank` for the batched caller).
+
+    Args:
+        candidate: the candidate's profile (`app.matching.profiles.CandidateProfile`).
+        job: the job's profile (`app.matching.profiles.JobProfile`).
+
+    Returns:
+        ScoreBreakdown: the weighted total plus per-component detail.
+    """
     skill_score, skill_detail = _skill_component(candidate, job)
     education_score = _education_component(candidate, job)
 

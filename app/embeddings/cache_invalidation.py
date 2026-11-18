@@ -17,13 +17,14 @@ blocking scan over the keyspace), and old versioned entries simply age out
 via their own TTL rather than needing to be found and deleted.
 """
 import logging
-import os
 
 import redis
 
+from app.common.config import settings
+
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.environ.get("REDIS_URL")
+REDIS_URL = settings.redis_url
 
 _client: redis.Redis | None = None
 if REDIS_URL:
@@ -37,6 +38,23 @@ def _version_key(candidate_id: int) -> str:
 
 
 def get_candidate_cache_version(candidate_id: int) -> int:
+    """Returns the current cache-version counter for a candidate — callers
+    building a cache key (e.g. `app/api/cache.py`) include this so a prior
+    version's entries are never read after an invalidation, even though
+    they haven't expired yet.
+
+    Fails open, same doctrine as every other Redis integration in this
+    project: a read error must never break a real request, it just means
+    the cache key reverts to version 0 (equivalent to "no active
+    invalidation on record").
+
+    Args:
+        candidate_id: the candidate's primary key.
+
+    Returns:
+        int: the version counter (0 if never invalidated, Redis isn't
+            configured, or the read failed).
+    """
     if _client is None:
         return 0
     try:
@@ -48,6 +66,17 @@ def get_candidate_cache_version(candidate_id: int) -> int:
 
 
 def invalidate_candidate_cache(candidate_id: int) -> None:
+    """Bumps a candidate's cache-version counter, invalidating every
+    cache entry keyed to the prior version (see `get_candidate_cache_version`).
+
+    A single `INCR`, not a key scan/delete — O(1) regardless of how many
+    stale cache entries exist, which simply age out via their own TTL
+    instead of being actively removed. Fails open: a Redis error is
+    logged and swallowed, never raised.
+
+    Args:
+        candidate_id: the candidate whose cache should be invalidated.
+    """
     if _client is None:
         return
     try:
