@@ -391,6 +391,23 @@ if role == "candidate":
     )
     new_skill_name = st.text_input("Add a new skill (optional)")
 
+    # Issue #21: the one candidate-side field actually scored (alongside
+    # skills) -- see app/matching/scoring.py's _education_component.
+    DEGREE_LEVELS = {
+        "High School": "high_school", "Associate": "associate", "Bachelor's": "bachelor",
+        "Master's": "master", "Doctorate": "doctorate",
+    }
+    degree_labels = ["(not set)"] + list(DEGREE_LEVELS.keys())
+    degree_by_value = {v: k for k, v in DEGREE_LEVELS.items()}
+    current_degree_label = degree_by_value.get(details["highest_degree_level"], "(not set)")
+    degree_col, field_col = st.columns(2)
+    with degree_col:
+        degree_label = st.selectbox(
+            "Highest degree level", degree_labels, index=degree_labels.index(current_degree_label),
+        )
+    with field_col:
+        field_of_study = st.text_input("Field of study", value=details["field_of_study"] or "")
+
     if st.button("Save profile details"):
         skill_id_by_name = {s["name"]: s["id"] for s in skills}
         occupation_id_by_title = {o["title"]: o["id"] for o in occupations}
@@ -418,6 +435,8 @@ if role == "candidate":
             experience_level=EXPERIENCE_LEVELS[experience_label],
             skill_ids=skill_ids,
             access_token=access_token,
+            highest_degree_level=DEGREE_LEVELS.get(degree_label),
+            field_of_study=field_of_study or None,
         )
         st.success("Profile details saved.")
         st.rerun()

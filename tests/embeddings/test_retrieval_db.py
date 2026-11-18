@@ -40,7 +40,7 @@ def test_blended_default_falls_back_to_rule_based_without_embeddings(matching_db
     assert ranking_mode == "rule_based_no_embeddings"
     assert len(results) == 1
     assert results[0].entity_id == ids["job_id"]
-    assert results[0].score.total == 0.835  # unchanged from the rule-based-only assertion
+    assert results[0].score.total == 0.79  # unchanged from the rule-based-only assertion
 
 
 def test_blended_default_uses_blended_scoring_when_embeddings_exist(matching_db_session):

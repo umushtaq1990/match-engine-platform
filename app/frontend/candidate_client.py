@@ -24,6 +24,7 @@ def update_candidate_details(
     desired_salary_min: int | None, desired_salary_max: int | None,
     primary_occupation_id: int | None, experience_level: str | None, skill_ids: list[int],
     access_token: str,
+    highest_degree_level: str | None = None, field_of_study: str | None = None,
 ) -> dict:
     headers = {**_HEADERS, "Authorization": f"Bearer {access_token}"}
     resp = requests.patch(
@@ -38,6 +39,8 @@ def update_candidate_details(
             "primary_occupation_id": primary_occupation_id,
             "experience_level": experience_level,
             "skill_ids": skill_ids,
+            "highest_degree_level": highest_degree_level,
+            "field_of_study": field_of_study,
         },
         timeout=10,
     )

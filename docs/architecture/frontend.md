@@ -70,10 +70,11 @@ listed — a "+ Add a new occupation" sentinel option and a free-text "Add a new
 the frontend call these before saving.
 
 Issue #20: location/salary/experience are collected for later filtering/analysis, not for
-scoring — the user explicitly wants scoring kept to skills + education only (see Roadmap; that
-redesign is tracked separately, issue #21, not done yet). The location row became City/Postal
+scoring — the user explicitly wants scoring kept to skills + education only (see issue #21 below,
+done). The location row became City/Postal
 code/Country (`Candidate.postal_code`/`.country`, two new nullable columns) — `location_region`
-(still the field `_location_component` actually scores on) is no longer collected from the user at
+(no longer scored at all since issue #21 dropped the location/salary/occupation components
+entirely, display/filter-only now) is no longer collected from the user at
 all; `CandidateDetailsUpdate` omits it on purpose, so a PATCH leaves whatever value is already on
 the row untouched rather than overwriting it with nothing. A 4-bucket experience selector (Entry
 Level/Mid-Level/Senior/Expert) replaced a raw years-of-experience number, mapped to/from the
@@ -102,10 +103,11 @@ spirit as a portfolio project's "about/contact" footer.
   (`GET /candidates/{id}/job-matches?top_k=10` on `api`) renders results as a table (label,
   eligibility, score, explanation), with the `X-Ranking-Mode` response header surfaced so it's
   visible whether blended or rule-based ranking was used.
-  "Your profile" (issue #18, `app/frontend/candidate_client.py`) then lets them edit the four
-  fields `scoring.py` actually reads: a multiselect for skills (capped at 10, options loaded from
-  `GET /skills`), city/region text inputs, salary min/max number inputs, and an occupation
-  selectbox (options from `GET /occupations`). "Save profile details" calls
+  "Your profile" (issue #18, `app/frontend/candidate_client.py`) then lets them edit a multiselect
+  for skills (capped at 10, options loaded from `GET /skills`), city/postal/country/salary/
+  occupation fields (display/filter-only since issue #20/#21, not scored), and, since issue #21,
+  a "Highest degree level" selectbox and "Field of study" text input -- the one other field
+  `scoring.py` actually scores alongside skills. "Save profile details" calls
   `PATCH /candidates/{id}/details`, which replaces that candidate's skill rows wholesale and
   updates the `Candidate` columns directly, then reruns the page so the form reflects the saved
   state. An "Edit history" expander (issue #24, `app/frontend/audit_client.py`) shows the last few
@@ -129,7 +131,7 @@ spirit as a portfolio project's "about/contact" footer.
   option — no more raw `job_id` input. Picking an existing job loads its full detail
   (`GET /jobs/{id}/details`) into an edit form below: title, description, company name,
   City/Postal code/Country (issue #23, same pattern as the candidate side's issue #20 —
-  `location_region` stays on the `Job` row, still read by `_location_component`, but is no longer
+  `location_region` stays on the `Job` row, display/filter-only since issue #21, but is no longer
   collected from the user), salary min/max, occupation (+ add-new), required/preferred skill
   multiselects (+ add-new skill) and a minimum-experience bucket, mirroring the candidate profile
   form. "Save job" calls `POST /jobs` (new) or `PATCH /jobs/{id}/details` (existing), replacing
@@ -211,6 +213,19 @@ round-trips the experience bucket ("senior" in → "senior" back out, mapped thr
 each boundary (0, 2, 3, 5, 6, 10, 11 years) and confirms a PATCH that omits `location_region`
 never overwrites it.
 
+**Issue #21** (skills + education scoring): verified live through a real Keycloak-issued token for
+an existing golden candidate (`golden-candidate-223@example-synthetic.test`) — `GET
+/candidates/{id}/job-matches` returned the new `{"skill", "education", "total"}` score shape (no
+more `location`/`salary`/`occupation`); `PATCH /candidates/{id}/details` with
+`highest_degree_level`/`field_of_study` round-tripped correctly via a follow-up `GET`; `GET
+/candidates/{id}/job-matches/semantic` returned the new `education_score` field. The "Your
+profile" form's new "Highest degree level" selectbox and "Field of study" text input render
+pre-filled and submit correctly — `tests/frontend/test_streamlit_app.py`'s
+`test_profile_details_form_renders_with_prefilled_values` covers both. Migration `334b9feb41ce`
+and `app/ingestion/backfill_education.py` ran against the real seeded database (3000 jobs/1000
+candidates updated, confirmed idempotent on a second run); full test suite (341 tests) and
+`ruff check .` both pass.
+
 **Issue #22** (employer-owned job postings): verified live — created a real job via the employer
 account created this session (`ai-tech@gmail.com`) with real required/preferred skills, salary,
 location, occupation, and experience; confirmed via `psql` that `Job.posted_by_keycloak_user_id`
@@ -290,7 +305,7 @@ call styles).
 
 - **v2, only if actually useful for the portfolio demo**: parse the uploaded CV's text and run it through `extract_skills` automatically (the same gap `docs/architecture/application-services/skill-extraction.md` already flags), surfacing extracted skills in the UI.
 - Simple data registration (create a new candidate/job *record* from the UI instead of picking an existing `candidate_id`/`job_id`) is now done on both sides (issue #17 for candidates, issue #22 for jobs). (Not to be confused with *user* registration, which is done issue #14, see [ingress-and-identity.md](ingress-and-identity.md).)
-- **Issue #21**: simplify matching to score on skills + education only (location/salary/experience become filter/analysis-only data, per the user's explicit direction while scoping issue #20) — needs a new "education" data concept (nothing in the schema represents it today) and a re-evaluation of the embeddings-blended ranker's documented NDCG numbers (`docs/embedding-matching.md`), which are keyed to the current rule-based weights. Not started.
+- **Issue #21** (done): simplified matching to score on skills + education only (location/salary/occupation became filter/analysis-only data, per the user's explicit direction while scoping issue #20). Added `Candidate.highest_degree_level`/`.field_of_study` and `Job.min_degree_level`, backfilled for the existing synthetic population (`app/ingestion/backfill_education.py`), and re-measured the embeddings-blended ranker's NDCG numbers against the new weighting (`docs/architecture/data-platform/embedding-matching.md`'s Round 5) rather than leaving them stale.
 
 ## Resource Footprint and Scaling
 

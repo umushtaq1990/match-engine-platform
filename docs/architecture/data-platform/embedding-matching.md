@@ -12,7 +12,7 @@ It also solves a real scale problem the rule-based engine never had to face: sco
 
 Without stage 1, there is no affordable way to even consider all 100,000 jobs for a single candidate. Stage 1 is not an optimization trick bolted on later, it's the reason a vector database is needed at all.
 
-**Out of scope**: an Education dimension (no education/certification table exists in the domain model, fabricating one would repeat a mistake `docs/architecture/application-services/matching-engine.md` already documented avoiding: qualification compatibility, omitted entirely rather than faked). A courses dimension (candidate skill-gap → course matching) is deferred as a separate topic (see Roadmap).
+**Out of scope**: a dedicated Education *embedding* dimension. Issue #21 later added `highest_degree_level`/`field_of_study` to the domain model and a rule-based education component to `app/matching/scoring.py` -- reused here in the blend exactly as location/salary/occupation were before it (see Round 5 under Verification & Results below) -- but a degree-level comparison is a simple ordinal threshold check, not the kind of free-text semantic similarity embeddings exist to capture, so no separate embedding dimension was built for it. A courses dimension (candidate skill-gap → course matching) is deferred as a separate topic (see Roadmap).
 
 ## Architecture & Design
 
@@ -32,7 +32,7 @@ This cleanly separates the **online serving path** (one fixed, indexed, fast pro
 | **Skills** | `CandidateSkill` rows | `JobSkill` rows | **No new LLM call** : a proficiency/importance-weighted average of the per-skill embeddings `app/extraction/skill_cache.py` already computes and caches. Free, reuses existing infrastructure directly. |
 | **Experience** | `years_experience` + `primary_occupation` | `occupation` + `employment_type` | A short synthesized sentence (e.g. "5 years of experience as a Data Analyst") embedded via the active model |
 | **Overall/semantic** | a synthesized profile summary (no raw CV text field exists yet) | `description_raw` directly | Whole-text embedding, captures nuance the structured fields and the Skills dimension both miss |
-| ~~Education~~ | — | — | **Explicitly deferred, not built.** See Purpose & Scope above |
+| ~~Education~~ | — | — | **No dedicated embedding built** -- scored via the reused rule-based component instead. See Purpose & Scope above |
 
 **Service boundary**: not a new deployable image. This extends the matching engine itself (new routes/logic reachable from the existing `api` image) and reuses the `extraction` image for the offline batch jobs (embedding computation, refresh, evaluation harness) since that image already has Ollama access and the skill-embedding cache, adding a sixth Dockerfile for this would duplicate dependencies for no isolation benefit, since this capability's whole purpose is to feed the existing matching code, not stand alone. `pgvector` (the Python package) is added only to the specific `requirements-*.txt` files that need it (`migrate`, `api`, `extraction`), not `requirements-base.txt`, keeping every other image's size unaffected by a dependency it doesn't use, the same per-image-narrow-dependency discipline `docs/architecture/data-platform/data-quality.md` documents for the `dataquality` image.
 
@@ -118,9 +118,18 @@ What this comparison does not cover: a full ranking-quality comparison across em
 
 **Round 4 : promoted to the default ranking path.** Following Round 3's result, `GET/candidates/{id}/job-matches` was changed to default to `mode=blended`, re-ranking the rule-based eligible pool by the embeddings-blended score, falling back to pure rule-based order when a candidate has no embeddings computed yet (`rule_based_no_embeddings`, reported via` X-Ranking-Mode`). Eligibility and skill-gap fields still come from the rule-based pass unchanged, embeddings don't produce those. `mode=rule_based` opts back into the original deterministic order. See `app/embeddings/retrieval.py`'s `rank_jobs_for_candidate_blended_default`. Verified live: re-ranking with real computed embeddings produced a different, correctly-ordered top-5 job list compared to `mode=rule_based` against the same candidate.
 
+**Round 5 : re-verification after issue #21's scoring simplification.** Issue #21 dropped location/salary/occupation from both the rule-based score and this module's blend (replaced by a new education component, backfilled per `app/ingestion/backfill_education.py` for curated-occupation candidates/jobs only — the Known Limitations line below this table is what that backfill closes). `BLENDED_WEIGHTS`/`EMBEDDINGS_ONLY_WEIGHTS` both now carry `education` where they used to carry the three removed components (see `app/embeddings/retrieval.py`). Re-ran the exact same three-way comparison (same 30-candidate sample, k=10) against the current data:
+
+| Mode | Precision@10 | Recall@10 | NDCG@10 | MRR |
+|---|---|---|---|---|
+| rule_based | 0.2733 | 0.1889 | 0.3811 | 0.5893 |
+| blended | 0.4800 | 0.2078 | 0.5887 | 0.7000 |
+| embeddings_only | 0.4800 | 0.2078 | 0.5887 | 0.7000 |
+
+Reading this honestly: **rule-based-only's NDCG dropped sharply** (0.645 -> 0.381) — expected, not a regression to investigate: removing three of the four original components (location/salary/occupation, 0.45 of the old weight) leaves a cruder two-signal score, and most of the ground-truth population still has no backfilled education data (only curated-occupation rows do), so a large share of that signal sits at the neutral `UNKNOWN_DATA_SCORE`. **Blended and embeddings-only now score identically** on this sample — a real, measured coincidence worth naming rather than silently reporting without comment: education's contribution (same weight, 0.0 vs 0.35) evidently isn't large enough on this particular 30-candidate sample's top-10 window to change the blended ordering versus the embeddings-only one, given skills-similarity still dominates both. Blended remains at least as strong as rule-based-only, so the Round 4 default (`mode=blended`) stays justified; the Education dimension (Known Limitations, previously flagged as not built) is now built, closing that specific gap, but doesn't by itself recover rule-based-only's lost discriminating power — that was never its job.
+
 ## Known Limitations
 
-- Education dimension not built ; no real data source exists; see Purpose & Scope above.
 - The two-stage architecture was originally **designed for** 100,000-job scale and verified only against the project's small dataset (1,000 jobs) at the time this document was first written; it has since been verified live at the real 50,000-job target scale with a real N+1 bug found and fixed along the way, see `docs/architecture/data-platform/data-at-scale.md` for that full stress test.
 - No raw CV-text field exists for candidates, the Overall dimension's candidate-side input is a synthesized summary sentence, not real free text, until that gap is addressed.
 - Promoting a new production model requires a migration + full re-embed batch, there's no zero-downtime hot-swap path, an acceptable limitation for a single-developer local platform.

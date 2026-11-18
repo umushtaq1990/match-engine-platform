@@ -7,13 +7,32 @@ the real matching orchestration, and a real (disposable) Postgres
 transaction — not a mock at any layer.
 """
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
 
 from app.api.deps import get_db
 from app.api.jwt_auth import get_verified_claims
 from app.api.main import app
+from app.embeddings.models import EntityEmbedding
 from tests.conftest import seed_matching_fixture
 
 API_KEY_HEADERS = {"X-API-Key": "dev-local-key-change-me"}
+
+
+def _clear_embeddings(session, entity_ids: dict[str, int]) -> None:
+    """entity_embeddings isn't truncated by `matching_db_session` (no FK
+    into the tables it does truncate -- see tests/embeddings/
+    test_retrieval_db.py's module docstring), so a real embeddings-compute
+    run against the live seeded dataset can leave rows at the same ids
+    `seed_matching_fixture` reuses after RESTART IDENTITY, silently
+    flipping `X-Ranking-Mode` from the "no embeddings" path these tests
+    assert to "blended"."""
+    session.execute(
+        delete(EntityEmbedding).where(
+            EntityEmbedding.entity_type.in_(list(entity_ids.keys())),
+            EntityEmbedding.entity_id.in_(list(entity_ids.values())),
+        )
+    )
+    session.commit()
 
 
 def _client_bound_to(session, sub: str = "test-caller") -> TestClient:
@@ -24,6 +43,9 @@ def _client_bound_to(session, sub: str = "test-caller") -> TestClient:
 
 def test_job_matches_route_returns_real_scored_match(matching_db_session):
     ids = seed_matching_fixture(matching_db_session)
+    _clear_embeddings(matching_db_session, {
+        "candidate": ids["matching_candidate_id"], "job": ids["job_id"],
+    })
     client = _client_bound_to(matching_db_session)
     try:
         response = client.get(
@@ -34,7 +56,7 @@ def test_job_matches_route_returns_real_scored_match(matching_db_session):
         assert len(body) == 1
         assert body[0]["entity_id"] == ids["job_id"]
         assert body[0]["eligible"] is True
-        assert body[0]["score"]["total"] == 0.835
+        assert body[0]["score"]["total"] == 0.79
         assert body[0]["skill_gap"]["not_recorded_preferred"] == [ids["sql_id"]]
         # Phase 21: cache-aside is wired in, but there's no Redis container in
         # this test run (REDIS_URL unset) — every request is a documented
@@ -58,7 +80,7 @@ def test_job_matches_route_mode_rule_based_skips_the_blended_path(matching_db_se
         )
         assert response.status_code == 200
         assert response.headers["X-Ranking-Mode"] == "rule_based"
-        assert response.json()[0]["score"]["total"] == 0.835
+        assert response.json()[0]["score"]["total"] == 0.79
     finally:
         app.dependency_overrides.clear()
 

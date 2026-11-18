@@ -60,6 +60,24 @@ services:
         condition: service_healthy
     profiles: ["tools"]
 
+  # One-off job: issue #21's education backfill (app/ingestion/
+  # backfill_education.py) -- reuses the seed image (same app/ingestion/
+  # module), only the command differs. Idempotent; run after `seed`
+  # (and after golden-curated-occupations/golden-assign-candidates if those
+  # have run, so the backfill sees their occupation assignments too).
+  # Run explicitly: docker compose run --rm backfill-education
+  backfill-education:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.seed
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["python", "-m", "app.ingestion.backfill_education"]
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["tools"]
+
   # One-off job: runs data-quality checks over the current source data and
   # records results in data_quality_runs/data_quality_check_results. Its own
   # minimal image (no Faker/Alembic — it only runs read queries). Intended to

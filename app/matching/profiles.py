@@ -17,6 +17,7 @@ from app.ingestion.source_models import (
     CandidateSkillAssessment,
     Course,
     CourseSkill,
+    DegreeLevel,
     Job,
     JobSkill,
     OccupationSkill,
@@ -37,6 +38,12 @@ class CandidateProfile:
     desired_salary_max: int | None
     primary_occupation_id: int | None
     years_experience: int
+    # Issue #21: highest_degree_level is scored (scoring.py's
+    # _education_component); field_of_study is display/filter only, like
+    # location_city above, carried through for completeness but read by
+    # nothing in app/matching/.
+    highest_degree_level: "DegreeLevel | None" = None
+    field_of_study: str | None = None
 
 
 @dataclass
@@ -51,6 +58,9 @@ class JobProfile:
     salary_min: int | None = None
     salary_max: int | None = None
     occupation_id: int | None = None
+    # Issue #21: scored (scoring.py's _education_component). None = no
+    # requirement.
+    min_degree_level: "DegreeLevel | None" = None
 
 
 def load_skill_names(session: Session) -> dict[int, str]:
@@ -87,6 +97,8 @@ def load_candidate_profile(session: Session, candidate_id: int) -> CandidateProf
         desired_salary_max=candidate.desired_salary_max,
         primary_occupation_id=candidate.primary_occupation_id,
         years_experience=candidate.years_experience,
+        highest_degree_level=candidate.highest_degree_level,
+        field_of_study=candidate.field_of_study,
     )
 
 
@@ -112,6 +124,7 @@ def load_job_profile(session: Session, job_id: int) -> JobProfile | None:
         salary_min=job.salary_min,
         salary_max=job.salary_max,
         occupation_id=job.occupation_id,
+        min_degree_level=job.min_degree_level,
     )
 
 
@@ -149,6 +162,7 @@ def load_job_profiles_by_ids(session: Session, job_ids: list[int]) -> dict[int, 
             salary_min=job.salary_min,
             salary_max=job.salary_max,
             occupation_id=job.occupation_id,
+            min_degree_level=job.min_degree_level,
         )
         for job in jobs
     }
@@ -185,6 +199,7 @@ def load_all_job_profiles(session: Session) -> list[JobProfile]:
             salary_min=job.salary_min,
             salary_max=job.salary_max,
             occupation_id=job.occupation_id,
+            min_degree_level=job.min_degree_level,
         )
         for job in jobs
     ]
@@ -223,6 +238,8 @@ def load_all_candidate_profiles(session: Session) -> list[CandidateProfile]:
             desired_salary_max=c.desired_salary_max,
             primary_occupation_id=c.primary_occupation_id,
             years_experience=c.years_experience,
+            highest_degree_level=c.highest_degree_level,
+            field_of_study=c.field_of_study,
         )
         for c in candidates
     ]

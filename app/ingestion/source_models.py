@@ -48,6 +48,19 @@ class InteractionType(str, enum.Enum):
     saved = "saved"
 
 
+class DegreeLevel(str, enum.Enum):
+    """Issue #21: the one dimension of "education" this project actually
+    models — ordinal ranking lives in app/matching/scoring.py, not here,
+    since this is a plain str enum (this project's convention) rather
+    than an IntEnum."""
+
+    high_school = "high_school"
+    associate = "associate"
+    bachelor = "bachelor"
+    master = "master"
+    doctorate = "doctorate"
+
+
 # --- Canonical taxonomy -----------------------------------------------------
 
 class Skill(Base):
@@ -177,6 +190,17 @@ class Candidate(Base):
     primary_occupation_id: Mapped[int | None] = mapped_column(
         ForeignKey("occupations.id"), nullable=True
     )
+    # Issue #21: scored (app/matching/scoring.py's _education_component),
+    # unlike postal_code/country above -- nullable since existing rows
+    # predate this column; backfilled for curated-occupation candidates by
+    # app/ingestion/backfill_education.py, left NULL ("unknown," not
+    # fabricated) otherwise.
+    highest_degree_level: Mapped["DegreeLevel | None"] = mapped_column(
+        Enum(DegreeLevel), nullable=True
+    )
+    # Display/filter only, like postal_code -- no Job-side "required field
+    # of study" exists, so nothing in app/matching/ reads this.
+    field_of_study: Mapped[str | None] = mapped_column(String(150), nullable=True)
     created_at: Mapped[datetime] = mapped_column()
 
     skills: Mapped[list["CandidateSkill"]] = relationship(back_populates="candidate")
@@ -253,6 +277,12 @@ class Job(Base):
     # Display-only, like Candidate.years_experience/experience_level (issue
     # #20) -- not read by app/matching/scoring.py.
     min_years_experience: Mapped[int | None] = mapped_column(nullable=True)
+    # Issue #21: scored (app/matching/scoring.py's _education_component),
+    # unlike min_years_experience above -- NULL means no degree
+    # requirement (trivially satisfied, same convention as a job with no
+    # required skills). Backfill/generator-only: this project has no
+    # job-creation API, jobs are synthetic/seeded only (confirmed).
+    min_degree_level: Mapped["DegreeLevel | None"] = mapped_column(Enum(DegreeLevel), nullable=True)
 
     requirements: Mapped[list["JobSkill"]] = relationship(back_populates="job")
 

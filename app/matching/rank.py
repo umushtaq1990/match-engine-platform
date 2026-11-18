@@ -45,8 +45,7 @@ def _explain(breakdown: ScoreBreakdown, skill_names: dict[int, str]) -> str:
     matched = sorted(skill_names.get(i, f"skill#{i}") for i in breakdown.matching_required_skill_ids)
     missing = sorted(skill_names.get(i, f"skill#{i}") for i in breakdown.missing_required_skill_ids)
     parts = [f"total score {breakdown.total:.2f} (skill {breakdown.skill:.2f}, "
-             f"location {breakdown.location:.2f}, salary {breakdown.salary:.2f}, "
-             f"occupation {breakdown.occupation:.2f})"]
+             f"education {breakdown.education:.2f})"]
     if matched:
         parts.append(f"matches required skills: {', '.join(matched)}")
     if missing:

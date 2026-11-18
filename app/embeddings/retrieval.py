@@ -2,12 +2,18 @@
 17): stage 1 is a pgvector ANN query (cheap, approximate) that narrows the
 full job population to a plausible top-N; stage 2 computes the full blended
 score (skills/experience/overall similarity + the existing rule-based
-location/salary/occupation components) only on that narrowed set. See
-docs/embedding-matching.md.
+education component) only on that narrowed set. See
+docs/architecture/data-platform/embedding-matching.md.
 
 No live Ollama calls on this path — embeddings are precomputed offline
 (compute_embeddings.py); retrieval here is pure Postgres/pgvector at
 request time, which is the entire point of precomputing them.
+
+Issue #21: location/salary/occupation dropped from this blend in the same
+pass as app/matching/scoring.py's rule-based score, since both reused the
+same three component functions — updating one and not the other would
+leave them inconsistent (and make re-measuring NDCG after the change
+meaningless, since nothing would actually have changed here).
 """
 from dataclasses import dataclass
 
@@ -17,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.embeddings.models import EntityEmbedding
 from app.matching.profiles import load_candidate_profile, load_job_profiles_by_ids
 from app.matching.rank import MatchResult, rank_jobs_for_candidate
-from app.matching.scoring import _location_component, _occupation_component, _salary_component
+from app.matching.scoring import _education_component
 
 DEFAULT_EMBEDDING_MODEL = "all-minilm"
 STAGE1_TOP_N = 200
@@ -25,27 +31,25 @@ STAGE1_TOP_N = 200
 # Provisional, documented weights (same "not presented as objectively
 # correct" discipline as app/matching/scoring.py's own WEIGHTS) for the
 # blended semantic score. Replaces that module's single "skill" weight with
-# three embedding dimensions; location/salary/occupation stay identical to
-# the rule-based score — embeddings add nothing there.
+# three embedding dimensions; "education" takes over the exact 0.35 total
+# weight location+salary+occupation used to have, keeping the same overall
+# skill-related-vs-other balance (65/35) rather than changing two things
+# (which signal, and how much it's weighted) at once.
 BLENDED_WEIGHTS = {
     "skills": 0.35,
     "experience": 0.15,
     "overall": 0.15,
-    "location": 0.15,
-    "salary": 0.10,
-    "occupation": 0.10,
+    "education": 0.35,
 }
 # Same three embedding dimensions, renormalized to sum to 1.0 with the
-# rule-based components excluded entirely — used by the evaluation harness
-# (app/embeddings/run_embedding_eval.py) to measure what embeddings alone
-# contribute, separate from "blended", which already includes them.
+# rule-based education component excluded entirely — used by the evaluation
+# harness (app/embeddings/run_embedding_eval.py) to measure what embeddings
+# alone contribute, separate from "blended", which already includes it.
 EMBEDDINGS_ONLY_WEIGHTS = {
     "skills": 0.35 / 0.65,
     "experience": 0.15 / 0.65,
     "overall": 0.15 / 0.65,
-    "location": 0.0,
-    "salary": 0.0,
-    "occupation": 0.0,
+    "education": 0.0,
 }
 # Neutral score for a dimension with no embedding yet — consistent with the
 # project's existing "not recorded != failing" rule (see
@@ -60,9 +64,7 @@ class SemanticMatchResult:
     skills_similarity: float | None
     experience_similarity: float | None
     overall_similarity: float | None
-    location_score: float
-    salary_score: float
-    occupation_score: float
+    education_score: float
 
 
 def _get_vector(
@@ -135,11 +137,12 @@ def rank_jobs_for_candidate_semantic(
     stage1_top_n: int = STAGE1_TOP_N,
     mode: str = "blended",
 ) -> list[SemanticMatchResult]:
-    """`mode`: "blended" (default — embeddings + existing rule-based
-    location/salary/occupation components) or "embeddings_only" (the three
-    embedding dimensions alone, rule-based components excluded) — used by
-    the evaluation harness to isolate what embeddings contribute on their
-    own, separate from the blend. See docs/embedding-matching.md.
+    """`mode`: "blended" (default — embeddings + the existing rule-based
+    education component) or "embeddings_only" (the three embedding
+    dimensions alone, the rule-based component excluded) — used by the
+    evaluation harness to isolate what embeddings contribute on their own,
+    separate from the blend. See
+    docs/architecture/data-platform/embedding-matching.md.
     """
     weights = BLENDED_WEIGHTS if mode == "blended" else EMBEDDINGS_ONLY_WEIGHTS
     candidate_profile = load_candidate_profile(session, candidate_id)
@@ -190,9 +193,7 @@ def rank_jobs_for_candidate_semantic(
             else None
         )
 
-        location_score = _location_component(candidate_profile, job_profile)
-        salary_score = _salary_component(candidate_profile, job_profile)
-        occupation_score = _occupation_component(candidate_profile, job_profile)
+        education_score = _education_component(candidate_profile, job_profile)
 
         total = (
             weights["skills"] * skills_sim
@@ -202,9 +203,7 @@ def rank_jobs_for_candidate_semantic(
             + weights["overall"] * (
                 overall_sim if overall_sim is not None else UNKNOWN_SIMILARITY_SCORE
             )
-            + weights["location"] * location_score
-            + weights["salary"] * salary_score
-            + weights["occupation"] * occupation_score
+            + weights["education"] * education_score
         )
 
         results.append(SemanticMatchResult(
@@ -213,9 +212,7 @@ def rank_jobs_for_candidate_semantic(
             skills_similarity=round(skills_sim, 4),
             experience_similarity=round(experience_sim, 4) if experience_sim is not None else None,
             overall_similarity=round(overall_sim, 4) if overall_sim is not None else None,
-            location_score=round(location_score, 4),
-            salary_score=round(salary_score, 4),
-            occupation_score=round(occupation_score, 4),
+            education_score=round(education_score, 4),
         ))
 
     results.sort(key=lambda r: r.total_score, reverse=True)

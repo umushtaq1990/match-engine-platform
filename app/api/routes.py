@@ -37,9 +37,7 @@ def _to_match_out(result: MatchResult) -> MatchOut:
         ineligible_reason=result.ineligible_reason,
         score=ScoreOut(
             skill=result.score.skill,
-            location=result.score.location,
-            salary=result.score.salary,
-            occupation=result.score.occupation,
+            education=result.score.education,
             total=result.score.total,
         ),
         skill_gap=SkillGapOut(
@@ -144,8 +142,7 @@ def get_job_matches_for_candidate_semantic(
         SemanticMatchOut(
             job_id=r.job_id, total_score=r.total_score,
             skills_similarity=r.skills_similarity, experience_similarity=r.experience_similarity,
-            overall_similarity=r.overall_similarity, location_score=r.location_score,
-            salary_score=r.salary_score, occupation_score=r.occupation_score,
+            overall_similarity=r.overall_similarity, education_score=r.education_score,
         )
         for r in results
     ]

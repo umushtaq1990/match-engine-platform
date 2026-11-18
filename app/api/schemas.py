@@ -12,9 +12,7 @@ from app.identity.models import UserRole
 
 class ScoreOut(BaseModel):
     skill: float
-    location: float
-    salary: float
-    occupation: float
+    education: float
     total: float
 
 
@@ -58,16 +56,14 @@ class CourseRecommendationsResponse(BaseModel):
 class SemanticMatchOut(BaseModel):
     """Phase 17: embeddings-blended match — a complementary signal to
     MatchOut's rule-based score, not a replacement. See
-    docs/embedding-matching.md.
+    docs/architecture/data-platform/embedding-matching.md.
     """
     job_id: int
     total_score: float
     skills_similarity: float | None
     experience_similarity: float | None
     overall_similarity: float | None
-    location_score: float
-    salary_score: float
-    occupation_score: float
+    education_score: float
 
 
 class ProfileCreate(BaseModel):
@@ -95,7 +91,8 @@ class ProfileOut(BaseModel):
 
 class CandidateDetailsOut(BaseModel):
     """Issue #18: the scoring-relevant fields `app/matching/scoring.py` reads
-    for a candidate (location, salary, occupation, skills) — editable by the
+    for a candidate (skills, education, plus location/salary/occupation,
+    which are filter/display-only since issue #21) — editable by the
     candidate themself, as opposed to `ProfileOut`'s identity fields.
     """
     model_config = {"from_attributes": True}
@@ -108,11 +105,13 @@ class CandidateDetailsOut(BaseModel):
     primary_occupation_id: int | None
     experience_level: str | None
     skill_ids: list[int]
+    highest_degree_level: str | None
+    field_of_study: str | None
 
 
 class CandidateDetailsUpdate(BaseModel):
-    """Issue #20: `location_region` is deliberately absent here -- it's still
-    read by app/matching/scoring.py's _location_component, but the frontend
+    """Issue #20: `location_region` is deliberately absent here -- it's
+    still read by app/matching/profiles.py for display, but the frontend
     no longer collects it from the user, so the PATCH handler leaves it
     untouched rather than overwriting it with nothing.
     """
@@ -124,6 +123,11 @@ class CandidateDetailsUpdate(BaseModel):
     primary_occupation_id: int | None = None
     experience_level: str | None = None
     skill_ids: list[int] = Field(default_factory=list, max_length=10)
+    # Issue #21: highest_degree_level is scored (scoring.py's
+    # _education_component); field_of_study is display-only, same role as
+    # location_region above.
+    highest_degree_level: str | None = None
+    field_of_study: str | None = None
     # Issue #24 added changed_by_keycloak_user_id here as a client-supplied
     # field; issue #26 removed it -- who made this edit now comes only from
     # the verified access token's `sub` claim, not a client-supplied value.
@@ -153,10 +157,10 @@ class SkillCreate(BaseModel):
 
 class JobCreate(BaseModel):
     """Issue #22: an employer-posted job. Issue #23: `location_region` is
-    deliberately absent -- still read by app/matching/scoring.py's
-    _location_component, but the frontend no longer collects it, so a new
-    job gets the same "Unknown" placeholder convention as Candidate
-    registration (see app/api/job_routes.py). Issue #26:
+    deliberately absent -- still read by app/matching/profiles.py for
+    display, but the frontend no longer collects it, so a new job gets the
+    same "Unknown" placeholder convention as Candidate registration (see
+    app/api/job_routes.py). Issue #26:
     `posted_by_keycloak_user_id` is deliberately absent too -- ownership
     now comes only from the verified access token's `sub` claim.
     """

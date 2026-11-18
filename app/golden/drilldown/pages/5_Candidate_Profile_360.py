@@ -151,9 +151,7 @@ else:
             "occupation": occupation_titles.get(m.entity_id, "unknown"),
             "total_score": round(m.score.total, 3),
             "skill_score": round(m.score.skill, 3),
-            "location_score": round(m.score.location, 3),
-            "salary_score": round(m.score.salary, 3),
-            "occupation_score": round(m.score.occupation, 3),
+            "education_score": round(m.score.education, 3),
             "missing_required_skills": ", ".join(
                 sorted(skill_name_by_id.get(i, f"#{i}") for i in missing_required)
             ) or "(none)",

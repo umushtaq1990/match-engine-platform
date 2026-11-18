@@ -34,6 +34,7 @@ from app.identity.models import UserProfile, UserRole
 from app.ingestion.source_models import (
     Candidate,
     CandidateSkill,
+    DegreeLevel,
     EvidenceSource,
     Occupation,
     ProficiencyLevel,
@@ -123,11 +124,11 @@ def get_profile(keycloak_user_id: str, db: Session = DbSession, claims: dict = D
 def get_candidate_details(
     candidate_id: int, db: Session = DbSession, claims: dict = Depends(get_verified_claims),
 ):
-    """Issue #18/#20: location/salary/occupation/experience/skills for this
-    candidate. Only skills + occupation are read by
-    `app/matching/scoring.py` today; location/salary/experience are stored
-    for filtering/analysis, not scored (see issue #21 for the discussion of
-    simplifying scoring to skills+education only).
+    """Issue #18/#20: location/salary/occupation/experience/skills/education
+    for this candidate. Issue #21: skills + education (highest_degree_level)
+    are what `app/matching/scoring.py` reads today; location/salary/
+    occupation/experience/field_of_study are stored for filtering/analysis,
+    not scored.
 
     Issue #26: lenient ownership -- an unowned (seeded-dataset) candidate
     stays freely readable, same as today's demo behavior; a candidate
@@ -147,6 +148,10 @@ def get_candidate_details(
         primary_occupation_id=candidate.primary_occupation_id,
         experience_level=years_experience_to_level(candidate.years_experience),
         skill_ids=skill_ids,
+        highest_degree_level=(
+            candidate.highest_degree_level.value if candidate.highest_degree_level else None
+        ),
+        field_of_study=candidate.field_of_study,
     )
 
 
@@ -178,6 +183,8 @@ def update_candidate_details(
         "desired_salary_max": candidate.desired_salary_max,
         "primary_occupation_id": candidate.primary_occupation_id,
         "years_experience": candidate.years_experience,
+        "highest_degree_level": candidate.highest_degree_level,
+        "field_of_study": candidate.field_of_study,
     }
 
     candidate.location_city = payload.location_city
@@ -188,6 +195,10 @@ def update_candidate_details(
     candidate.primary_occupation_id = payload.primary_occupation_id
     if payload.experience_level is not None:
         candidate.years_experience = EXPERIENCE_LEVEL_TO_YEARS[payload.experience_level]
+    candidate.highest_degree_level = (
+        DegreeLevel(payload.highest_degree_level) if payload.highest_degree_level else None
+    )
+    candidate.field_of_study = payload.field_of_study
 
     db.query(CandidateSkill).filter_by(candidate_id=candidate_id).delete()
     for skill_id in payload.skill_ids:
@@ -207,6 +218,8 @@ def update_candidate_details(
             "desired_salary_max": candidate.desired_salary_max,
             "primary_occupation_id": candidate.primary_occupation_id,
             "years_experience": candidate.years_experience,
+            "highest_degree_level": candidate.highest_degree_level,
+            "field_of_study": candidate.field_of_study,
         },
     )
     db.commit()
@@ -220,6 +233,10 @@ def update_candidate_details(
         primary_occupation_id=candidate.primary_occupation_id,
         experience_level=years_experience_to_level(candidate.years_experience),
         skill_ids=payload.skill_ids,
+        highest_degree_level=(
+            candidate.highest_degree_level.value if candidate.highest_degree_level else None
+        ),
+        field_of_study=candidate.field_of_study,
     )
 
 

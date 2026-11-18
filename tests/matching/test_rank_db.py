@@ -23,11 +23,9 @@ def test_rank_jobs_for_candidate_scores_eligible_match_correctly(matching_db_ses
     assert result.ineligible_reason is None
     # skill: 0.7*1/1 (required Python matched) + 0.3*0/1 (preferred SQL missing) = 0.7
     assert result.score.skill == 0.7
-    assert result.score.location == 1.0  # same city
-    assert result.score.salary == 1.0  # 55-65k overlaps 50-70k
-    assert result.score.occupation == 1.0  # same occupation
-    # total = 0.55*0.7 + 0.15*1 + 0.15*1 + 0.15*1
-    assert result.score.total == 0.835
+    assert result.score.education == 1.0  # job has no degree requirement -> trivially satisfied
+    # total = 0.7*0.7 + 0.3*1.0
+    assert result.score.total == 0.79
     assert result.skill_gap.not_recorded_preferred == {ids["sql_id"]}
     assert result.skill_gap.confirmed_absent_preferred == set()
 

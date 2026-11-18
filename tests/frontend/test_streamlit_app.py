@@ -55,6 +55,7 @@ def _default_candidate_details() -> dict:
         "location_city": "Unknown", "postal_code": None, "country": None,
         "desired_salary_min": None, "desired_salary_max": None,
         "primary_occupation_id": None, "experience_level": "entry_level", "skill_ids": [],
+        "highest_degree_level": None, "field_of_study": None,
     }
 
 
@@ -363,6 +364,7 @@ def test_profile_details_form_renders_with_prefilled_values(mock_get):
                 "location_city": "Austin", "postal_code": "78701", "country": "USA",
                 "desired_salary_min": 90000, "desired_salary_max": 120000,
                 "primary_occupation_id": 1, "experience_level": "senior", "skill_ids": [2],
+                "highest_degree_level": "master", "field_of_study": "Computer Science",
             })
         return _candidate_support_endpoint_response(url) or MagicMock(status_code=404)
     mock_get.side_effect = side_effect
@@ -378,6 +380,8 @@ def test_profile_details_form_renders_with_prefilled_values(mock_get):
     assert next(sb for sb in at.selectbox if sb.label == "Occupation").value == "Software Engineer"
     assert next(sb for sb in at.selectbox if sb.label == "Experience level").value == "Senior"
     assert at.multiselect[0].value == ["SQL"]
+    assert next(sb for sb in at.selectbox if sb.label == "Highest degree level").value == "Master's"
+    assert next(ti for ti in at.text_input if ti.label == "Field of study").value == "Computer Science"
 
 
 @patch("requests.get")

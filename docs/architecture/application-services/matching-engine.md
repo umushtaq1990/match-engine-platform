@@ -15,17 +15,15 @@ The deterministic, explainable rule-based matching baseline this whole project's
 **Scoring formula** (provisional weights, documented per the brief's instruction not to present weights as objectively correct):
 
 ```
-total = 0.55 * skill + 0.15 * location + 0.15 * salary + 0.15 * occupation
+total = 0.7 * skill + 0.3 * education
 ```
 
-**Qualification compatibility is omitted entirely**, there is no candidate qualifications/certifications table yet (see `docs/architecture/data-platform/data-model.md` known limitations). The other four weights are not re-normalized to compensate; this is itself a documented limitation of the formula.
+**Issue #21 simplified this from the original four-component formula** (`0.55 * skill + 0.15 * location + 0.15 * salary + 0.15 * occupation`), per the user's explicit direction: location, salary, and occupation moved to filter/display-only fields on `Candidate`/`Job` (still readable via `GET /candidates/{id}/details`/the job endpoints, just no longer scored), replaced by a new education component. This also closes the brief's own previously-documented "qualification compatibility omitted entirely, no candidate qualifications table exists" gap (see Known Limitations history below) -- `Candidate.highest_degree_level`/`.field_of_study` and `Job.min_degree_level` are the new columns (migration `334b9feb41ce`), backfilled for the existing synthetic population by `app/ingestion/backfill_education.py` (curated-occupation rows only, domain-anchored like the existing skill backfill -- non-curated/no-occupation rows stay `NULL`, honest "unknown" rather than fabricated). The embeddings-blended ranker (`app/embeddings/retrieval.py`) made the identical change in the same pass, since it reused these same component functions -- see `docs/architecture/data-platform/embedding-matching.md`'s Round 5 for the re-measured NDCG impact.
 
 | Component | Logic | Missing-data behavior |
 |---|---|---|
 | Skill | `0.7 * (required matched / required total) + 0.3 * (preferred matched / preferred total)`. A job with no required/preferred skills is trivially satisfied on that portion. | N/A, skill evidence is always explicit (present or absent in the set) |
-| Location | 1.0 same city, 0.6 same region/different city, 0.0 otherwise | N/A, location is never null in this dataset |
-| Salary | 1.0 if candidate/job ranges overlap, 0.0 if not | **0.5 (neutral)** if either side's salary data is missing, consistent with the "not recorded ≠ failing" principle from the data model |
-| Occupation | 1.0 same occupation, 0.0 different | **0.5 (neutral)** if either side's occupation is missing |
+| Education | 1.0 if the job has no degree requirement, or the candidate's highest degree meets/exceeds it (ordinal comparison, high_school < associate < bachelor < master < doctorate); 0.0 if it falls short | **0.5 (neutral)** if the job has a requirement but the candidate's degree level isn't recorded, consistent with the "not recorded ≠ failing" principle from the data model |
 
 **Eligibility** (hard constraint, separate from scoring): per the brief, hard constraints must never be overridden by a high soft score. Implemented in `eligibility.py`, evaluated before scoring. One rule: a job with required skills is **ineligible** (excluded entirely, not merely low-ranked) if the candidate matches *zero* of them. A deliberately conservative placeholder, this synthetic dataset has no legal/licensing/work-authorization data a real system would also need to
 check here.
@@ -70,10 +68,11 @@ Course recommendations verified against real data: for candidate #1 (target occu
 **Performance fix — a real N+1 bug**: `load_all_job_profiles`/
 `load_all_candidate_profiles` originally issued one query per row (1000+1 / 2000+1 queries). Fixed by batch-loading, verified against the original single-entity loaders (`load_job_profile`/`load_candidate_profile`, left unchanged) with zero output mismatches across a 25-row sample of each. `rank_jobs_for_candidate` dropped from ~1.95s/candidate (the measurement that originally forced a 50-candidate evaluation sample) to ~0.06s/candidate, a ~33x speedup. This is what unblocked full-population evaluation (see `docs/architecture/ai-ml-and-mlops.md`).
 
+**Issue #21 (skills + education scoring) verified live**: ran the new migration (`334b9feb41ce`) and `app/ingestion/backfill_education.py` against the real seeded database -- 3000 jobs and 1000 candidates updated on the first run (curated-occupation rows only), confirmed idempotent on a second run (`0 updated`), and spot-checked via `psql` that non-curated/no-occupation rows stay `NULL`. Hit the real API through a genuine Keycloak-issued token for an existing golden candidate: `GET /candidates/{id}/job-matches` returned the new `{"skill", "education", "total"}` score shape; `GET`/`PATCH /candidates/{id}/details` round-tripped `highest_degree_level`/`field_of_study` correctly; `GET /candidates/{id}/job-matches/semantic` returned the new `education_score` field. Full suite (341 tests) and `ruff check .` both pass after the change.
+
 ## Known Limitations
 
-- **No qualification compatibility** (see above).
-- **Occupation similarity is exact-match-only** (1.0/0.0) in the rule-based score, not "related occupations", **resolved separately** by the embeddings-blended ranking path, now the default for Use Case A (`docs/architecture/data-platform/embedding-matching.md`); the rule-based score itself is unchanged.
+- **Occupation similarity is no longer part of the score at all** (issue #21 -- see above); previously exact-match-only (1.0/0.0) in the rule-based score, with "related occupations" resolved separately by the embeddings-blended ranking path. That path's own `occupation_score` field was removed in the same change (see `docs/architecture/data-platform/embedding-matching.md`'s Round 5), since it reused this module's now-deleted `_occupation_component`.
 - **Eligibility rule is a conservative placeholder**, not a real legal/licensing constraint model.
 - Ranking currently loads *all* jobs/candidates into memory per call, fine at this scale (verified up to the real 1M-candidate/50K-job target via the two-stage retrieve-then-score path for embeddings, see `docs/architecture/data-platform/data-at-scale.md`), but the pure rule-based path itself would need pagination/batching at that volume without the ANN narrowing step.
 
@@ -85,7 +84,7 @@ Real measured concurrency numbers (not a single-request estimate): at 1 uvicorn 
 
 - `docs/architecture.md` : overview and runtime views
 - `docs/architecture/data-platform/embedding-matching.md` : the embeddings-blended ranking path layered on top of this engine
-- `docs/architecture/data-platform/data-model.md` : schema this engine reads from, including the qualifications-table gap
+- `docs/architecture/data-platform/data-model.md` : schema this engine reads from
 - `docs/architecture/ai-ml-and-mlops.md` : how matching quality is measured
 - `docs/security-and-threat-model.md` : the `X-API-Key` auth these endpoints require
 - `docs/assumptions-register.md` : assumption A5 (rule-based before ML)
