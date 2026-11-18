@@ -17,7 +17,7 @@ not a new one.
 """
 from dataclasses import dataclass, field
 
-from app.ingestion.source_models import DegreeLevel
+from app.common.enums import DegreeLevel
 from app.matching.profiles import CandidateProfile, JobProfile
 
 # Skill stays the dominant signal (was the largest of four components at
@@ -39,9 +39,8 @@ PREFERRED_SKILL_WEIGHT = 0.3
 UNKNOWN_DATA_SCORE = 0.5
 
 # Ordinal ranking for the "candidate meets or exceeds the job's minimum
-# degree level" comparison — DegreeLevel itself is a plain str enum (this
-# project's existing convention for every enum, see source_models.py), not
-# an IntEnum, so the ordering lives here instead.
+# degree level" comparison — DegreeLevel itself is a plain str enum (see
+# app.common.enums), not an IntEnum, so the ordering lives here instead.
 _DEGREE_LEVEL_RANK = {
     DegreeLevel.high_school: 0,
     DegreeLevel.associate: 1,

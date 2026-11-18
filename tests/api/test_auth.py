@@ -12,6 +12,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.api import deps
 from app.api.deps import require_api_key
 from app.api.main import app
 
@@ -136,14 +137,14 @@ def test_require_api_key_rejects_none():
 
 
 def test_require_api_key_rejects_wrong_value(monkeypatch):
-    monkeypatch.setenv("JME_API_KEY", "test-key-123")
+    monkeypatch.setattr(deps.settings, "jme_api_key", "test-key-123")
     with pytest.raises(HTTPException) as exc_info:
         require_api_key("wrong-key")
     assert exc_info.value.status_code == 401
 
 
 def test_require_api_key_accepts_configured_value(monkeypatch):
-    monkeypatch.setenv("JME_API_KEY", "test-key-123")
+    monkeypatch.setattr(deps.settings, "jme_api_key", "test-key-123")
     require_api_key("test-key-123")  # does not raise
 
 

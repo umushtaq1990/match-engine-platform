@@ -15,21 +15,22 @@ relational database.
 """
 import io
 import logging
-import os
 
 from minio import Minio
 from minio.error import S3Error
+
+from app.common.config import settings
 
 logger = logging.getLogger(__name__)
 
 MAX_CV_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB — a real multi-page text CV fits comfortably.
 ALLOWED_CONTENT_TYPE = "application/pdf"
 PDF_MAGIC_BYTES = b"%PDF-"
-BUCKET_NAME = os.environ.get("CV_STORAGE_BUCKET", "candidate-cvs")
+BUCKET_NAME = settings.cv_storage_bucket
 
-_ENDPOINT = os.environ.get("CV_STORAGE_ENDPOINT")
-_ACCESS_KEY = os.environ.get("CV_STORAGE_ACCESS_KEY")
-_SECRET_KEY = os.environ.get("CV_STORAGE_SECRET_KEY")
+_ENDPOINT = settings.cv_storage_endpoint
+_ACCESS_KEY = settings.cv_storage_access_key
+_SECRET_KEY = settings.cv_storage_secret_key
 
 _client: Minio | None = None
 if _ENDPOINT and _ACCESS_KEY and _SECRET_KEY:

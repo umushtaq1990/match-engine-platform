@@ -9,7 +9,6 @@ Used alongside RequireApiKey (app/api/deps.py), not instead of it -- the
 API key still gates "is this even a client of this service at all" the
 same way it always has; this adds "is the caller who they claim to be."
 """
-import os
 import time
 
 import httpx
@@ -17,8 +16,10 @@ from fastapi import Header, HTTPException, status
 from jose import jwt
 from jose.exceptions import JOSEError
 
-OIDC_CLIENT_ID = "jme-frontend"
-OIDC_INTERNAL_ISSUER = os.environ.get("OIDC_INTERNAL_ISSUER", "http://keycloak:8080/realms/jme")
+from app.common.config import settings
+
+OIDC_CLIENT_ID = settings.oidc_client_id
+OIDC_INTERNAL_ISSUER = settings.oidc_internal_issuer
 _JWKS_URL = f"{OIDC_INTERNAL_ISSUER}/protocol/openid-connect/certs"
 _JWKS_CACHE_SECONDS = 300
 
@@ -27,6 +28,16 @@ _jwks_cached_at: float = 0.0
 
 
 def _fetch_jwks(force: bool = False) -> dict:
+    """Returns the realm's JWKS (JSON Web Key Set), cached in-process for
+    `_JWKS_CACHE_SECONDS`.
+
+    Args:
+        force: bypasses the cache (used when a token's `kid` isn't found in
+            the cached set, e.g. right after Keycloak rotates signing keys).
+
+    Returns:
+        dict: the JWKS response body (a `{"keys": [...]}` dict).
+    """
     global _jwks_cache, _jwks_cached_at
     if not force and _jwks_cache is not None and (time.time() - _jwks_cached_at) < _JWKS_CACHE_SECONDS:
         return _jwks_cache
@@ -42,9 +53,27 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 def get_verified_claims(authorization: str | None = Header(default=None)) -> dict:
-    """Checks the header is present *before* ever touching the network (JWKS
-    fetch) -- keeps a request with no Authorization header failing fast and
-    offline, same as require_api_key's missing-header check.
+    """FastAPI dependency: verifies a Keycloak-issued RS256 access token's
+    signature, issuer, and `azp` (authorized party), returning its claims.
+
+    Checks the header is present *before* ever touching the network (JWKS
+    fetch) — keeps a request with no Authorization header failing fast and
+    offline, same as `require_api_key`'s missing-header check. Used
+    alongside `RequireApiKey` (app/api/deps.py), not instead of it: the API
+    key still gates "is this even a client of this service," this adds
+    "is the caller who they claim to be."
+
+    Args:
+        authorization: the raw `Authorization` header, expected to be
+            `Bearer <token>` — injected by FastAPI, never passed directly.
+
+    Returns:
+        dict: the token's verified claims (`sub`, `email`, `azp`, etc.).
+
+    Raises:
+        fastapi.HTTPException: 401 if the header is missing/malformed, the
+            signing key is unknown, the signature/issuer check fails, or
+            the token's `azp` doesn't match `OIDC_CLIENT_ID`.
     """
     if authorization is None or not authorization.startswith("Bearer "):
         raise _unauthorized("Missing or invalid Authorization header")

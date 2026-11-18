@@ -24,14 +24,14 @@ Only the LLM-generation call is routed here -- embeddings still go through
 Ollama's nomic-embed-text (vLLM here only serves the one completion model),
 so Ollama must stay running alongside vLLM for a full extraction run.
 """
-import os
-
 import httpx
 import mlflow
 from mlflow.entities import SpanType
 
-VLLM_URL = os.environ.get("VLLM_URL", "http://vllm:8000")
-VLLM_MODEL = os.environ.get("VLLM_MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
+from app.common.config import settings
+
+VLLM_URL = settings.vllm_url
+VLLM_MODEL = settings.vllm_model
 _TIMEOUT_SECONDS = 120.0
 
 

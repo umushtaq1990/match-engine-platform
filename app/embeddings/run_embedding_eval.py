@@ -20,6 +20,7 @@ import mlflow
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.common.config import settings
 from app.db import SessionLocal
 from app.embeddings.golden_dataset import load_near_miss_pairs
 from app.embeddings.models import EmbeddingEvalResult, EntityEmbedding
@@ -32,7 +33,7 @@ from app.matching.rank import rank_jobs_for_candidate
 logger = logging.getLogger(__name__)
 
 MLFLOW_EXPERIMENT_NAME = "jme-embedding-matching"
-MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_TRACKING_URI = settings.mlflow_tracking_uri
 DEFAULT_EMBEDDING_MODEL = "all-minilm"
 DEFAULT_K = 10
 DEFAULT_SAMPLE_SIZE = 30

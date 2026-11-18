@@ -3,12 +3,12 @@ rationale as candidate_client.py/job_client.py. Issue #26: also takes a
 verified access_token, sent as a bearer token -- this endpoint is
 strict-ownership, only the entity's own owner may read its history.
 """
-import os
-
 import requests
 
-API_URL = os.environ.get("API_URL", "http://gateway/matching")
-API_KEY = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
+from app.common.config import settings
+
+API_URL = settings.api_url
+API_KEY = settings.jme_api_key
 _HEADERS = {"X-API-Key": API_KEY}
 
 

@@ -3,12 +3,12 @@ skills endpoints (issue #18) — same split rationale as profile_client.py:
 pure, Streamlit-free, unit-testable, talking to the matching API over the
 Gateway with JME_API_KEY.
 """
-import os
-
 import requests
 
-API_URL = os.environ.get("API_URL", "http://gateway/matching")
-API_KEY = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
+from app.common.config import settings
+
+API_URL = settings.api_url
+API_KEY = settings.jme_api_key
 _HEADERS = {"X-API-Key": API_KEY}
 
 

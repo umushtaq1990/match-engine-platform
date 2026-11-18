@@ -11,13 +11,14 @@ bare local/pytest run with no Redis container behaves exactly as before.
 """
 import json
 import logging
-import os
 
 import redis
 
+from app.common.config import settings
+
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.environ.get("REDIS_URL")
+REDIS_URL = settings.redis_url
 STREAM_NAME = "analytics:recommendation_events"
 STREAM_MAXLEN = 100_000
 

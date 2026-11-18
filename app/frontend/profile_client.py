@@ -7,12 +7,12 @@ those two Keycloak clients. Issue #26: both functions also take a verified
 access_token, sent as a bearer token -- identity comes from that token
 server-side now, not a client-supplied keycloak_user_id body field.
 """
-import os
-
 import requests
 
-API_URL = os.environ.get("API_URL", "http://gateway/matching")
-API_KEY = os.environ.get("JME_API_KEY", "dev-local-key-change-me")
+from app.common.config import settings
+
+API_URL = settings.api_url
+API_KEY = settings.jme_api_key
 _HEADERS = {"X-API-Key": API_KEY}
 
 

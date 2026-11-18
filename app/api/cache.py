@@ -15,15 +15,15 @@ as a cache miss.
 """
 import json
 import logging
-import os
 
 import redis
 
+from app.common.config import settings
 from app.embeddings.cache_invalidation import get_candidate_cache_version
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.environ.get("REDIS_URL")
+REDIS_URL = settings.redis_url
 RESULT_CACHE_TTL_SECONDS = 3600
 
 _client: redis.Redis | None = None

@@ -15,15 +15,15 @@ no containers), falls back to in-memory storage — a single TestClient
 process never exercises the multi-worker bug this fixes, so there's nothing
 Redis would change there. See docs/redis-infrastructure.md.
 """
-import os
-
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from app.common.config import settings
+
 DEFAULT_RATE_LIMIT = "100/minute"
 
-REDIS_URL = os.environ.get("REDIS_URL")
+REDIS_URL = settings.redis_url
 
 
 def rate_limit_key(request: Request) -> str:

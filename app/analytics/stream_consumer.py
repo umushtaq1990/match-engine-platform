@@ -20,11 +20,12 @@ from pydantic import ValidationError
 
 from app.analytics.routes import _to_row
 from app.analytics.schemas import EventIn
+from app.common.config import settings
 from app.db import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.environ.get("REDIS_URL")
+REDIS_URL = settings.redis_url
 STREAM_NAME = "analytics:recommendation_events"
 CONSUMER_GROUP = "analytics-ingest"
 CONSUMER_NAME = f"analytics-{os.getpid()}"

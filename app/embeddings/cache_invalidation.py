@@ -17,13 +17,14 @@ blocking scan over the keyspace), and old versioned entries simply age out
 via their own TTL rather than needing to be found and deleted.
 """
 import logging
-import os
 
 import redis
 
+from app.common.config import settings
+
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.environ.get("REDIS_URL")
+REDIS_URL = settings.redis_url
 
 _client: redis.Redis | None = None
 if REDIS_URL:
