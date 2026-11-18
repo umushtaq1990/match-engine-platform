@@ -25,6 +25,22 @@ PRODUCTION_VECTOR_DIM = 384
 
 
 class EntityEmbedding(Base):
+    """One stored vector for one `(entity_type, entity_id, dimension,
+    embedding_model)` combination — the production embedding store.
+
+    Deliberately generic: nothing in this schema names "candidate" or
+    "job" specifically. `entity_type`/`dimension` are free strings, not
+    foreign keys or a fixed enum, so a project reusing this table for a
+    different set of entity types or dimensions needs zero schema change
+    — only the application code that populates/queries it (see
+    `app.embeddings.text_synthesis`/`hashing`/`compute_embeddings` for
+    where *this* project's "candidate"/"job" knowledge actually lives).
+    The one hard constraint is `PRODUCTION_VECTOR_DIM`: pgvector's
+    `Vector` column has a fixed width, so every row (any entity type,
+    any dimension) must use a model producing that many dimensions —
+    switching models means a migration, not just a config change.
+    """
+
     __tablename__ = "entity_embeddings"
     __table_args__ = (
         UniqueConstraint(
@@ -54,6 +70,14 @@ class EntityEmbedding(Base):
 
 
 class EmbeddingEvalResult(Base):
+    """One offline evaluation run's aggregate IR metrics for one
+    `(embedding_model, scoring_mode)` config — the comparison table used
+    to decide whether a candidate model/config should be promoted to
+    `EntityEmbedding`'s production table. Plain JSONB `detail`, no vector
+    column, no pgvector fixed-width constraint — this table can hold
+    results for models of any dimensionality side by side.
+    """
+
     __tablename__ = "embedding_eval_results"
 
     id: Mapped[int] = mapped_column(primary_key=True)

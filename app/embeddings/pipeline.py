@@ -40,6 +40,19 @@ def _canonical_skill_vectors(session: Session, embedding_model: str) -> dict[int
 
 
 def _weighted_average(pairs: list[tuple[list[float], float]]) -> list[float] | None:
+    """Averages a list of vectors, each with its own weight. The one
+    genuinely domain-free function in this module — no entity-type
+    knowledge, no skill/job concepts, just vector math — reusable as-is
+    anywhere a weighted combination of fixed-width vectors is needed.
+
+    Args:
+        pairs: `(vector, weight)` tuples; every vector must have the same
+            length. Weights need not sum to 1.0 — normalized internally.
+
+    Returns:
+        list[float] | None: the weighted-average vector, or `None` if
+            `pairs` is empty or every weight is zero (nothing to average).
+    """
     if not pairs:
         return None
     total_weight = sum(weight for _, weight in pairs)
@@ -56,6 +69,21 @@ def _weighted_average(pairs: list[tuple[list[float], float]]) -> list[float] | N
 def compute_skills_embedding(
     session: Session, entity_type: str, entity_id: int, embedding_model: str
 ) -> list[float] | None:
+    """Computes the Skills-dimension embedding: a weighted average of the
+    entity's skills' canonical vectors, no new LLM call (reuses Phase 16's
+    cached per-skill embeddings via `get_reference_embeddings`).
+
+    Args:
+        session: an active SQLAlchemy session.
+        entity_type: `"candidate"` (weighted by `PROFICIENCY_WEIGHTS`) or
+            `"job"` (weighted by `REQUIREMENT_WEIGHTS`).
+        entity_id: the candidate's or job's primary key.
+        embedding_model: which cached skill-embedding set to use.
+
+    Returns:
+        list[float] | None: the weighted-average vector, or `None` if the
+            entity has no skills with a cached vector.
+    """
     canonical_vectors = _canonical_skill_vectors(session, embedding_model)
 
     if entity_type == "candidate":
@@ -83,6 +111,28 @@ def compute_skills_embedding(
 def compute_embedding(
     session: Session, entity_type: str, entity_id: int, dimension: str, embedding_model: str
 ) -> list[float] | None:
+    """Computes one entity's embedding for one dimension — the single
+    entry point `app.embeddings.compute_embeddings.refresh_entity` calls
+    for every `(dimension, entity)` pair that needs a (re)compute.
+
+    Args:
+        session: an active SQLAlchemy session.
+        entity_type: `"candidate"` or `"job"`.
+        entity_id: the candidate's or job's primary key.
+        dimension: `"skills"` (pure vector math, no LLM call), or
+            `"experience"`/`"overall"` (synthesizes text via
+            `app.embeddings.text_synthesis`, then one `embed()` call).
+        embedding_model: which model to use for text-based dimensions
+            (and which cached skill-vector set to use for `"skills"`).
+
+    Returns:
+        list[float] | None: the computed vector, or `None` if there's no
+            source data for this dimension (e.g. no skills, or no
+            synthesizable text).
+
+    Raises:
+        ValueError: if `dimension` isn't one of the three known values.
+    """
     if dimension == "skills":
         return compute_skills_embedding(session, entity_type, entity_id, embedding_model)
     if dimension == "experience":

@@ -59,6 +59,25 @@ UNKNOWN_SIMILARITY_SCORE = 0.5
 
 @dataclass
 class SemanticMatchResult:
+    """Attributes:
+    job_id: the scored job's primary key.
+    total_score: the weighted blend (see `BLENDED_WEIGHTS`/
+        `EMBEDDINGS_ONLY_WEIGHTS`), rounded to 4 decimal places.
+    skills_similarity: cosine similarity in `[-1, 1]` (in practice
+        `[0, 1]` for this embedding model), or `0.0` if the job has no
+        skills vector (treated as "no overlap", not "unknown" — skills
+        embeddings are expected to exist whenever the job has any skills
+        at all).
+    experience_similarity: cosine similarity, or `None` if either side
+        lacks this dimension's vector (contributes `UNKNOWN_SIMILARITY_SCORE`
+        to `total_score` instead of a real comparison).
+    overall_similarity: same as `experience_similarity`, for the Overall
+        dimension.
+    education_score: the rule-based `_education_component` score (0.0,
+        0.5, or 1.0) — not an embedding similarity at all, reused as-is
+        from `app.matching.scoring`.
+    """
+
     job_id: int
     total_score: float
     skills_similarity: float | None
@@ -70,6 +89,14 @@ class SemanticMatchResult:
 def _get_vector(
     session: Session, entity_type: str, entity_id: int, dimension: str, embedding_model: str
 ) -> list[float] | None:
+    """Looks up one stored `EntityEmbedding` vector. Generic over entity
+    type/dimension — no candidate/job-specific logic — but still a thin
+    wrapper around one table's schema, not a standalone vector store.
+
+    Returns:
+        list[float] | None: `None` if no matching row exists (e.g. the
+            embedding hasn't been computed yet).
+    """
     row = session.execute(
         select(EntityEmbedding.vector).where(
             EntityEmbedding.entity_type == entity_type,
@@ -107,6 +134,20 @@ def _get_vectors_batch(
 def _stage1_job_ids(
     session: Session, candidate_vector: list[float], embedding_model: str, top_n: int
 ) -> list[int]:
+    """Stage 1 of the two-stage retrieval: a pgvector ANN query narrowing
+    every job down to the `top_n` closest by Skills-dimension cosine
+    distance. Job/candidate-specific glue (hardcodes `entity_type="job"`
+    and the Skills dimension), not a generic retrieval function.
+
+    Args:
+        session: an active SQLAlchemy session.
+        candidate_vector: the candidate's Skills-dimension embedding.
+        embedding_model: which model's stored vectors to search.
+        top_n: how many job ids to return.
+
+    Returns:
+        list[int]: job ids, nearest first.
+    """
     stmt = (
         select(EntityEmbedding.entity_id)
         .where(
@@ -121,6 +162,14 @@ def _stage1_job_ids(
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two equal-length vectors. Pure vector
+    math, zero domain coupling — reusable as-is anywhere, like
+    `app.embeddings.pipeline._weighted_average`.
+
+    Returns:
+        float: in `[-1.0, 1.0]`; `0.0` if either vector is all zeros
+            (avoids a division by zero rather than raising).
+    """
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = sum(x * x for x in a) ** 0.5
     norm_b = sum(y * y for y in b) ** 0.5
@@ -137,12 +186,36 @@ def rank_jobs_for_candidate_semantic(
     stage1_top_n: int = STAGE1_TOP_N,
     mode: str = "blended",
 ) -> list[SemanticMatchResult]:
-    """`mode`: "blended" (default — embeddings + the existing rule-based
-    education component) or "embeddings_only" (the three embedding
-    dimensions alone, the rule-based component excluded) — used by the
-    evaluation harness to isolate what embeddings contribute on their own,
-    separate from the blend. See
-    docs/architecture/data-platform/embedding-matching.md.
+    """Ranks jobs for a candidate using the two-stage retrieve-then-score
+    pipeline (see module docstring). Candidate/job-specific glue — unlike
+    `app.matching.scoring`/`app.embeddings.pipeline`, nothing here is
+    meant to be reused for a different pair of entity types as-is.
+
+    Args:
+        session: an active SQLAlchemy session.
+        candidate_id: the candidate's primary key.
+        top_k: how many results to return, highest `total_score` first.
+        embedding_model: which model's stored vectors to use.
+        stage1_top_n: how many jobs stage 1's ANN query narrows to before
+            stage 2 scores them in full.
+        mode: `"blended"` (default — embeddings + the existing rule-based
+            education component) or `"embeddings_only"` (the three
+            embedding dimensions alone, the rule-based component
+            excluded) — used by the evaluation harness to isolate what
+            embeddings contribute on their own, separate from the blend.
+            See docs/architecture/data-platform/embedding-matching.md.
+
+    Returns:
+        list[SemanticMatchResult]: sorted by `total_score` descending,
+            at most `top_k` entries, drawn only from stage 1's narrowed
+            job set (not necessarily the globally best match if a
+            relevant job fell outside the ANN window).
+
+    Raises:
+        ValueError: if the candidate doesn't exist, or has no Skills-
+            dimension embedding yet for `embedding_model` (the one
+            dimension this function can't degrade gracefully without —
+            see the error message for the fix).
     """
     weights = BLENDED_WEIGHTS if mode == "blended" else EMBEDDINGS_ONLY_WEIGHTS
     candidate_profile = load_candidate_profile(session, candidate_id)
@@ -236,6 +309,20 @@ def rank_jobs_for_candidate_blended_default(
     returns which path was actually used so the caller can report it
     (app/api/routes.py's `X-Ranking-Mode` header), the same transparency
     discipline as `X-Cache`.
+
+    Args:
+        session: an active SQLAlchemy session.
+        candidate_id: the candidate's primary key.
+        top_k: how many results to return.
+        include_ineligible: forwarded to `rank_jobs_for_candidate`.
+
+    Returns:
+        tuple[list[MatchResult], str]: the ranked results (still
+            `MatchResult`, not `SemanticMatchResult` — only the *order*
+            changes) and which path produced that order: `"rule_based"`
+            (candidate has no eligible jobs at all, nothing to re-rank),
+            `"rule_based_no_embeddings"` (candidate has no embeddings
+            yet), or `"blended"` (the normal case).
     """
     rule_based_results = rank_jobs_for_candidate(
         session, candidate_id, top_k=None, include_ineligible=include_ineligible
