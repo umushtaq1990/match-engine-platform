@@ -6,7 +6,7 @@
 # call per entity to phrase those graph facts as a narrative (not a
 # recommendation signal, see docs/architecture/data-platform/
 # knowledge-graph.md).
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
