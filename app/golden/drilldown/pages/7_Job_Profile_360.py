@@ -33,11 +33,19 @@ from app.golden.drilldown.data import (
     compute_peer_skill_gap,
     compute_unmet_requirement_frequency,
     find_similar_entities,
+    load_behavioral_rows,
     load_job_demographics,
     load_job_skill_cluster_rows,
     load_job_skill_detail,
     load_job_skill_names,
     name_clusters_by_majority,
+)
+from app.golden.drilldown.graph_chart import render_ego_network
+from app.golden.drilldown.graph_explainability import (
+    attach_candidate_segments,
+    build_job_ego_network,
+    get_or_generate_graph_narrative,
+    summarize_graph_facts,
 )
 from app.golden.select import select_existing_golden_job_ids
 from app.ingestion.source_models import Skill
@@ -160,6 +168,34 @@ st.dataframe(
     ]],
     use_container_width=True, hide_index=True,
 )
+
+st.markdown("#### Knowledge graph position")
+st.caption(
+    "A different lens on 'similar,' not a recommendation: this job's position in the actual "
+    "skill-sharing graph (REQUIRES_SKILL/HAS_SKILL/TEACHES_SKILL edges), not embedding "
+    "distance. The center (star) is this job; required skills sit on the inner ring, adjacent "
+    "candidates/jobs/courses on the outer ring, grouped by type. Node size and edge width "
+    "scale with shared-skill count -- where a node also appears in the Similar jobs table "
+    "above, its size also reflects that embedding similarity. Matching candidates are "
+    "outlined by their behavioral segment (same segmentation used on page 5). Hover any node "
+    "for exact numbers."
+)
+graph_nodes, graph_edges = build_job_ego_network(job_id, profile["title"], similar_df=similar)
+session = SessionLocal()
+try:
+    behavioral_rows = load_behavioral_rows(session)
+finally:
+    session.close()
+segment_by_candidate_id = dict(zip(behavioral_rows["candidate_id"], behavioral_rows["segment"]))
+attach_candidate_segments(graph_nodes, segment_by_candidate_id)
+render_ego_network(graph_nodes, graph_edges)
+graph_facts = summarize_graph_facts(graph_nodes, profile["title"])
+session = SessionLocal()
+try:
+    graph_narrative = get_or_generate_graph_narrative(session, "Job", job_id, graph_facts)
+finally:
+    session.close()
+st.info(graph_narrative)
 
 st.markdown("#### Skill gap")
 st.caption(

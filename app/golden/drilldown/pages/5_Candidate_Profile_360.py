@@ -50,6 +50,13 @@ from app.golden.drilldown.data import (
     load_weekly_event_trend,
     name_clusters_by_majority,
 )
+from app.golden.drilldown.graph_chart import render_ego_network
+from app.golden.drilldown.graph_explainability import (
+    attach_candidate_segments,
+    build_candidate_ego_network,
+    get_or_generate_graph_narrative,
+    summarize_graph_facts,
+)
 from app.golden.select import select_existing_golden_candidate_ids
 from app.ingestion.source_models import Skill
 from app.matching.course_recommendations import recommend_courses_for_candidate
@@ -175,6 +182,31 @@ st.dataframe(
     ]],
     use_container_width=True, hide_index=True,
 )
+
+st.markdown("#### Knowledge graph position")
+st.caption(
+    "A different lens on 'similar,' not a recommendation: this candidate's position in the "
+    "actual skill-sharing graph (HAS_SKILL/REQUIRES_SKILL/TEACHES_SKILL edges), not embedding "
+    "distance. The center (star) is this candidate; skills sit on the inner ring, adjacent "
+    "peers/jobs/courses on the outer ring, grouped by type. Node size and edge width scale "
+    "with shared-skill count -- where a node also appears in the Similar candidates table "
+    "above, its size also reflects that embedding similarity. Peer candidates are outlined by "
+    "their behavioral segment (same segmentation as the header metric above). Hover any node "
+    "for exact numbers."
+)
+graph_nodes, graph_edges = build_candidate_ego_network(
+    candidate_id, profile["full_name"], similar_df=similar,
+)
+segment_by_candidate_id = dict(zip(behavioral_rows["candidate_id"], behavioral_rows["segment"]))
+attach_candidate_segments(graph_nodes, segment_by_candidate_id)
+render_ego_network(graph_nodes, graph_edges)
+graph_facts = summarize_graph_facts(graph_nodes, profile["full_name"])
+session = SessionLocal()
+try:
+    graph_narrative = get_or_generate_graph_narrative(session, "Candidate", candidate_id, graph_facts)
+finally:
+    session.close()
+st.info(graph_narrative)
 
 st.markdown("#### Skill gap")
 st.caption(
