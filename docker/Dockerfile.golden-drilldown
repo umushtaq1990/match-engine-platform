@@ -1,11 +1,13 @@
 # Internal, live drill-down explorer over golden-eval results (three
 # pages: Candidates & Job Posts, Skills, Behavioral Analytics). Mostly
-# direct-to-Postgres, read-only -- the one exception is the Candidate/Job
+# direct-to-Postgres, read-only -- two exceptions: the Candidate/Job
 # Profile 360 pages' "Knowledge graph position" panel, which reads Neo4j
 # (graph_explainability.py) and makes one short, cached, best-effort LLM
 # call per entity to phrase those graph facts as a narrative (not a
 # recommendation signal, see docs/architecture/data-platform/
-# knowledge-graph.md).
+# knowledge-graph.md); and the Chatbot page (app/chatbot/,
+# pages/9_Chatbot.py), the only page in this app requiring login, see
+# docs/architecture/application-services/rag-chatbot.md.
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -37,6 +39,10 @@ COPY app/golden/select.py ./app/golden/select.py
 COPY app/golden/seed_curated_occupations.py ./app/golden/seed_curated_occupations.py
 COPY app/golden/generate_persona_events.py ./app/golden/generate_persona_events.py
 COPY app/golden/drilldown/ ./app/golden/drilldown/
+COPY app/evaluation/__init__.py ./app/evaluation/__init__.py
+COPY app/evaluation/metrics.py ./app/evaluation/metrics.py
+COPY app/frontend/oidc.py ./app/frontend/oidc.py
+COPY app/chatbot/ ./app/chatbot/
 
 ENV PYTHONPATH=/app
 
