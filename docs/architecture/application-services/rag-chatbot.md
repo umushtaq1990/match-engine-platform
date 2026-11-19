@@ -94,7 +94,8 @@ seven already-working pages.
 | Chat history | `app/chatbot/chat_history.py` | Postgres-backed, not `st.session_state` |
 | Tools | `app/chatbot/tools.py` | `search_knowledge_base`, `lookup_structured_data` |
 | Orchestration | `app/chatbot/graph.py` | LangGraph, tool-calling, MLflow root span |
-| Eval | `app/chatbot/eval/` | `golden_questions.py`, `metrics.py` (LLM-judge), `run_chatbot_eval.py` |
+| Eval | `app/chatbot/eval/` | `golden_questions.py`, `metrics.py` (LLM-judge), `run_chatbot_eval.py` (full scored run), `run_retrieval_eval.py` (fast, judge-free retrieval-only run) |
+| LLM backend selection | `app/chatbot/llm_backend.py` | `resolve_generate_fn("ollama"\|"vllm")` — Ollama (CPU, serial, the live chat page's default) or vLLM (GPU, continuous batching, for parallel eval runs) |
 | UI | `app/golden/drilldown/pages/9_Chatbot.py` + `auth.py` | The one login-gated page |
 
 ## Verification & Results
@@ -121,31 +122,73 @@ answered "not available in the provided information."
    instruction against editorializing a neutral fact into a deficiency — reapplied here in
    `graph.py`'s `_ANSWER_PROMPT`.
 
-**Eval harness, real numbers, honestly reported including the weak ones**: a live run (10
-candidates, 10 jobs, k=5) scored:
+**The original eval-scope mismatch (flagged above as "fix this before trusting the numbers") was
+found, root-caused with a live manual diagnostic, and fixed — not left as a known limitation.**
+Precision@5/recall@5 of 0.01/0.05 on the first live run turned out to be real, not a harness bug:
+a direct query against the pgvector index (bypassing the harness entirely, `EntityEmbedding.vector.
+cosine_distance(query_vector)`) confirmed `all-minilm` embeds by semantic shape ("years of
+experience," generic job-posting boilerplate) and carries ~zero weight for a literal id token like
+"#2522" among thousands of near-identical-shaped chunks — vector search alone essentially cannot
+answer an ID-specific question. `run_chatbot_eval.py` was rewritten to route every question through
+the real agent (`graph.run_chat_turn`, `retrieval_mode="agent"`) instead of calling `retrieve_chunks`
+directly, so the agent's own choice between `search_knowledge_base` and `lookup_structured_data` is
+what gets measured — the same choice the live chat page makes. `lookup_hit` is detected by checking
+the **resolved tool-call result** (the actual row `lookup_structured_data` returned) against the
+expected id, not by pattern-matching the LLM's raw call arguments — correct regardless of whether
+the agent looked an entity up by id or by name.
 
-| Metric | Score |
-|---|---|
-| Relevance | 4.7 / 5 |
-| Coherence | 4.0 / 5 |
-| Faithfulness | 3.8 / 5 |
-| Groundedness | 2.05 / 5 |
-| Precision@5 | 0.01 |
-| Recall@5 | 0.05 |
+**Skill/course had no structured-lookup path at all until this pass** — they were always routed
+through `search_knowledge_base`, same vector-search weakness as candidate/job ids. Extended
+`lookup_structured_data` with `entity_name`-based lookup (skill/course are named in a question by
+name/title, never by internal id, unlike candidate/job) — see Architecture above for the
+`Course.title` non-uniqueness case, which fails honest (`{"ambiguous": True, "matches": [...]}`)
+rather than guessing.
 
-Reading this honestly: relevance/coherence look strong, but precision@5/recall@5 are close to
-zero — vector search rarely retrieves the *exact* chunk these golden questions need. This is a
-**measurement-scope mismatch, not a pipeline bug**: the golden questions are ID-specific
-("candidate 1's years of experience"), which pure semantic vector search is inherently weak at
-(embeddings capture meaning, not exact numeric IDs) — exactly why `lookup_structured_data` exists,
-and confirmed separately (above) that the full agent correctly routes these questions to it and
-answers correctly. `run_chatbot_eval.py` currently exercises `retrieve_chunks` directly, bypassing
-the agent's tool-routing — so it measures vector-only retrieval against questions vector retrieval
-was never meant to answer alone. Groundedness (2.05) is the metric that actually caught the
-consequence of this — relevance/coherence alone would have painted a falsely rosy picture, a real
-demonstration of why a RAG eval needs more than one metric. Fixing the mismatch (split the golden
-set by question type, or evaluate the full agent instead of raw retrieval) is Known Limitations
-below, not silently patched over.
+**A second real bug caught live, fixed the same way as the first**: the tightened "always use
+`lookup_structured_data` for a named skill/course" prompt initially *broke* job lookups — "What
+skills are required for job 2522?" started making the model emit `{"entity_type": "job",
+"entity_name": "2522"}` instead of `entity_id`, because the new skill/course emphasis bled into any
+question that happened to mention the word "skills." Caught via the same direct-diagnostic
+technique (dumping raw `tool_calls` per question, not trusting the aggregate score alone), fixed by
+scoping the prompt's `entity_name` instruction explicitly to skill/course only, plus a defensive
+fallback in `_normalize_lookup_args`: a numeric `entity_name` on a candidate/job call is recovered
+as `entity_id` rather than silently failing that lookup. Both directions locked in with regression
+tests in `tests/chatbot/test_graph.py`.
+
+**Faster iteration loop added**: `run_retrieval_eval.py` isolates precision@k/recall@k from the
+four LLM-judge metrics — ~1 LLM call per question (the tool-decision call) instead of ~5, since
+precision/recall depend only on which chunk/lookup the agent picked, not on a judged answer. Used
+to iterate on the prompt fix above without paying for judge calls whose result couldn't change.
+Deliberately not persisted to `ChatEvalResult` (that table's own docstring scopes it to a full
+scored run) or to `ChatSession`/`ChatMessage` (no answer is ever generated).
+
+**vLLM backend added for eval throughput** (`llm_backend.py`), reusing this project's existing
+Ollama/vLLM swap pattern from CV/job-generation (`app.golden.vllm_client`): `--backend vllm
+--max-workers N` runs N questions concurrently via a `ThreadPoolExecutor` against vLLM's continuous
+batching, each worker opening its own `SessionLocal()` (a SQLAlchemy `Session` isn't thread-safe to
+share). The live chat page still defaults to Ollama. Confirmed live that the LLM-judge *quality*
+scores (relevance/coherence/faithfulness/groundedness) differ between backends — expected, since
+vLLM here serves a different model (`Qwen2.5-3B-AWQ`) than Ollama's judge (`qwen2.5:1.5b`) — so
+quality scores are only comparable within one backend, not across; precision@k/recall@k are
+unaffected by this since they don't depend on judge-model choice.
+
+**Final numbers, full agent-routed eval, vLLM backend, 60 questions (15 each candidate/job/
+skill/course), k=5**:
+
+| Category | Precision@5 | Recall@5 | Relevance | Coherence | Faithfulness | Groundedness |
+|---|---|---|---|---|---|---|
+| Overall | 0.92 | 0.98 | 2.87 | 2.60 | 1.31 | 1.50 |
+| candidate_profile | 1.00 | 1.00 | 3.13 | 2.51 | 0.80 | 0.96 |
+| job_description | 1.00 | 1.00 | 2.73 | 2.56 | 0.78 | 1.00 |
+| skill | 1.00 | 1.00 | 4.33 | 3.13 | 2.93 | 3.33 |
+| course | 0.63 | 0.90 | 1.93 | 2.53 | 2.07 | 2.17 |
+
+Candidate/job/skill precision@5/recall@5 are all a clean 1.0 — the agent reliably resolves these to
+an exact DB row via `lookup_structured_data` rather than approximating via vector search. Course is
+the one category not at 1.0, and honestly so: of the 100 courses, 11 share a title with another
+course (`Course.title` has no uniqueness constraint, unlike `Skill.name`), and
+`lookup_structured_data` correctly refuses to guess among them — those questions fall back to the
+weaker chunk-based scoring path by design, not a bug left unfixed.
 
 **Tests**: `python -m ruff check .` clean repo-wide; `python -m pytest tests/ -q` — 352 passed
 (11 new: `tests/chatbot/test_access_control.py`, `test_chat_history.py`, `test_graph.py`).
@@ -154,19 +197,31 @@ and applied against the real local Postgres.
 
 ## Known Limitations
 
-- `run_chatbot_eval.py` scores raw vector retrieval, not the full tool-calling agent — see the
-  eval-results discussion above. A fairer eval would run `graph.run_chat_turn` per question (which
-  correctly uses `lookup_structured_data` for ID-specific questions) or split the golden set by
-  question type and score each against the retrieval mode actually suited to it.
+- 11 of 100 courses share a title with another course (`Course.title` has no uniqueness
+  constraint) — `lookup_structured_data` returns `{"ambiguous": True, "matches": [...]}` rather
+  than guessing, so those specific course questions fall back to weaker chunk-based scoring. The
+  honest fix is a uniqueness constraint or a disambiguating field (provider+title) upstream in
+  `app.ingestion`, not something this package should silently paper over.
+- The small model's tool-routing choice is sensitive to prompt wording in ways that need a live
+  diagnostic to catch, not just the aggregate score — this pass caught and fixed two such
+  regressions (skill questions defaulting to vector search; the fix for that then breaking job
+  questions that happen to mention "skills") by dumping raw `tool_calls` per question. Any future
+  prompt change to `_DECIDE_TOOLS_PROMPT` should be re-verified the same way, not just by the
+  aggregate precision/recall number.
+- LLM-judge quality scores (relevance/coherence/faithfulness/groundedness) are only comparable
+  within one backend — vLLM and Ollama serve different judge models here, so a quality-score
+  regression across a backend switch isn't necessarily a real regression; precision@k/recall@k
+  don't have this caveat.
 - No raw CV-text field exists anywhere in this schema (same gap `app.embeddings.text_synthesis`
   already flags) — candidate chunks are honestly synthesized from structured fields, not from CV
   prose. A question whose answer depends on CV narrative detail (not structured fields) can't be
   answered correctly yet.
 - `provision_admin.py` is a one-off manual script, not a self-serve admin flow — proportionate for
   a single-developer platform, a real gap if this ever needed multiple admins.
-- The small model (`qwen2.5:1.5b`) occasionally calls two tools when one would do (observed live:
-  `search_knowledge_base` called twice with a cosmetic "language" argument difference) — harmless
-  redundancy, not a correctness issue, not fixed this pass.
+- The small model occasionally calls two tools when one would do (observed live:
+  `search_knowledge_base` called twice with a cosmetic "language" argument difference, or
+  `lookup_structured_data` called twice identically) — harmless redundancy, not a correctness
+  issue, not fixed this pass.
 
 ## Roadmap
 
@@ -178,8 +233,13 @@ and applied against the real local Postgres.
   reranker via the existing Ollama client — deliberately left open until this phase), then a
   systematic sweep over embedding model / LLM model / chunk size / top-k across all three
   retrieval modes on this phase's established metrics.
-- Fix the eval-harness scope mismatch noted in Known Limitations before trusting Phase 2/3's
-  numbers against Phase 1's.
+- The eval-harness scope mismatch flagged in an earlier pass (vector-only retrieval scored against
+  ID-specific questions) is now fixed — `run_chatbot_eval.py`/`run_retrieval_eval.py` both route
+  through the full agent, so Phase 2/3's `retrieval_mode="graph"`/`"hybrid"` rows will compare
+  fairly against Phase 1's `"agent"` rows on the same basis.
+- A uniqueness constraint (or provider+title disambiguation) on `Course.title` would close the one
+  remaining precision gap (see Known Limitations) — worth doing before Phase 2/3 numbers are
+  compared against Phase 1's course category specifically.
 
 ## Related Documents
 

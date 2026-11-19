@@ -796,6 +796,13 @@ services:
       # ("jme-frontend"), only the issuer needs overriding to the
       # in-network hostname.
       OIDC_INTERNAL_ISSUER: http://keycloak:8080/realms/jme
+      # app.chatbot.llm_backend's "vllm" option (app.golden.vllm_client) --
+      # VLLM_MODEL must match whatever the vllm service (profile "tools")
+      # is actually serving, same value as the other services that use it,
+      # since vllm_client.generate() always sends this exact model name in
+      # its request regardless of the `model` arg the caller passes.
+      VLLM_URL: http://vllm:8000
+      VLLM_MODEL: "Qwen/Qwen2.5-3B-Instruct-AWQ"
     depends_on:
       db:
         condition: service_healthy

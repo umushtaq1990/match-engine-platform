@@ -19,6 +19,8 @@ from mlflow.entities import SpanType
 from sqlalchemy.orm import Session
 
 from app.chatbot import chat_history
+from app.chatbot.llm_backend import GenerateFn
+from app.chatbot.llm_backend import resolve_generate_fn as _resolve_generate_fn
 from app.chatbot.tools import (
     TOOL_LOOKUP_STRUCTURED_DATA,
     TOOL_SEARCH_KNOWLEDGE_BASE,
@@ -26,8 +28,9 @@ from app.chatbot.tools import (
     lookup_structured_data,
     search_knowledge_base,
 )
-from app.extraction.ollama_client import generate
 
+# Ignored outright when `generate_fn` is vLLM's client (it serves one fixed
+# model regardless of this string -- see app.chatbot.llm_backend).
 _LLM_MODEL = "qwen2.5:1.5b"
 
 _TOOL_CALL_SCHEMA = {
@@ -45,9 +48,33 @@ _TOOL_CALL_SCHEMA = {
 _DECIDE_TOOLS_PROMPT = """You are an assistant with access to these tools:
 {tool_specs}
 
-lookup_structured_data's arguments MUST use exactly the keys "entity_type" and "entity_id", e.g. \
-{{"name": "lookup_structured_data", "arguments": {{"entity_type": "candidate", "entity_id": 1}}}} \
--- never "candidate_id" or "job_id" as a key name.
+lookup_structured_data's arguments MUST use exactly the key "entity_type", plus either "entity_id" \
+(an integer) when the question names a candidate or job by id, e.g. {{"name": "lookup_structured_data", \
+"arguments": {{"entity_type": "candidate", "entity_id": 1}}}} -- or "entity_name" (a string, the exact \
+name/title) when the question names a skill or course, e.g. {{"name": "lookup_structured_data", \
+"arguments": {{"entity_type": "skill", "entity_name": "Java"}}}}. Never use "candidate_id", "job_id", \
+"skill_name", or "course_name"/"course_title" as a key name -- always "entity_type" plus "entity_id" or \
+"entity_name".
+
+MANDATORY rule, not a suggestion: "entity_name" is ONLY for when the entity itself is a skill or a \
+course -- i.e. entity_type is "skill" or "course". Examples:
+- "What category is the skill Java in?" -> {{"name": "lookup_structured_data", "arguments": \
+{{"entity_type": "skill", "entity_name": "Java"}}}}
+- "Who provides the course 'Intro to ML' (course id 7)?" -> {{"name": "lookup_structured_data", \
+"arguments": {{"entity_type": "course", "entity_name": "Intro to ML"}}}}
+
+MANDATORY rule, not a suggestion: for entity_type "candidate" or "job", ALWAYS use "entity_id" (the \
+integer id), NEVER "entity_name" -- even when the question also mentions skills. The entity being \
+looked up is the candidate/job itself (identified by its id); skills are just a field of it, not a \
+separate lookup. Examples:
+- "What skills are required for job 2522?" -> {{"name": "lookup_structured_data", "arguments": \
+{{"entity_type": "job", "entity_id": 2522}}}} -- NOT entity_name: "2522".
+- "What skills does candidate 7 have?" -> {{"name": "lookup_structured_data", "arguments": \
+{{"entity_type": "candidate", "entity_id": 7}}}} -- NOT entity_name: "7".
+
+Any question naming a specific candidate/job id, or a specific skill/course name, MUST use \
+lookup_structured_data, never search_knowledge_base. Only use search_knowledge_base for open-ended/\
+descriptive questions that name no specific candidate id, job id, skill name, or course title.
 
 Conversation so far:
 {history}
@@ -55,8 +82,7 @@ Conversation so far:
 User's new question: {question}
 
 Decide which tool(s) to call to answer this question, and with what arguments. Output a JSON array \
-of {{"name": ..., "arguments": {{...}}}} objects. Call at most 2 tools. If the question names a \
-specific candidate or job id, prefer lookup_structured_data; otherwise use search_knowledge_base.
+of {{"name": ..., "arguments": {{...}}}} objects. Call at most 2 tools.
 """
 
 _ANSWER_PROMPT = """Answer the user's question using ONLY the information below. Do not invent any \
@@ -86,12 +112,12 @@ class ChatTurnState(TypedDict):
     answer: str
 
 
-def _decide_tools(state: ChatTurnState) -> ChatTurnState:
+def _decide_tools(generate_fn: GenerateFn, state: ChatTurnState) -> ChatTurnState:
     tool_specs_text = "\n".join(f"- {t['name']}: {t['description']}" for t in TOOL_SPECS)
     prompt = _DECIDE_TOOLS_PROMPT.format(
         tool_specs=tool_specs_text, history=state["history_text"] or "(none yet)", question=state["question"],
     )
-    raw = generate(_LLM_MODEL, prompt, response_format=_TOOL_CALL_SCHEMA)
+    raw = generate_fn(_LLM_MODEL, prompt, response_format=_TOOL_CALL_SCHEMA)
     try:
         calls = json.loads(raw)
     except json.JSONDecodeError:
@@ -102,22 +128,51 @@ def _decide_tools(state: ChatTurnState) -> ChatTurnState:
     return state
 
 
-def _normalize_lookup_args(args: dict) -> tuple[str, int]:
+def _normalize_lookup_args(args: dict) -> dict:
     """`_TOOL_CALL_SCHEMA`'s `arguments` field is an unconstrained JSON
-    object (Ollama's `format` schema only enforces the outer `{name,
-    arguments}` shape, not per-tool argument key names) -- confirmed live:
-    a real call came back as `{"candidate_id": "1"}` instead of the
-    requested `{"entity_type": "candidate", "entity_id": 1}`. Rather than
-    trusting a small model's exact key names, accept the common aliases
-    directly.
+    object (Ollama's/vLLM's `format`/`response_format` schema only
+    enforces the outer `{name, arguments}` shape, not per-tool argument
+    key names) -- confirmed live: a real call came back as
+    `{"candidate_id": "1"}` instead of the requested `{"entity_type":
+    "candidate", "entity_id": 1}`. Rather than trusting a small model's
+    exact key names, accept the common aliases directly.
+
+    Returns:
+        dict: `{"entity_type": str, "entity_id": int | None, "entity_name":
+            str | None}`. `entity_type` is `""` when nothing recognized --
+            a safe no-match sentinel (fails that one lookup, not the
+            whole turn), not a parsing error.
     """
-    if "entity_type" in args and "entity_id" in args:
-        return str(args["entity_type"]), int(args["entity_id"])
     if "candidate_id" in args:
-        return "candidate", int(args["candidate_id"])
+        return {"entity_type": "candidate", "entity_id": int(args["candidate_id"]), "entity_name": None}
     if "job_id" in args:
-        return "job", int(args["job_id"])
-    return "", -1
+        return {"entity_type": "job", "entity_id": int(args["job_id"]), "entity_name": None}
+    if "skill_name" in args:
+        return {"entity_type": "skill", "entity_id": None, "entity_name": str(args["skill_name"])}
+    if "course_name" in args:
+        return {"entity_type": "course", "entity_id": None, "entity_name": str(args["course_name"])}
+    if "course_title" in args:
+        return {"entity_type": "course", "entity_id": None, "entity_name": str(args["course_title"])}
+
+    entity_type = str(args["entity_type"]) if "entity_type" in args else ""
+    entity_id = int(args["entity_id"]) if "entity_id" in args else None
+    entity_name = str(args["entity_name"]) if "entity_name" in args else None
+
+    # candidate/job have no name-based lookup -- a small model sometimes
+    # emits entity_name for them anyway (confirmed live: "what skills does
+    # job 2522 require" -> {"entity_type": "job", "entity_name": "2522"}),
+    # usually a numeric id mislabeled as a name. Recover it rather than
+    # failing the lookup outright.
+    if entity_type in ("candidate", "job") and entity_id is None and entity_name is not None:
+        try:
+            entity_id = int(entity_name)
+            entity_name = None
+        except ValueError:
+            pass
+
+    if not entity_type or (entity_id is None and entity_name is None):
+        return {"entity_type": "", "entity_id": None, "entity_name": None}
+    return {"entity_type": entity_type, "entity_id": entity_id, "entity_name": entity_name}
 
 
 def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
@@ -135,8 +190,11 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
                     "source_entity_id": c.source_entity_id, "tags": c.tags, "is_fresh": c.is_fresh,
                 } for c in chunks)
             elif name == TOOL_LOOKUP_STRUCTURED_DATA:
-                entity_type, entity_id = _normalize_lookup_args(args)
-                data = lookup_structured_data(session, state["role"], entity_type, entity_id)
+                normalized = _normalize_lookup_args(args)
+                data = lookup_structured_data(
+                    session, state["role"], normalized["entity_type"],
+                    entity_id=normalized["entity_id"], entity_name=normalized["entity_name"],
+                )
                 results.append({"tool": name, "result": data})
         except Exception as exc:
             results.append({"tool": name, "result": f"(tool call failed: {exc})"})
@@ -145,7 +203,7 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
     return state
 
 
-def _generate_answer(state: ChatTurnState) -> ChatTurnState:
+def _generate_answer(generate_fn: GenerateFn, state: ChatTurnState) -> ChatTurnState:
     if state["tool_results"]:
         context = json.dumps(state["tool_results"], indent=2, default=str)
     else:
@@ -153,15 +211,15 @@ def _generate_answer(state: ChatTurnState) -> ChatTurnState:
     prompt = _ANSWER_PROMPT.format(
         context=context, history=state["history_text"] or "(none yet)", question=state["question"],
     )
-    state["answer"] = generate(_LLM_MODEL, prompt).strip()
+    state["answer"] = generate_fn(_LLM_MODEL, prompt).strip()
     return state
 
 
-def _build_graph(session: Session):
+def _build_graph(session: Session, generate_fn: GenerateFn):
     workflow = StateGraph(ChatTurnState)
-    workflow.add_node("decide_tools", _decide_tools)
+    workflow.add_node("decide_tools", lambda state: _decide_tools(generate_fn, state))
     workflow.add_node("execute_tools", lambda state: _execute_tools(session, state))
-    workflow.add_node("generate_answer", _generate_answer)
+    workflow.add_node("generate_answer", lambda state: _generate_answer(generate_fn, state))
     workflow.set_entry_point("decide_tools")
     workflow.add_edge("decide_tools", "execute_tools")
     workflow.add_edge("execute_tools", "generate_answer")
@@ -174,7 +232,9 @@ def _format_history(messages) -> str:
 
 
 @mlflow.trace(span_type=SpanType.CHAIN)
-def run_chat_turn(session: Session, session_id: int, role: str, question: str) -> dict:
+def run_chat_turn(
+    session: Session, session_id: int, role: str, question: str, generate_fn: GenerateFn | None = None,
+) -> dict:
     """Runs one full chat turn: persists the user's question, decides and
     executes tool calls, generates a grounded answer, persists it.
 
@@ -184,16 +244,22 @@ def run_chat_turn(session: Session, session_id: int, role: str, question: str) -
             create_session`).
         role: the user's role, gating what the tools can retrieve.
         question: the user's new message.
+        generate_fn: which LLM client's `generate()` to call -- defaults to
+            Ollama (the live chat page's choice); the eval harness can pass
+            vLLM's instead for real concurrent throughput (see
+            `app.chatbot.llm_backend`).
 
     Returns:
         dict: `{"answer": str, "retrieved_chunks": list[dict] (each
             `{chunk_id, text, source_type, source_entity_id, tags,
             is_fresh}`, the traceability record), "tool_calls": list[dict]}`.
     """
+    if generate_fn is None:
+        generate_fn = _resolve_generate_fn("ollama")
     chat_history.append_message(session, session_id, "user", question)
     history_text = _format_history(chat_history.load_recent_messages(session, session_id, limit=10))
 
-    graph = _build_graph(session)
+    graph = _build_graph(session, generate_fn)
     initial_state: ChatTurnState = {
         "question": question, "history_text": history_text, "role": role,
         "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",
@@ -206,4 +272,37 @@ def run_chat_turn(session: Session, session_id: int, role: str, question: str) -
         "answer": final_state["answer"],
         "retrieved_chunks": final_state["retrieved_chunks"],
         "tool_calls": final_state["tool_calls"],
+        "tool_results": final_state["tool_results"],
+    }
+
+
+@mlflow.trace(span_type=SpanType.CHAIN)
+def run_retrieval_turn(session: Session, role: str, question: str, generate_fn: GenerateFn | None = None) -> dict:
+    """Runs only `decide_tools` -> `execute_tools` -- no answer generation,
+    no `ChatSession`/`ChatMessage` persistence. Isolates retrieval
+    correctness (which chunks/lookup the agent used) from answer-quality
+    judging: precision@k/recall@k only need `tool_calls`/`retrieved_chunks`,
+    and computing them doesn't require ever generating or judging an
+    answer, which is ~4x the LLM calls per question for no change to
+    these two numbers. Meant for fast iteration on retrieval knobs
+    (embedding model, top_k, chunking) -- use `run_chat_turn` for a full
+    scored run that also needs the LLM-judge metrics.
+
+    Returns:
+        dict: `{"retrieved_chunks": list[dict], "tool_calls": list[dict],
+            "tool_results": list[dict]}` -- same shapes as `run_chat_turn`'s,
+            minus `"answer"`.
+    """
+    if generate_fn is None:
+        generate_fn = _resolve_generate_fn("ollama")
+    state: ChatTurnState = {
+        "question": question, "history_text": "", "role": role,
+        "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",
+    }
+    state = _decide_tools(generate_fn, state)
+    state = _execute_tools(session, state)
+    return {
+        "retrieved_chunks": state["retrieved_chunks"],
+        "tool_calls": state["tool_calls"],
+        "tool_results": state["tool_results"],
     }

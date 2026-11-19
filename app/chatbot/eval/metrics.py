@@ -12,8 +12,11 @@ directly -- not reimplemented here.
 """
 import json
 
-from app.extraction.ollama_client import generate
+from app.chatbot.llm_backend import GenerateFn
+from app.chatbot.llm_backend import resolve_generate_fn as _resolve_generate_fn
 
+# Ignored outright when `generate_fn` is vLLM's client -- see
+# app.chatbot.llm_backend.
 _JUDGE_LLM_MODEL = "qwen2.5:1.5b"
 
 _SCORE_SCHEMA = {
@@ -60,8 +63,10 @@ Answer: {answer}
 """
 
 
-def _judge(prompt: str) -> tuple[float, str]:
-    raw = generate(_JUDGE_LLM_MODEL, prompt, response_format=_SCORE_SCHEMA)
+def _judge(prompt: str, generate_fn: GenerateFn | None) -> tuple[float, str]:
+    if generate_fn is None:
+        generate_fn = _resolve_generate_fn("ollama")
+    raw = generate_fn(_JUDGE_LLM_MODEL, prompt, response_format=_SCORE_SCHEMA)
     try:
         parsed = json.loads(raw)
         return float(parsed["score"]), str(parsed.get("justification", ""))
@@ -69,20 +74,21 @@ def _judge(prompt: str) -> tuple[float, str]:
         return 0.0, "(judge output could not be parsed)"
 
 
-def score_relevance(question: str, answer: str) -> tuple[float, str]:
+def score_relevance(question: str, answer: str, generate_fn: GenerateFn | None = None) -> tuple[float, str]:
     """Returns `(score, justification)`, score in `[1, 5]` (or `0.0` if the
     judge's output couldn't be parsed -- a parsing failure, not a real
-    score of zero)."""
-    return _judge(_RELEVANCE_PROMPT.format(question=question, answer=answer))
+    score of zero). `generate_fn` defaults to Ollama; pass vLLM's client
+    for concurrent eval runs (see `app.chatbot.llm_backend`)."""
+    return _judge(_RELEVANCE_PROMPT.format(question=question, answer=answer), generate_fn)
 
 
-def score_coherence(answer: str) -> tuple[float, str]:
-    return _judge(_COHERENCE_PROMPT.format(answer=answer))
+def score_coherence(answer: str, generate_fn: GenerateFn | None = None) -> tuple[float, str]:
+    return _judge(_COHERENCE_PROMPT.format(answer=answer), generate_fn)
 
 
-def score_faithfulness(context: str, answer: str) -> tuple[float, str]:
-    return _judge(_FAITHFULNESS_PROMPT.format(context=context, answer=answer))
+def score_faithfulness(context: str, answer: str, generate_fn: GenerateFn | None = None) -> tuple[float, str]:
+    return _judge(_FAITHFULNESS_PROMPT.format(context=context, answer=answer), generate_fn)
 
 
-def score_groundedness(context: str, answer: str) -> tuple[float, str]:
-    return _judge(_GROUNDEDNESS_PROMPT.format(context=context, answer=answer))
+def score_groundedness(context: str, answer: str, generate_fn: GenerateFn | None = None) -> tuple[float, str]:
+    return _judge(_GROUNDEDNESS_PROMPT.format(context=context, answer=answer), generate_fn)

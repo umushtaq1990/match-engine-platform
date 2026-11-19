@@ -39,20 +39,41 @@ SOURCE_CANDIDATE_PROFILE = "candidate_profile"
 SOURCE_SKILL = "skill"
 SOURCE_COURSE = "course"
 
+# all-minilm's serving context is a hard 256 tokens (confirmed directly from
+# Ollama's own rejection -- same constraint app.embeddings.text_synthesis's
+# MAX_JOB_OVERALL_TEXT_CHARS already documents, ~3 chars/token conservatively).
+# Caught live here too: a real job description exceeded it and crashed a
+# full-population embedding run with a 500 from /api/embeddings. Unlike
+# text_synthesis.py (which truncates, acceptable there since it only feeds
+# one embedding dimension of several), a real chunking pipeline should
+# split long text into multiple chunks instead of discarding the rest --
+# more granular retrieval is a feature here, not just a workaround.
+_MAX_CHUNK_CHARS = 700
+
 
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _split_into_chunks(text: str, max_chars: int = _MAX_CHUNK_CHARS) -> list[str]:
+    if len(text) <= max_chars:
+        return [text]
+    return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
+
+
 def _build_job_chunks(session: Session, job_id: int) -> list[dict]:
-    """One chunk per job: title + company + the real description text
-    (public -- job postings are, by nature, meant to be seen broadly).
+    """One or more chunks per job: title + company + the real description
+    text, split into `_MAX_CHUNK_CHARS`-sized pieces if long (public --
+    job postings are, by nature, meant to be seen broadly).
     """
     job = session.get(Job, job_id)
     if job is None or not job.description_raw:
         return []
     text = f"Job posting: {job.title} at {job.company_name}.\n\n{job.description_raw}"
-    return [{"text": text, "tags": ["job"], "visibility": VISIBILITY_PUBLIC}]
+    return [
+        {"text": piece, "tags": ["job"], "visibility": VISIBILITY_PUBLIC}
+        for piece in _split_into_chunks(text)
+    ]
 
 
 def _build_candidate_chunks(session: Session, candidate_id: int) -> list[dict]:
@@ -90,7 +111,10 @@ def _build_candidate_chunks(session: Session, candidate_id: int) -> list[dict]:
         f"Candidate: {candidate.full_name} (#{candidate.id}). "
         f"{candidate.years_experience} years of experience.{role_part}{degree_part} {skills_part}"
     ).strip()
-    return [{"text": text, "tags": ["candidate"], "visibility": VISIBILITY_CONFIDENTIAL}]
+    return [
+        {"text": piece, "tags": ["candidate"], "visibility": VISIBILITY_CONFIDENTIAL}
+        for piece in _split_into_chunks(text)
+    ]
 
 
 def _build_skill_chunks(session: Session, skill_id: int) -> list[dict]:
@@ -120,7 +144,10 @@ def _build_course_chunks(session: Session, course_id: int) -> list[dict]:
         f"Course: {course.title}, provided by {course.provider} "
         f"({course.level} level, {course.duration_hours} hours).{skills_part}"
     )
-    return [{"text": text, "tags": ["course"], "visibility": VISIBILITY_PUBLIC}]
+    return [
+        {"text": piece, "tags": ["course"], "visibility": VISIBILITY_PUBLIC}
+        for piece in _split_into_chunks(text)
+    ]
 
 
 CHUNK_BUILDERS = {
