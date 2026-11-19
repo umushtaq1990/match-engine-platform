@@ -11,3 +11,13 @@ wordcloud==1.9.6
 # app.ingestion.generate_synthetic_data imports Faker at module level even
 # though this app never calls anything that uses it.
 Faker==30.3.0
+# Knowledge graph position panel (graph_explainability.py/graph_chart.py):
+# neo4j matches app/requirements-graph.txt's pin. Ego-network layout is a
+# hand-written deterministic radial layout (graph_chart.py), not networkx --
+# no graph-layout library dependency needed for it.
+neo4j==6.4.1
+# graph_explainability.py imports app.extraction.ollama_client.generate()
+# directly (not app.extraction.pipeline, which pulls in skill_cache and a
+# much larger chain for one constant) -- its own transitive dependencies.
+httpx==0.27.2
+mlflow-skinny==3.17.2

@@ -11,7 +11,8 @@ app/evaluation/ground_truth.py uses for the full population.
 """
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey
+from sqlalchemy import CheckConstraint, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -61,3 +62,37 @@ class GoldenInjectedNoise(Base):
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), index=True, nullable=True)
     skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id"), index=True)
     injected_at: Mapped[datetime] = mapped_column()
+
+
+class GraphNarrative(Base):
+    """Persisted cache for the Candidate/Job Profile 360 pages' "Knowledge
+    graph position" LLM narrative (app/golden/drilldown/
+    graph_explainability.py) -- durable, shared-across-replicas version of
+    what started as an in-process `st.cache_data` cache. `entity_type`/
+    `entity_id` is a free pair (not a FK), same polymorphic shape as
+    app.embeddings.models.EntityEmbedding, since this caches both
+    Candidate and Job narratives in one table rather than two near-
+    identical ones.
+
+    `facts_hash` is the real invalidation check: a sha256 of the exact
+    `summarize_graph_facts(...)` output the stored narrative was generated
+    from. A page load always recomputes facts fresh from Neo4j (cheap --
+    the Cypher queries, not the LLM call, dominate neither this table's
+    nor the overall request's cost) and only calls the LLM again if the
+    hash no longer matches -- i.e. this candidate's/job's skills, peers,
+    adjacent jobs, or courses actually changed since the row was written,
+    not a time-based guess. `facts` itself is stored alongside for
+    debugging/audit, not just the hash.
+    """
+    __tablename__ = "graph_narratives"
+    __table_args__ = (
+        UniqueConstraint("entity_type", "entity_id", name="uq_graph_narrative_entity"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(20), index=True)
+    entity_id: Mapped[int] = mapped_column(index=True)
+    facts_hash: Mapped[str] = mapped_column(String(64))
+    facts: Mapped[dict] = mapped_column(JSONB)
+    narrative_text: Mapped[str] = mapped_column(Text())
+    generated_at: Mapped[datetime] = mapped_column()

@@ -1,8 +1,11 @@
 # Internal, live drill-down explorer over golden-eval results (three
-# pages: Candidates & Job Posts, Skills, Behavioral Analytics) --
-# app/golden/drilldown/. Direct-to-Postgres, read-only, no CV storage/LLM
-# access needed (unlike the other golden-* tools) since this only reads
-# already-persisted eval/behavioral/occupation data.
+# pages: Candidates & Job Posts, Skills, Behavioral Analytics). Mostly
+# direct-to-Postgres, read-only -- the one exception is the Candidate/Job
+# Profile 360 pages' "Knowledge graph position" panel, which reads Neo4j
+# (graph_explainability.py) and makes one short, cached, best-effort LLM
+# call per entity to phrase those graph facts as a narrative (not a
+# recommendation signal, see docs/architecture/data-platform/
+# knowledge-graph.md).
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -15,7 +18,10 @@ COPY app/__init__.py ./app/__init__.py
 COPY app/common/ ./app/common/
 COPY app/ingestion/ ./app/ingestion/
 COPY app/extraction/models.py ./app/extraction/models.py
+COPY app/extraction/ollama_client.py ./app/extraction/ollama_client.py
 COPY app/extraction/__init__.py ./app/extraction/__init__.py
+COPY app/graph/__init__.py ./app/graph/__init__.py
+COPY app/graph/neo4j_client.py ./app/graph/neo4j_client.py
 COPY app/analytics/__init__.py ./app/analytics/__init__.py
 COPY app/analytics/models.py ./app/analytics/models.py
 COPY app/analytics/segmentation.py ./app/analytics/segmentation.py

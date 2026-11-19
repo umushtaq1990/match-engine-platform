@@ -128,8 +128,40 @@ What this comparison does not cover: a full ranking-quality comparison across em
 
 Reading this honestly: **rule-based-only's NDCG dropped sharply** (0.645 -> 0.381) — expected, not a regression to investigate: removing three of the four original components (location/salary/occupation, 0.45 of the old weight) leaves a cruder two-signal score, and most of the ground-truth population still has no backfilled education data (only curated-occupation rows do), so a large share of that signal sits at the neutral `UNKNOWN_DATA_SCORE`. **Blended and embeddings-only now score identically** on this sample — a real, measured coincidence worth naming rather than silently reporting without comment: education's contribution (same weight, 0.0 vs 0.35) evidently isn't large enough on this particular 30-candidate sample's top-10 window to change the blended ordering versus the embeddings-only one, given skills-similarity still dominates both. Blended remains at least as strong as rule-based-only, so the Round 4 default (`mode=blended`) stays justified; the Education dimension (Known Limitations, previously flagged as not built) is now built, closing that specific gap, but doesn't by itself recover rule-based-only's lost discriminating power — that was never its job.
 
+**Round 6: ANN tuning (`ef_search`/`stage1_top_n`) and the real end-to-end latency this actually sits inside.** The HNSW index (`ix_entity_embeddings_ann`) was created with pgvector's defaults and `_stage1_job_ids` never overrides `ef_search` — pgvector's own default (40) is sized for small-`k` lookups, not for retrieving `stage1_top_n=200` accurate neighbors. A direct comparison on a 60-candidate sample, same ground truth, k=10:
+
+| Config | Avg latency | P@10 | R@10 | NDCG@10 | MRR |
+|---|---|---|---|---|---|
+| rule_based | 266ms | 0.288 | 0.200 | 0.420 | 0.655 |
+| ANN top200, `ef_search`=40 (current default) | 37ms | 0.542 | 0.264 | 0.677 | 0.783 |
+| ANN top200, `ef_search`=400 | 112ms | 0.685 | 0.389 | 0.829 | 0.842 |
+| ANN top500, `ef_search`=200 | 259ms | 0.705 | 0.449 | 0.877 | 0.908 |
+| no-ANN brute force (exact, scores every job) | 2592ms | 0.718 | 0.474 | 0.894 | 0.917 |
+
+Re-run against the **full 1,898-candidate golden population** (not just the 60-sample) at the three modes the existing eval harness already reports:
+
+| Mode | Avg latency | P@10 | R@10 | NDCG@10 | MRR |
+|---|---|---|---|---|---|
+| rule_based | 225.9ms | 0.303 | 0.208 | 0.402 | 0.606 |
+| blended, ANN top200 (current default `ef_search`) | **29.1ms** | 0.587 | 0.315 | 0.715 | 0.823 |
+| blended, no ANN (brute force) | 1933.6ms | 0.756 | 0.488 | 0.899 | 0.914 |
+
+Reading this honestly: the current default is not as badly under-tuned as the 60-candidate sample suggested — at full population it recovers ~80% of brute-force's P@10/NDCG gain over rule-based at 1/66th the latency. `stage1_top_n=500, ef_search=200` is the better operating point if more accuracy is wanted (within ~1-3 points of brute force on every metric, still ~10x faster than brute force) but isn't free — it costs roughly the same latency as rule-based, up from the current default's 29ms. Neither `ef_search` nor `stage1_top_n` is currently exposed as a tunable in `rank_jobs_for_candidate_semantic`'s signature; promoting either requires a deliberate choice informed by the table above, not a blind default swap.
+
+**The real end-to-end latency this ranking step sits inside, measured candidate-by-candidate**: all of the above timings are the ranking/retrieval step alone, assuming embeddings already exist. The full "candidate uploads a CV -> recommendations are ready" path has two steps upstream of ranking:
+
+| Stage | Measured cost (single real request, not under load) | Needed by |
+|---|---|---|
+| CV extraction (`POST /extract`, 1 live LLM `generate()` call) | **p50=31.75s, p95/max=58.29s** (real, `scripts/load_test_llm.py` concurrency=1 — see `docs/operations/capacity-planning.md`) | all three ranking modes equally — this produces the structured skill/profile data every mode needs |
+| Embedding computation, 3 dimensions, one candidate, warm cache (`compute_embedding`) | **~2-16ms (skills) + ~37-120ms (experience) + ~37-45ms (overall)** ≈ 80-180ms total; **~4.1s on the very first call in a freshly started process**, a one-time per-process reference-embedding cache warm-up (`app/extraction/skill_cache.py`'s `get_reference_embeddings`), not a per-request cost | blended + brute-force only; rule-based skips this entirely |
+| Ranking/retrieval (table above) | 29ms (ANN) / 226ms (rule-based) / 1934ms (brute force) | the mode actually chosen |
+
+Reading this honestly: **CV extraction's ~26-58 real seconds dominates the entire pipeline by two to three orders of magnitude over every ranking-method difference measured in this document.** Whether the ranking step costs 29ms or 1934ms is, from the candidate's actual wall-clock wait after uploading a CV, noise against a 30-60 second LLM call that happens first. The ANN-vs-brute-force distinction matters for a different reason than "speed up the CV-upload flow": it matters for serving ranking requests cheaply and repeatedly against profiles that already have embeddings (e.g. a candidate revisiting their job-matches page, or ranking at scale across many simultaneous users), not for the one-time cold path right after a CV upload, where extraction cost swamps everything downstream of it. It also surfaces a real current gap worth naming: **`compute_embeddings.py` is a batch job, not triggered synchronously on CV upload or profile edit** — a newly-uploaded candidate has no embeddings at all until that batch job next runs, so `rank_jobs_for_candidate_blended_default` would report `rule_based_no_embeddings` and silently fall back to rule-based ordering for them in the meantime, not an error, but a real staleness window this document hadn't previously called out.
+
 ## Known Limitations
 
+- `_stage1_job_ids` never sets `hnsw.ef_search`, relying on pgvector's default (40) regardless of `stage1_top_n` — adequate at the current default (`top_n=200`, see Round 6) but not something to assume still holds if `stage1_top_n` is ever raised without also raising `ef_search` to match.
+- `compute_embeddings.py` is an offline batch job; there is no live trigger on CV upload or profile edit, so a newly-onboarded candidate has no embeddings until the next batch run and gets `rule_based_no_embeddings` fallback ordering in the meantime (see Round 6).
 - The two-stage architecture was originally **designed for** 100,000-job scale and verified only against the project's small dataset (1,000 jobs) at the time this document was first written; it has since been verified live at the real 50,000-job target scale with a real N+1 bug found and fixed along the way, see `docs/architecture/data-platform/data-at-scale.md` for that full stress test.
 - No raw CV-text field exists for candidates, the Overall dimension's candidate-side input is a synthesized summary sentence, not real free text, until that gap is addressed.
 - Promoting a new production model requires a migration + full re-embed batch, there's no zero-downtime hot-swap path, an acceptable limitation for a single-developer local platform.
@@ -144,6 +176,6 @@ Reading this honestly: **rule-based-only's NDCG dropped sharply** (0.645 -> 0.38
 - `docs/architecture/data-platform/data-at-scale.md` : the domain-anchored data fix that reversed the Round 3 finding, and the full 50,000-job stress test
 - `docs/architecture/application-services/skill-extraction.md` : the skill-embedding cache this reuses, and the evaluation-harness pattern this mirrors
 - `docs/architecture/application-services/matching-engine.md` : the rule-based engine this complements
-- `docs/architecture/data-platform/knowledge-graph.md` : a documented future signal source for this blend (v3+)
+- `docs/architecture/data-platform/knowledge-graph.md` : graph-based collaborative filtering was investigated as a fourth signal for this blend and found not viable on current data — see that document's Verification & Results for the full leave-one-out investigation
 - `docs/architecture.md` : overall system architecture
 - `docs/progress.md` : full build history
