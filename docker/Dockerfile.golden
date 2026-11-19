@@ -5,7 +5,7 @@
 # image for every golden-* tool service (mirrors docker-compose.yml's
 # extraction-eval/embeddings-compute both reusing Dockerfile.extraction),
 # varied only by `command`.
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
