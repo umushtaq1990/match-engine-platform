@@ -10,4 +10,4 @@
 -r requirements-golden.txt
 pytest==8.3.3
 httpx==0.27.2
-ruff==0.7.4
+ruff==0.17.5
