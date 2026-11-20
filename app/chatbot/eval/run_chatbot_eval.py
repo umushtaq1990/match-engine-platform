@@ -42,8 +42,14 @@ import mlflow
 
 from app.chatbot import chat_history
 from app.chatbot.eval.golden_questions import build_golden_questions
-from app.chatbot.eval.metrics import score_coherence, score_faithfulness, score_groundedness, score_relevance
-from app.chatbot.graph import _ANSWER_PROMPT, _ANSWER_PROMPT_TIGHT, run_chat_turn
+from app.chatbot.eval.metrics import (
+    _JUDGE_LLM_MODEL,
+    score_coherence,
+    score_faithfulness,
+    score_groundedness,
+    score_relevance,
+)
+from app.chatbot.graph import _ANSWER_PROMPT, _ANSWER_PROMPT_TIGHT, _LLM_MODEL, run_chat_turn
 from app.chatbot.llm_backend import GenerateFn, resolve_generate_fn
 from app.chatbot.models import ChatEvalResult
 from app.chatbot.tools import TOOL_LOOKUP_STRUCTURED_DATA
@@ -98,6 +104,7 @@ def _log_to_mlflow(
 
 def _eval_one_question(
     item: dict, top_k: int, generate_fn: GenerateFn, judge_generate_fn: GenerateFn, answer_prompt: str,
+    model: str, judge_model: str,
 ) -> dict | None:
     """Runs one question end-to-end and scores it -- the unit of work
     parallelized across a thread pool. Opens and closes its own DB session
@@ -123,7 +130,7 @@ def _eval_one_question(
     worker_session = SessionLocal()
     try:
         return _eval_one_question_unsafe(
-            item, top_k, generate_fn, judge_generate_fn, answer_prompt, worker_session,
+            item, top_k, generate_fn, judge_generate_fn, answer_prompt, model, judge_model, worker_session,
         )
     except Exception:
         logger.warning("Question failed, skipping: %r", item["question"], exc_info=True)
@@ -134,7 +141,7 @@ def _eval_one_question(
 
 def _eval_one_question_unsafe(
     item: dict, top_k: int, generate_fn: GenerateFn, judge_generate_fn: GenerateFn, answer_prompt: str,
-    worker_session,
+    model: str, judge_model: str, worker_session,
 ) -> dict:
     # Eval uses the admin role deliberately -- it's measuring the full
     # knowledge base's retrieval/answer quality, not access control
@@ -147,7 +154,7 @@ def _eval_one_question_unsafe(
     chat_session = chat_history.create_session(worker_session, user_id=EVAL_USER_ID, role="admin")
     turn = run_chat_turn(
         worker_session, chat_session.id, role="admin", question=item["question"], generate_fn=generate_fn,
-        answer_prompt=answer_prompt,
+        answer_prompt=answer_prompt, model=model,
     )
     answer = turn["answer"]
     chunks = turn["retrieved_chunks"]
@@ -194,10 +201,10 @@ def _eval_one_question_unsafe(
         precision = precision_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
         recall = recall_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
 
-    relevance_score, _ = score_relevance(item["question"], answer, judge_generate_fn)
-    coherence_score, _ = score_coherence(answer, judge_generate_fn)
-    faithfulness_score, _ = score_faithfulness(context, answer, judge_generate_fn)
-    groundedness_score, _ = score_groundedness(context, answer, judge_generate_fn)
+    relevance_score, _ = score_relevance(item["question"], answer, judge_generate_fn, judge_model)
+    coherence_score, _ = score_coherence(answer, judge_generate_fn, judge_model)
+    faithfulness_score, _ = score_faithfulness(context, answer, judge_generate_fn, judge_model)
+    groundedness_score, _ = score_groundedness(context, answer, judge_generate_fn, judge_model)
 
     return {
         "question": item["question"], "expected_answer": item["expected_answer"],
@@ -212,7 +219,7 @@ def run_eval(
     session, top_k: int = 5, n_candidates: int = 10, n_jobs: int = 10,
     n_skills: int = 10, n_courses: int = 10, embedding_model: str = "all-minilm",
     backend: str = "ollama", judge_backend: str | None = None, max_workers: int = 1, experiment_tag: str = "",
-    answer_prompt_variant: str = "default",
+    answer_prompt_variant: str = "default", model: str | None = None, judge_model: str | None = None,
 ) -> tuple[list[ChatEvalResult], dict[str, float], dict[str, dict[str, float]]]:
     questions = build_golden_questions(
         session, n_candidates=n_candidates, n_jobs=n_jobs, n_skills=n_skills, n_courses=n_courses,
@@ -222,6 +229,12 @@ def run_eval(
         config_label += f",judge_backend={judge_backend}"
     if answer_prompt_variant != "default":
         config_label += f",answer_prompt={answer_prompt_variant}"
+    if model:
+        # Only meaningful for an Ollama-generating run -- vLLM serves one
+        # fixed model regardless of what string is passed (see graph.py).
+        config_label += f",model={model}"
+    if judge_model:
+        config_label += f",judge_model={judge_model}"
     if experiment_tag:
         # Free-form tag identifying what's being tried in a given run (e.g.
         # "judge-context-fix", "prompt=tight-answer") -- config_label's
@@ -233,16 +246,25 @@ def run_eval(
     generate_fn = resolve_generate_fn(backend)
     judge_generate_fn = resolve_generate_fn(judge_backend) if judge_backend else generate_fn
     answer_prompt = _ANSWER_PROMPT_TIGHT if answer_prompt_variant == "tight" else _ANSWER_PROMPT
+    resolved_model = model or _LLM_MODEL
+    resolved_judge_model = judge_model or _JUDGE_LLM_MODEL
 
     if max_workers > 1:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             per_question = list(pool.map(
-                lambda item: _eval_one_question(item, top_k, generate_fn, judge_generate_fn, answer_prompt),
+                lambda item: _eval_one_question(
+                    item, top_k, generate_fn, judge_generate_fn, answer_prompt, resolved_model,
+                    resolved_judge_model,
+                ),
                 questions,
             ))
     else:
         per_question = [
-            _eval_one_question(item, top_k, generate_fn, judge_generate_fn, answer_prompt) for item in questions
+            _eval_one_question(
+                item, top_k, generate_fn, judge_generate_fn, answer_prompt,
+                resolved_model, resolved_judge_model,
+            )
+            for item in questions
         ]
 
     n_failed = sum(1 for row in per_question if row is None)
@@ -318,6 +340,18 @@ if __name__ == "__main__":
              "prompt experiment.",
     )
     parser.add_argument(
+        "--model", default=None,
+        help=f"Ollama model name for answer generation, passed through to --backend ollama's "
+             f"generate_fn (ignored outright if --backend vllm -- it serves one fixed model). "
+             f"Defaults to {_LLM_MODEL!r}. Pass a larger pulled model (e.g. qwen2.5:7b) to compare "
+             f"model size.",
+    )
+    parser.add_argument(
+        "--judge-model", default=None,
+        help=f"Ollama model name for the 4 judge calls, independent of --model. Defaults to "
+             f"{_JUDGE_LLM_MODEL!r}. Ignored outright if the resolved judge backend is vLLM.",
+    )
+    parser.add_argument(
         "--experiment-tag", default="",
         help="free-form label appended to config_label, to tell apart runs that otherwise share "
              "retrieval_mode/backend/embedding_model/top_k (e.g. a prompt or judge-model experiment).",
@@ -329,7 +363,7 @@ if __name__ == "__main__":
         db_session, top_k=args.top_k, n_candidates=args.n_candidates, n_jobs=args.n_jobs,
         n_skills=args.n_skills, n_courses=args.n_courses, backend=args.backend,
         judge_backend=args.judge_backend, max_workers=args.max_workers, experiment_tag=args.experiment_tag,
-        answer_prompt_variant=args.answer_prompt_variant,
+        answer_prompt_variant=args.answer_prompt_variant, model=args.model, judge_model=args.judge_model,
     )
     print(f"Chatbot eval ({RETRIEVAL_MODE}, backend={args.backend}), overall: {avgs}")
     for category, cat_avgs in by_cat.items():

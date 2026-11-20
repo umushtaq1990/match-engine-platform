@@ -25,5 +25,20 @@ mlflow-skinny==3.17.2
 # the tool-calling chat turn. requests is app.frontend.oidc's own
 # dependency, reused unmodified for the page's login form (same pin as
 # app/requirements-golden.txt).
-langgraph==0.2.60
+# langgraph force-upgraded 0.2.60 -> 1.2.24: langchain-core 1.x (pulled in
+# by ragas/langchain-community below) is incompatible with the 0.2.x
+# langgraph pin's own langchain-core dependency -- pip's resolver bumps
+# both together. graph.py was re-verified against the 1.x API after this
+# upgrade (see docs/architecture/application-services/rag-chatbot.md).
+langgraph==1.2.24
 requests==2.32.3
+# A second, independent evaluation framework (RAGAS) alongside this
+# project's own hand-rolled eval/metrics.py -- cross-checks our
+# custom LLM-judge prompts against a published, community-vetted
+# implementation. langchain-ollama/-community wrap Ollama as RAGAS's
+# judge LLM; datasets is RAGAS's required input format (HuggingFace
+# Dataset, not a plain list of dicts).
+ragas==0.4.4
+langchain-community==0.4.2
+langchain-ollama==1.1.0
+datasets==5.2.0

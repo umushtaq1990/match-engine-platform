@@ -139,12 +139,12 @@ class ChatTurnState(TypedDict):
     answer: str
 
 
-def _decide_tools(generate_fn: GenerateFn, state: ChatTurnState) -> ChatTurnState:
+def _decide_tools(generate_fn: GenerateFn, model: str, state: ChatTurnState) -> ChatTurnState:
     tool_specs_text = "\n".join(f"- {t['name']}: {t['description']}" for t in TOOL_SPECS)
     prompt = _DECIDE_TOOLS_PROMPT.format(
         tool_specs=tool_specs_text, history=state["history_text"] or "(none yet)", question=state["question"],
     )
-    raw = generate_fn(_LLM_MODEL, prompt, response_format=_TOOL_CALL_SCHEMA)
+    raw = generate_fn(model, prompt, response_format=_TOOL_CALL_SCHEMA)
     try:
         calls = json.loads(raw)
     except json.JSONDecodeError:
@@ -230,7 +230,9 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
     return state
 
 
-def _generate_answer(generate_fn: GenerateFn, answer_prompt: str, state: ChatTurnState) -> ChatTurnState:
+def _generate_answer(
+    generate_fn: GenerateFn, model: str, answer_prompt: str, state: ChatTurnState,
+) -> ChatTurnState:
     if state["tool_results"]:
         context = json.dumps(state["tool_results"], indent=2, default=str)
     else:
@@ -242,15 +244,19 @@ def _generate_answer(generate_fn: GenerateFn, answer_prompt: str, state: ChatTur
     # vllm_client's old hardcoded default (250) was flagged as a plausible
     # cause of answers that looked cut off mid-thought -- explicit headroom
     # here rules that out rather than leaving it an open question.
-    state["answer"] = generate_fn(_LLM_MODEL, prompt, max_tokens=400).strip()
+    state["answer"] = generate_fn(model, prompt, max_tokens=400).strip()
     return state
 
 
-def _build_graph(session: Session, generate_fn: GenerateFn, answer_prompt: str = _ANSWER_PROMPT):
+def _build_graph(
+    session: Session, generate_fn: GenerateFn, model: str = _LLM_MODEL, answer_prompt: str = _ANSWER_PROMPT,
+):
     workflow = StateGraph(ChatTurnState)
-    workflow.add_node("decide_tools", lambda state: _decide_tools(generate_fn, state))
+    workflow.add_node("decide_tools", lambda state: _decide_tools(generate_fn, model, state))
     workflow.add_node("execute_tools", lambda state: _execute_tools(session, state))
-    workflow.add_node("generate_answer", lambda state: _generate_answer(generate_fn, answer_prompt, state))
+    workflow.add_node(
+        "generate_answer", lambda state: _generate_answer(generate_fn, model, answer_prompt, state),
+    )
     workflow.set_entry_point("decide_tools")
     workflow.add_edge("decide_tools", "execute_tools")
     workflow.add_edge("execute_tools", "generate_answer")
@@ -265,7 +271,7 @@ def _format_history(messages) -> str:
 @mlflow.trace(span_type=SpanType.CHAIN)
 def run_chat_turn(
     session: Session, session_id: int, role: str, question: str, generate_fn: GenerateFn | None = None,
-    answer_prompt: str = _ANSWER_PROMPT,
+    answer_prompt: str = _ANSWER_PROMPT, model: str = _LLM_MODEL,
 ) -> dict:
     """Runs one full chat turn: persists the user's question, decides and
     executes tool calls, generates a grounded answer, persists it.
@@ -284,6 +290,12 @@ def run_chat_turn(
             defaults to `_ANSWER_PROMPT` (the live chat page's choice); the
             eval harness can pass `_ANSWER_PROMPT_TIGHT` or another variant
             to A/B a prompt change without touching the live default.
+        model: the Ollama model name passed to `generate_fn` -- defaults to
+            `_LLM_MODEL` (`qwen2.5:1.5b`, the live chat page's choice);
+            ignored outright when `generate_fn` is vLLM's client (it serves
+            one fixed model regardless of this string). The eval harness
+            can pass a larger Ollama model (e.g. `qwen2.5:7b`) to compare
+            model size against the live default.
 
     Returns:
         dict: `{"answer": str, "retrieved_chunks": list[dict] (each
@@ -295,7 +307,7 @@ def run_chat_turn(
     chat_history.append_message(session, session_id, "user", question)
     history_text = _format_history(chat_history.load_recent_messages(session, session_id, limit=10))
 
-    graph = _build_graph(session, generate_fn, answer_prompt=answer_prompt)
+    graph = _build_graph(session, generate_fn, model=model, answer_prompt=answer_prompt)
     initial_state: ChatTurnState = {
         "question": question, "history_text": history_text, "role": role,
         "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",
@@ -313,7 +325,10 @@ def run_chat_turn(
 
 
 @mlflow.trace(span_type=SpanType.CHAIN)
-def run_retrieval_turn(session: Session, role: str, question: str, generate_fn: GenerateFn | None = None) -> dict:
+def run_retrieval_turn(
+    session: Session, role: str, question: str, generate_fn: GenerateFn | None = None,
+    model: str = _LLM_MODEL,
+) -> dict:
     """Runs only `decide_tools` -> `execute_tools` -- no answer generation,
     no `ChatSession`/`ChatMessage` persistence. Isolates retrieval
     correctness (which chunks/lookup the agent used) from answer-quality
@@ -335,7 +350,7 @@ def run_retrieval_turn(session: Session, role: str, question: str, generate_fn: 
         "question": question, "history_text": "", "role": role,
         "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",
     }
-    state = _decide_tools(generate_fn, state)
+    state = _decide_tools(generate_fn, model, state)
     state = _execute_tools(session, state)
     return {
         "retrieved_chunks": state["retrieved_chunks"],

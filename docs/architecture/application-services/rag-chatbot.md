@@ -94,7 +94,7 @@ seven already-working pages.
 | Chat history | `app/chatbot/chat_history.py` | Postgres-backed, not `st.session_state` |
 | Tools | `app/chatbot/tools.py` | `search_knowledge_base`, `lookup_structured_data` |
 | Orchestration | `app/chatbot/graph.py` | LangGraph, tool-calling, MLflow root span |
-| Eval | `app/chatbot/eval/` | `golden_questions.py`, `metrics.py` (LLM-judge), `run_chatbot_eval.py` (full scored run), `run_retrieval_eval.py` (fast, judge-free retrieval-only run) |
+| Eval | `app/chatbot/eval/` | `golden_questions.py`, `metrics.py` (LLM-judge), `run_chatbot_eval.py` (full scored run), `run_retrieval_eval.py` (fast, judge-free retrieval-only run), `run_ragas_eval.py` (same golden set/agent, scored by RAGAS instead) |
 | LLM backend selection | `app/chatbot/llm_backend.py` | `resolve_generate_fn("ollama"\|"vllm")` — Ollama (CPU, serial, the live chat page's default) or vLLM (GPU, continuous batching, for parallel eval runs) |
 | UI | `app/golden/drilldown/pages/9_Chatbot.py` + `auth.py` | The one login-gated page |
 
@@ -284,6 +284,74 @@ surfaced while restarting the stack: `vllm`'s host port mapping (`8000:8000`) co
 container traffic uses the Docker network's service name regardless, so this only affects
 direct host access to vLLM's OpenAI-compatible endpoint).
 
+## Model-Size Experiment & RAGAS Cross-Validation (second follow-up pass)
+
+**Bigger-model experiment**: `_LLM_MODEL`/`_JUDGE_LLM_MODEL` were hardcoded constants in
+`graph.py`/`eval/metrics.py`; a `model`/`judge_model` parameter is now threaded through
+`run_chat_turn`/`run_retrieval_turn`/`_decide_tools`/`_generate_answer` and each `score_*` judge
+function (`--model`/`--judge-model` CLI flags on `run_chatbot_eval.py`), so any pulled Ollama model
+can be tried without a code change — ignored outright when the backend is vLLM (it always serves
+its one fixed model, per the existing `_LLM_MODEL` comment).
+
+`qwen2.5:7b` (already pulled, ~5x `qwen2.5:1.5b`'s parameters) as both generator and judge, same
+40-question set:
+
+| Metric | qwen2.5:1.5b (baseline) | qwen2.5:7b |
+|---|---|---|
+| precision@k / recall@k | 0.99 / 0.99 | 1.00 / 1.00 |
+| relevance | 4.63 | 4.04 (worse) |
+| coherence | 3.78 | 3.86 (~same) |
+| faithfulness | 4.83 | 4.81 (~same) |
+| groundedness | 3.97 | **4.81 (clearly better)** |
+
+**Mixed result, not a clean win**: groundedness improved notably (the bigger model sticks closer to
+the provided facts), but relevance actually dropped, and one category (skill coherence: 1.70) was a
+sharp outlier on n=10. Each model still judges itself here, so this carries the same judge-rubric
+confound as the vLLM/Ollama comparison above (see Finding 1) — a clean conclusion needs a fixed
+judge across both model sizes, not yet run.
+
+**RAGAS integration, as a second, independent evaluation framework** (`eval/run_ragas_eval.py`):
+cross-checks this project's own hand-rolled `eval/metrics.py` judge prompts against RAGAS's
+published, community-vetted metric implementations, reusing the same `build_golden_questions()` set
+and the same real agent (`graph.run_chat_turn`) this project's own harness uses — RAGAS judges the
+actual tool-calling path the live chat page runs, not a simplified stand-in.
+
+Two real compatibility issues found and fixed, not papered over:
+1. **RAGAS 0.4.4's dependency tree force-upgrades `langgraph` 0.2.60 → 1.2.24** (via a
+   `langchain-core` version conflict between the old and new ecosystems) — a major-version bump
+   with real risk of breaking the live chatbot's `graph.py`. Verified compatible before trusting any
+   result: import succeeded, `StateGraph`/`END` resolved unchanged, and a live `run_chat_turn()` call
+   executed end-to-end correctly (tool call → answer) under the new version. No code change to
+   `graph.py` was needed.
+2. **RAGAS's legacy `answer_relevancy` metric needs the older embeddings interface**
+   (`embed_query`/`embed_documents`) that RAGAS's own current `embedding_factory` no longer
+   implements (confirmed live: `AttributeError: 'OpenAIEmbeddings' object has no attribute
+   'embed_query'`) — fixed by using `langchain_ollama.OllamaEmbeddings` wrapped in RAGAS's
+   `LangchainEmbeddingsWrapper` instead, which still implements that interface. RAGAS's judge LLM
+   itself goes through `ragas.llms.llm_factory` against Ollama's OpenAI-compatible `/v1` endpoint
+   (not `ollama_client.py`'s native `/api/generate`, which RAGAS's `llm_factory`/`instructor`-based
+   structured output doesn't speak).
+
+**Results, qwen2.5:1.5b throughout, same 40-question set** (RAGAS's 0-1 scale vs. this project's own
+1-5 scale, shown divided by 5 for a readable side-by-side — not a claim the two scales are
+equivalent, since the underlying judge methodologies differ):
+
+| Metric | This project's harness (÷5) | RAGAS |
+|---|---|---|
+| faithfulness | 0.966 | **0.683** |
+| relevance / answer_relevancy | 0.926 | 0.826 |
+| precision@k / context_precision | 0.99 | 0.983 |
+| recall@k / context_recall | 0.99 | **1.0** |
+
+**Retrieval metrics agree closely across both independent frameworks** (~0.98-1.0 both ways) — real
+cross-validation that retrieval quality is genuine, not an artifact of this project's own scoring
+code. **Faithfulness disagrees substantially** (0.97 vs. 0.68): RAGAS's `faithfulness` decomposes the
+answer into individual atomic claims and checks each one against the context separately, while this
+project's `score_faithfulness` makes one holistic judge call per answer. The gap suggests the
+holistic approach is likely missing partial/single-claim unfaithfulness a per-claim breakdown would
+catch — a methodology difference worth narrowing (e.g. an atomic-claim-decomposition step added to
+`score_faithfulness`), not yet done.
+
 ## Known Limitations
 
 - 11 of 100 courses share a title with another course (`Course.title` has no uniqueness
@@ -311,6 +379,18 @@ direct host access to vLLM's OpenAI-compatible endpoint).
   `search_knowledge_base` called twice with a cosmetic "language" argument difference, or
   `lookup_structured_data` called twice identically) — harmless redundancy, not a correctness
   issue, not fixed this pass.
+- The `qwen2.5:7b`-vs-`qwen2.5:1.5b` model-size comparison, like the earlier vLLM/Ollama one, has
+  each model judging itself — the groundedness improvement and relevance drop it showed haven't
+  been re-verified under a fixed judge, so neither should be read as a settled model-size
+  conclusion yet.
+- This project's own `score_faithfulness` (one holistic judge call) and RAGAS's `faithfulness`
+  (atomic-claim decomposition) disagree substantially (0.97 vs. 0.68 on the same answers) — treat
+  this project's faithfulness/groundedness numbers as the more lenient of two legitimate
+  methodologies, not a precise, framework-agnostic ground truth.
+- `ragas==0.4.4`'s dependency tree required upgrading `langgraph` 0.2.60 → 1.2.24 project-wide
+  (shared by the live chatbot, not just the eval harness) — re-verified compatible (see above), but
+  any future LangGraph-specific bug should consider this a recent major-version change, not assume
+  the old 0.2.x behavior.
 
 ## Roadmap
 
