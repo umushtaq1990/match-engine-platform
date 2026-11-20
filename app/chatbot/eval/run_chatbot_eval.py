@@ -31,6 +31,7 @@ ones; both the aggregate and the per-category numbers are logged to
 MLflow and printed.
 """
 import argparse
+import json
 import logging
 import os
 from collections import defaultdict
@@ -42,7 +43,7 @@ import mlflow
 from app.chatbot import chat_history
 from app.chatbot.eval.golden_questions import build_golden_questions
 from app.chatbot.eval.metrics import score_coherence, score_faithfulness, score_groundedness, score_relevance
-from app.chatbot.graph import run_chat_turn
+from app.chatbot.graph import _ANSWER_PROMPT, _ANSWER_PROMPT_TIGHT, run_chat_turn
 from app.chatbot.llm_backend import GenerateFn, resolve_generate_fn
 from app.chatbot.models import ChatEvalResult
 from app.chatbot.tools import TOOL_LOOKUP_STRUCTURED_DATA
@@ -95,68 +96,108 @@ def _log_to_mlflow(
         )
 
 
-def _eval_one_question(item: dict, top_k: int, generate_fn: GenerateFn) -> dict:
+def _eval_one_question(
+    item: dict, top_k: int, generate_fn: GenerateFn, judge_generate_fn: GenerateFn, answer_prompt: str,
+) -> dict | None:
     """Runs one question end-to-end and scores it -- the unit of work
     parallelized across a thread pool. Opens and closes its own DB session
     (a SQLAlchemy `Session` isn't thread-safe to share across workers,
     unlike `app.extraction.run_extraction_eval`'s `max_workers` pattern,
     whose per-example work makes no DB writes of its own); the caller
     persists `ChatEvalResult` rows afterward on its own session, serially.
+
+    `judge_generate_fn` is independent of `generate_fn` -- normally the same
+    backend judges its own answer, but a judge-model-quality experiment
+    needs to hold the judge fixed while the generation backend varies (or
+    vice versa), which a single shared `generate_fn` couldn't express.
+
+    Returns `None` on any failure (e.g. an LLM call that times out) instead
+    of letting the exception propagate -- a real bug caught live: nothing
+    is persisted until every question in the batch succeeds (`run_eval`
+    commits once at the end), so a single slow/timed-out call among ~300
+    LLM calls in a 60-question Ollama run previously discarded the entire
+    run's results. `run_eval` filters `None`s and reports how many
+    questions actually succeeded, same per-example resilience pattern as
+    `app.extraction.run_extraction_eval`.
     """
     worker_session = SessionLocal()
     try:
-        # Eval uses the admin role deliberately -- it's measuring the full
-        # knowledge base's retrieval/answer quality, not access control
-        # (that's a separate negative test, see the plan's Verification
-        # section, not this averaged-metrics harness). Each question gets
-        # its own isolated ChatSession rather than one shared session,
-        # since these are independent eval questions, not a real
-        # conversation -- sharing one session would feed each question
-        # unrelated prior Q&As as "history" and grow every prompt linearly.
-        chat_session = chat_history.create_session(worker_session, user_id=EVAL_USER_ID, role="admin")
-        turn = run_chat_turn(
-            worker_session, chat_session.id, role="admin", question=item["question"], generate_fn=generate_fn,
+        return _eval_one_question_unsafe(
+            item, top_k, generate_fn, judge_generate_fn, answer_prompt, worker_session,
         )
-        answer = turn["answer"]
-        chunks = turn["retrieved_chunks"]
-        retrieved_ids = [c["chunk_id"] for c in chunks]
-        context = "\n\n".join(c["text"] for c in chunks) or "(no information found)"
-
-        # lookup_structured_data resolves an entity by id (candidate/job)
-        # or by exact name (skill/course -- there's no stable id a
-        # question would ever name for those) -- no DocumentChunk involved
-        # at all either way, so chunk-based precision/recall doesn't
-        # apply. Checking the *resolved result's* id field (not the raw
-        # tool-call args) is what makes this correct regardless of which
-        # lookup path the agent took. If it resolved to the *expected*
-        # row, that's a perfect retrieval (the right source, by
-        # construction, not an embedding guess); score it 1.0/1.0 rather
-        # than 0.0/0.0 as "no chunks retrieved" would otherwise read.
-        expected_id_field = _SOURCE_TYPE_TO_RESULT_ID_FIELD.get(item["expected_source_type"])
-        lookup_hit = any(
-            result.get("tool") == TOOL_LOOKUP_STRUCTURED_DATA
-            and isinstance(result.get("result"), dict)
-            and result["result"].get(expected_id_field) == item["expected_source_entity_id"]
-            for result in turn["tool_results"]
-        )
-
-        if lookup_hit:
-            precision, recall = 1.0, 1.0
-        else:
-            relevant_ids = {
-                c["chunk_id"] for c in chunks
-                if c["source_type"] == item["expected_source_type"]
-                and c["source_entity_id"] == item["expected_source_entity_id"]
-            }
-            precision = precision_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
-            recall = recall_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
-
-        relevance_score, _ = score_relevance(item["question"], answer, generate_fn)
-        coherence_score, _ = score_coherence(answer, generate_fn)
-        faithfulness_score, _ = score_faithfulness(context, answer, generate_fn)
-        groundedness_score, _ = score_groundedness(context, answer, generate_fn)
+    except Exception:
+        logger.warning("Question failed, skipping: %r", item["question"], exc_info=True)
+        return None
     finally:
         worker_session.close()
+
+
+def _eval_one_question_unsafe(
+    item: dict, top_k: int, generate_fn: GenerateFn, judge_generate_fn: GenerateFn, answer_prompt: str,
+    worker_session,
+) -> dict:
+    # Eval uses the admin role deliberately -- it's measuring the full
+    # knowledge base's retrieval/answer quality, not access control
+    # (that's a separate negative test, see the plan's Verification
+    # section, not this averaged-metrics harness). Each question gets
+    # its own isolated ChatSession rather than one shared session,
+    # since these are independent eval questions, not a real
+    # conversation -- sharing one session would feed each question
+    # unrelated prior Q&As as "history" and grow every prompt linearly.
+    chat_session = chat_history.create_session(worker_session, user_id=EVAL_USER_ID, role="admin")
+    turn = run_chat_turn(
+        worker_session, chat_session.id, role="admin", question=item["question"], generate_fn=generate_fn,
+        answer_prompt=answer_prompt,
+    )
+    answer = turn["answer"]
+    chunks = turn["retrieved_chunks"]
+    retrieved_ids = [c["chunk_id"] for c in chunks]
+    # Must mirror graph._generate_answer's own context construction
+    # exactly -- it's built from tool_results (the lookup JSON *and*
+    # chunk text together), not from retrieved_chunks alone. A real
+    # bug caught live: candidate/job/skill questions are mostly
+    # answered via lookup_structured_data, which returns no chunks at
+    # all, so faithfulness/groundedness were being judged against
+    # "(no information found)" while the answer correctly stated the
+    # looked-up fact -- scored as hallucinated when it wasn't.
+    context = (
+        json.dumps(turn["tool_results"], indent=2, default=str)
+        if turn["tool_results"] else "(no information found)"
+    )
+
+    # lookup_structured_data resolves an entity by id (candidate/job)
+    # or by exact name (skill/course -- there's no stable id a
+    # question would ever name for those) -- no DocumentChunk involved
+    # at all either way, so chunk-based precision/recall doesn't
+    # apply. Checking the *resolved result's* id field (not the raw
+    # tool-call args) is what makes this correct regardless of which
+    # lookup path the agent took. If it resolved to the *expected*
+    # row, that's a perfect retrieval (the right source, by
+    # construction, not an embedding guess); score it 1.0/1.0 rather
+    # than 0.0/0.0 as "no chunks retrieved" would otherwise read.
+    expected_id_field = _SOURCE_TYPE_TO_RESULT_ID_FIELD.get(item["expected_source_type"])
+    lookup_hit = any(
+        result.get("tool") == TOOL_LOOKUP_STRUCTURED_DATA
+        and isinstance(result.get("result"), dict)
+        and result["result"].get(expected_id_field) == item["expected_source_entity_id"]
+        for result in turn["tool_results"]
+    )
+
+    if lookup_hit:
+        precision, recall = 1.0, 1.0
+    else:
+        relevant_ids = {
+            c["chunk_id"] for c in chunks
+            if c["source_type"] == item["expected_source_type"]
+            and c["source_entity_id"] == item["expected_source_entity_id"]
+        }
+        precision = precision_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
+        recall = recall_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
+
+    relevance_score, _ = score_relevance(item["question"], answer, judge_generate_fn)
+    coherence_score, _ = score_coherence(answer, judge_generate_fn)
+    faithfulness_score, _ = score_faithfulness(context, answer, judge_generate_fn)
+    groundedness_score, _ = score_groundedness(context, answer, judge_generate_fn)
 
     return {
         "question": item["question"], "expected_answer": item["expected_answer"],
@@ -170,22 +211,45 @@ def _eval_one_question(item: dict, top_k: int, generate_fn: GenerateFn) -> dict:
 def run_eval(
     session, top_k: int = 5, n_candidates: int = 10, n_jobs: int = 10,
     n_skills: int = 10, n_courses: int = 10, embedding_model: str = "all-minilm",
-    backend: str = "ollama", max_workers: int = 1,
+    backend: str = "ollama", judge_backend: str | None = None, max_workers: int = 1, experiment_tag: str = "",
+    answer_prompt_variant: str = "default",
 ) -> tuple[list[ChatEvalResult], dict[str, float], dict[str, dict[str, float]]]:
     questions = build_golden_questions(
         session, n_candidates=n_candidates, n_jobs=n_jobs, n_skills=n_skills, n_courses=n_courses,
     )
     config_label = f"retrieval_mode={RETRIEVAL_MODE},backend={backend},embedding_model={embedding_model},top_k={top_k}"
+    if judge_backend and judge_backend != backend:
+        config_label += f",judge_backend={judge_backend}"
+    if answer_prompt_variant != "default":
+        config_label += f",answer_prompt={answer_prompt_variant}"
+    if experiment_tag:
+        # Free-form tag identifying what's being tried in a given run (e.g.
+        # "judge-context-fix", "prompt=tight-answer") -- config_label's
+        # fixed fields alone can't express a prompt/judge-model experiment,
+        # and this is what the Grafana dashboard's "All eval runs" panel
+        # and MLflow both key off of to tell runs apart.
+        config_label += f",experiment={experiment_tag}"
     run_at = datetime.now(timezone.utc)
     generate_fn = resolve_generate_fn(backend)
+    judge_generate_fn = resolve_generate_fn(judge_backend) if judge_backend else generate_fn
+    answer_prompt = _ANSWER_PROMPT_TIGHT if answer_prompt_variant == "tight" else _ANSWER_PROMPT
 
     if max_workers > 1:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             per_question = list(pool.map(
-                lambda item: _eval_one_question(item, top_k, generate_fn), questions,
+                lambda item: _eval_one_question(item, top_k, generate_fn, judge_generate_fn, answer_prompt),
+                questions,
             ))
     else:
-        per_question = [_eval_one_question(item, top_k, generate_fn) for item in questions]
+        per_question = [
+            _eval_one_question(item, top_k, generate_fn, judge_generate_fn, answer_prompt) for item in questions
+        ]
+
+    n_failed = sum(1 for row in per_question if row is None)
+    if n_failed:
+        logger.warning("%d/%d questions failed and were skipped (see above for each one's error).",
+                        n_failed, len(per_question))
+    per_question = [row for row in per_question if row is not None]
 
     results = []
     metric_totals: dict[str, list[float]] = {name: [] for name in METRIC_NAMES}
@@ -241,12 +305,31 @@ if __name__ == "__main__":
         help="questions evaluated concurrently via a thread pool. >1 only makes sense with --backend vllm "
              "(Ollama serves one request at a time anyway, same as app.extraction.run_extraction_eval).",
     )
+    parser.add_argument(
+        "--judge-backend", choices=["ollama", "vllm"], default=None,
+        help="LLM backend for the 4 judge calls, independent of --backend (which generates the answer). "
+             "Defaults to the same backend as generation if omitted -- set this to decouple judge-model "
+             "quality from generation-model quality in an experiment.",
+    )
+    parser.add_argument(
+        "--answer-prompt-variant", choices=["default", "tight"], default="default",
+        help="'default' is graph.py's live-chat _ANSWER_PROMPT (2-4 sentences); 'tight' is "
+             "_ANSWER_PROMPT_TIGHT (one direct sentence, fact-first) -- a relevance/coherence "
+             "prompt experiment.",
+    )
+    parser.add_argument(
+        "--experiment-tag", default="",
+        help="free-form label appended to config_label, to tell apart runs that otherwise share "
+             "retrieval_mode/backend/embedding_model/top_k (e.g. a prompt or judge-model experiment).",
+    )
     args = parser.parse_args()
 
     db_session = SessionLocal()
     _, avgs, by_cat = run_eval(
         db_session, top_k=args.top_k, n_candidates=args.n_candidates, n_jobs=args.n_jobs,
-        n_skills=args.n_skills, n_courses=args.n_courses, backend=args.backend, max_workers=args.max_workers,
+        n_skills=args.n_skills, n_courses=args.n_courses, backend=args.backend,
+        judge_backend=args.judge_backend, max_workers=args.max_workers, experiment_tag=args.experiment_tag,
+        answer_prompt_variant=args.answer_prompt_variant,
     )
     print(f"Chatbot eval ({RETRIEVAL_MODE}, backend={args.backend}), overall: {avgs}")
     for category, cat_avgs in by_cat.items():

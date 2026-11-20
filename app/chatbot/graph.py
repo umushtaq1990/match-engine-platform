@@ -60,8 +60,14 @@ MANDATORY rule, not a suggestion: "entity_name" is ONLY for when the entity itse
 course -- i.e. entity_type is "skill" or "course". Examples:
 - "What category is the skill Java in?" -> {{"name": "lookup_structured_data", "arguments": \
 {{"entity_type": "skill", "entity_name": "Java"}}}}
-- "Who provides the course 'Intro to ML' (course id 7)?" -> {{"name": "lookup_structured_data", \
+- "Who provides the course 'Intro to ML'?" (no id stated) -> {{"name": "lookup_structured_data", \
 "arguments": {{"entity_type": "course", "entity_name": "Intro to ML"}}}}
+
+MANDATORY rule, not a suggestion: if the question states a course's id explicitly (e.g. "course id \
+7"), use "entity_id" for it instead of "entity_name" -- some course titles aren't unique, and the id \
+resolves that unambiguously while the title alone might not. Example:
+- "Who provides the course 'Intro to ML' (course id 7)?" -> {{"name": "lookup_structured_data", \
+"arguments": {{"entity_type": "course", "entity_id": 7}}}} -- NOT entity_name: "Intro to ML".
 
 MANDATORY rule, not a suggestion: for entity_type "candidate" or "job", ALWAYS use "entity_id" (the \
 integer id), NEVER "entity_name" -- even when the question also mentions skills. The entity being \
@@ -99,6 +105,27 @@ Conversation so far:
 User's question: {question}
 
 Answer in 2-4 plain sentences.
+"""
+
+# A tighter alternative to _ANSWER_PROMPT, for the relevance/coherence
+# prompt experiment (app/chatbot/eval/run_chatbot_eval.py's
+# --answer-prompt-variant) -- hypothesis: a small model given an open-ended
+# "answer in 2-4 sentences" instruction sometimes hedges, repeats the
+# question, or pads with filler, which a judge scores as less relevant/
+# coherent than a direct, single-fact-first answer would be. Same grounding
+# rules as the default, just more directive about *how* to state the fact.
+_ANSWER_PROMPT_TIGHT = """Using ONLY the information below, answer the user's question in ONE direct \
+sentence that states the fact itself first -- do not restate the question, do not hedge, do not add \
+caveats unless the information is genuinely missing. Do not invent any detail not present here. If \
+the information below doesn't answer the question, say so in one plain sentence rather than guessing.
+
+Information:
+{context}
+
+Conversation so far:
+{history}
+
+User's question: {question}
 """
 
 
@@ -203,23 +230,27 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
     return state
 
 
-def _generate_answer(generate_fn: GenerateFn, state: ChatTurnState) -> ChatTurnState:
+def _generate_answer(generate_fn: GenerateFn, answer_prompt: str, state: ChatTurnState) -> ChatTurnState:
     if state["tool_results"]:
         context = json.dumps(state["tool_results"], indent=2, default=str)
     else:
         context = "(no information found)"
-    prompt = _ANSWER_PROMPT.format(
+    prompt = answer_prompt.format(
         context=context, history=state["history_text"] or "(none yet)", question=state["question"],
     )
-    state["answer"] = generate_fn(_LLM_MODEL, prompt).strip()
+    # 2-4 sentences needs well under 100 completion tokens normally, but
+    # vllm_client's old hardcoded default (250) was flagged as a plausible
+    # cause of answers that looked cut off mid-thought -- explicit headroom
+    # here rules that out rather than leaving it an open question.
+    state["answer"] = generate_fn(_LLM_MODEL, prompt, max_tokens=400).strip()
     return state
 
 
-def _build_graph(session: Session, generate_fn: GenerateFn):
+def _build_graph(session: Session, generate_fn: GenerateFn, answer_prompt: str = _ANSWER_PROMPT):
     workflow = StateGraph(ChatTurnState)
     workflow.add_node("decide_tools", lambda state: _decide_tools(generate_fn, state))
     workflow.add_node("execute_tools", lambda state: _execute_tools(session, state))
-    workflow.add_node("generate_answer", lambda state: _generate_answer(generate_fn, state))
+    workflow.add_node("generate_answer", lambda state: _generate_answer(generate_fn, answer_prompt, state))
     workflow.set_entry_point("decide_tools")
     workflow.add_edge("decide_tools", "execute_tools")
     workflow.add_edge("execute_tools", "generate_answer")
@@ -234,6 +265,7 @@ def _format_history(messages) -> str:
 @mlflow.trace(span_type=SpanType.CHAIN)
 def run_chat_turn(
     session: Session, session_id: int, role: str, question: str, generate_fn: GenerateFn | None = None,
+    answer_prompt: str = _ANSWER_PROMPT,
 ) -> dict:
     """Runs one full chat turn: persists the user's question, decides and
     executes tool calls, generates a grounded answer, persists it.
@@ -248,6 +280,10 @@ def run_chat_turn(
             Ollama (the live chat page's choice); the eval harness can pass
             vLLM's instead for real concurrent throughput (see
             `app.chatbot.llm_backend`).
+        answer_prompt: the `generate_answer` node's prompt template --
+            defaults to `_ANSWER_PROMPT` (the live chat page's choice); the
+            eval harness can pass `_ANSWER_PROMPT_TIGHT` or another variant
+            to A/B a prompt change without touching the live default.
 
     Returns:
         dict: `{"answer": str, "retrieved_chunks": list[dict] (each
@@ -259,7 +295,7 @@ def run_chat_turn(
     chat_history.append_message(session, session_id, "user", question)
     history_text = _format_history(chat_history.load_recent_messages(session, session_id, limit=10))
 
-    graph = _build_graph(session, generate_fn)
+    graph = _build_graph(session, generate_fn, answer_prompt=answer_prompt)
     initial_state: ChatTurnState = {
         "question": question, "history_text": history_text, "role": role,
         "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",

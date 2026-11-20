@@ -52,19 +52,26 @@ def generate(
     prompt: str,
     response_format: dict | str | None = None,
     temperature: float | None = None,
+    max_tokens: int = 250,
 ) -> str:
     """Same signature as app.extraction.ollama_client.generate -- `model` is
     ignored (vLLM serves exactly one model, VLLM_MODEL, per server process)
-    so this can be monkeypatched in as a drop-in replacement."""
-    # vLLM requires prompt_tokens + max_tokens <= max_model_len just to admit
-    # a request (regardless of actual output length) -- real extraction
-    # outputs are short skill lists (observed well under 150 completion
-    # tokens), so 250 leaves headroom without needing a bigger max_model_len
-    # (which costs real GPU memory we don't always have to spare).
+    so this can be monkeypatched in as a drop-in replacement.
+
+    `max_tokens` defaults to 250 -- the extraction eval's original budget
+    (vLLM requires prompt_tokens + max_tokens <= max_model_len just to admit
+    a request regardless of actual output length; real extraction outputs
+    are short skill lists, observed well under 150 completion tokens, so
+    250 leaves headroom without needing a bigger max_model_len, which costs
+    real GPU memory we don't always have to spare). A caller generating
+    free-text prose instead of a short structured list (e.g. the chatbot's
+    answer-generation step) should pass a larger value explicitly -- 250
+    was flagged as a plausible truncation cause for chatbot answers that
+    looked cut short."""
     payload = {
         "model": VLLM_MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 250,
+        "max_tokens": max_tokens,
     }
     if isinstance(response_format, dict):
         payload["response_format"] = {

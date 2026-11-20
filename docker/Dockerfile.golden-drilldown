@@ -38,6 +38,7 @@ COPY app/golden/models.py ./app/golden/models.py
 COPY app/golden/select.py ./app/golden/select.py
 COPY app/golden/seed_curated_occupations.py ./app/golden/seed_curated_occupations.py
 COPY app/golden/generate_persona_events.py ./app/golden/generate_persona_events.py
+COPY app/golden/vllm_client.py ./app/golden/vllm_client.py
 COPY app/golden/drilldown/ ./app/golden/drilldown/
 COPY app/evaluation/__init__.py ./app/evaluation/__init__.py
 COPY app/evaluation/metrics.py ./app/evaluation/metrics.py
