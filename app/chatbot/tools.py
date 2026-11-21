@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.chatbot.access_control import allowed_visibilities
+from app.chatbot.graph_retrieval import graph_context_for_candidate, graph_context_for_job
 from app.chatbot.retrieval import RetrievedChunk, retrieve_chunks
 from app.ingestion.source_models import (
     Candidate,
@@ -23,6 +24,7 @@ from app.ingestion.source_models import (
 
 TOOL_SEARCH_KNOWLEDGE_BASE = "search_knowledge_base"
 TOOL_LOOKUP_STRUCTURED_DATA = "lookup_structured_data"
+TOOL_LOOKUP_GRAPH_CONTEXT = "lookup_graph_context"
 
 TOOL_SPECS = [
     {
@@ -59,6 +61,31 @@ TOOL_SPECS = [
         },
     },
 ]
+
+# Kept out of TOOL_SPECS (offered unconditionally today) -- graph.py only
+# appends this to the agent's tool list when `enable_graph_tool=True`, so
+# the live chat page's 2-tool behavior stays unchanged by default (see the
+# Phase 2 plan's "measure before adopting" decision).
+GRAPH_TOOL_SPEC = {
+    "name": TOOL_LOOKUP_GRAPH_CONTEXT,
+    "description": (
+        "Finds candidates/jobs/courses RELATED to one specific candidate or job via shared skills in "
+        "the knowledge graph -- e.g. 'which other candidates are similar to candidate 7', 'what jobs "
+        "match this candidate's skillset', 'what courses would help someone targeting job 42'. Use for "
+        "similarity/relationship questions about one named candidate/job, NOT for that entity's own "
+        "exact facts (use lookup_structured_data for those instead)."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "entity_type": {"type": "string", "enum": ["candidate", "job"]},
+            "entity_id": {
+                "type": "integer", "description": "the candidate or job's id, named in the question",
+            },
+        },
+        "required": ["entity_type", "entity_id"],
+    },
+}
 
 
 def search_knowledge_base(session: Session, role: str, query: str, top_k: int = 5) -> list[RetrievedChunk]:
@@ -178,4 +205,24 @@ def lookup_structured_data(
             "taught_skills": sorted(skills),
         }
 
+    return {}
+
+
+def lookup_graph_context(session: Session, role: str, entity_type: str, entity_id: int | None) -> dict:
+    """The `lookup_graph_context` tool's real implementation --
+    `app.chatbot.graph_retrieval`'s bounded Cypher queries, gated the same
+    way `lookup_structured_data`'s candidate branch is. Returns `{}` for a
+    candidate `role` can't see, a missing entity, or an unrecognized
+    `entity_type` -- fails closed, same discipline as every other tool here.
+    """
+    if entity_id is None:
+        return {}
+    if entity_type == "candidate":
+        if "confidential" not in allowed_visibilities(role) or session.get(Candidate, entity_id) is None:
+            return {}
+        return graph_context_for_candidate(entity_id)
+    if entity_type == "job":
+        if session.get(Job, entity_id) is None:
+            return {}
+        return graph_context_for_job(entity_id)
     return {}

@@ -22,9 +22,12 @@ from app.chatbot import chat_history
 from app.chatbot.llm_backend import GenerateFn
 from app.chatbot.llm_backend import resolve_generate_fn as _resolve_generate_fn
 from app.chatbot.tools import (
+    GRAPH_TOOL_SPEC,
+    TOOL_LOOKUP_GRAPH_CONTEXT,
     TOOL_LOOKUP_STRUCTURED_DATA,
     TOOL_SEARCH_KNOWLEDGE_BASE,
     TOOL_SPECS,
+    lookup_graph_context,
     lookup_structured_data,
     search_knowledge_base,
 )
@@ -33,17 +36,27 @@ from app.chatbot.tools import (
 # model regardless of this string -- see app.chatbot.llm_backend).
 _LLM_MODEL = "qwen2.5:1.5b"
 
-_TOOL_CALL_SCHEMA = {
-    "type": "array",
-    "items": {
-        "type": "object",
-        "properties": {
-            "name": {"type": "string", "enum": [TOOL_SEARCH_KNOWLEDGE_BASE, TOOL_LOOKUP_STRUCTURED_DATA]},
-            "arguments": {"type": "object"},
+
+def _tool_call_schema(enable_graph_tool: bool) -> dict:
+    """`lookup_graph_context` is only a legal choice when the caller opts
+    in -- see `_build_graph`'s `enable_graph_tool` param and the Phase 2
+    plan's "measure before adopting" decision; the live chat page's default
+    (`enable_graph_tool=False`) must keep seeing exactly the old 2-tool
+    enum, unchanged."""
+    names = [TOOL_SEARCH_KNOWLEDGE_BASE, TOOL_LOOKUP_STRUCTURED_DATA]
+    if enable_graph_tool:
+        names.append(TOOL_LOOKUP_GRAPH_CONTEXT)
+    return {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "enum": names},
+                "arguments": {"type": "object"},
+            },
+            "required": ["name", "arguments"],
         },
-        "required": ["name", "arguments"],
-    },
-}
+    }
 
 _DECIDE_TOOLS_PROMPT = """You are an assistant with access to these tools:
 {tool_specs}
@@ -81,7 +94,7 @@ separate lookup. Examples:
 Any question naming a specific candidate/job id, or a specific skill/course name, MUST use \
 lookup_structured_data, never search_knowledge_base. Only use search_knowledge_base for open-ended/\
 descriptive questions that name no specific candidate id, job id, skill name, or course title.
-
+{graph_tool_rule}
 Conversation so far:
 {history}
 
@@ -89,6 +102,23 @@ User's new question: {question}
 
 Decide which tool(s) to call to answer this question, and with what arguments. Output a JSON array \
 of {{"name": ..., "arguments": {{...}}}} objects. Call at most 2 tools.
+"""
+
+# Only spliced into _DECIDE_TOOLS_PROMPT when enable_graph_tool=True --
+# empty string otherwise, so the live chat page's default prompt is
+# byte-for-byte unchanged.
+_GRAPH_TOOL_RULE = """
+MANDATORY rule, not a suggestion: a question asking who/what is SIMILAR TO, MATCHES, or RELATED TO \
+one named candidate/job (not the entity's own facts) MUST use lookup_graph_context, with \
+"entity_type" ("candidate" or "job") and "entity_id" (its integer id). Examples:
+- "Which other candidates are similar to candidate 7?" -> {"name": "lookup_graph_context", \
+"arguments": {"entity_type": "candidate", "entity_id": 7}}
+- "What jobs best match candidate 7's skillset?" -> {"name": "lookup_graph_context", "arguments": \
+{"entity_type": "candidate", "entity_id": 7}}
+- "What courses would help someone targeting job 42?" -> {"name": "lookup_graph_context", \
+"arguments": {"entity_type": "job", "entity_id": 42}}
+Do NOT use lookup_graph_context for a question about the entity's own exact facts (its own skills, \
+experience, title) -- that is still lookup_structured_data.
 """
 
 _ANSWER_PROMPT = """Answer the user's question using ONLY the information below. Do not invent any \
@@ -139,12 +169,16 @@ class ChatTurnState(TypedDict):
     answer: str
 
 
-def _decide_tools(generate_fn: GenerateFn, model: str, state: ChatTurnState) -> ChatTurnState:
-    tool_specs_text = "\n".join(f"- {t['name']}: {t['description']}" for t in TOOL_SPECS)
+def _decide_tools(
+    generate_fn: GenerateFn, model: str, enable_graph_tool: bool, state: ChatTurnState,
+) -> ChatTurnState:
+    specs = [*TOOL_SPECS, GRAPH_TOOL_SPEC] if enable_graph_tool else TOOL_SPECS
+    tool_specs_text = "\n".join(f"- {t['name']}: {t['description']}" for t in specs)
     prompt = _DECIDE_TOOLS_PROMPT.format(
-        tool_specs=tool_specs_text, history=state["history_text"] or "(none yet)", question=state["question"],
+        tool_specs=tool_specs_text, graph_tool_rule=_GRAPH_TOOL_RULE if enable_graph_tool else "",
+        history=state["history_text"] or "(none yet)", question=state["question"],
     )
-    raw = generate_fn(model, prompt, response_format=_TOOL_CALL_SCHEMA)
+    raw = generate_fn(model, prompt, response_format=_tool_call_schema(enable_graph_tool))
     try:
         calls = json.loads(raw)
     except json.JSONDecodeError:
@@ -156,7 +190,7 @@ def _decide_tools(generate_fn: GenerateFn, model: str, state: ChatTurnState) -> 
 
 
 def _normalize_lookup_args(args: dict) -> dict:
-    """`_TOOL_CALL_SCHEMA`'s `arguments` field is an unconstrained JSON
+    """`_tool_call_schema`'s `arguments` field is an unconstrained JSON
     object (Ollama's/vLLM's `format`/`response_format` schema only
     enforces the outer `{name, arguments}` shape, not per-tool argument
     key names) -- confirmed live: a real call came back as
@@ -223,6 +257,15 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
                     entity_id=normalized["entity_id"], entity_name=normalized["entity_name"],
                 )
                 results.append({"tool": name, "result": data})
+            elif name == TOOL_LOOKUP_GRAPH_CONTEXT:
+                # Only ever emitted by decide_tools when enable_graph_tool
+                # was True (see _tool_call_schema) -- unconditional here is
+                # harmless, not a bypass of that gate.
+                entity_type = str(args.get("entity_type") or "")
+                entity_id = args.get("entity_id")
+                entity_id = int(entity_id) if entity_id is not None else None
+                data = lookup_graph_context(session, state["role"], entity_type, entity_id)
+                results.append({"tool": name, "result": data})
         except Exception as exc:
             results.append({"tool": name, "result": f"(tool call failed: {exc})"})
     state["tool_results"] = results
@@ -250,9 +293,12 @@ def _generate_answer(
 
 def _build_graph(
     session: Session, generate_fn: GenerateFn, model: str = _LLM_MODEL, answer_prompt: str = _ANSWER_PROMPT,
+    enable_graph_tool: bool = False,
 ):
     workflow = StateGraph(ChatTurnState)
-    workflow.add_node("decide_tools", lambda state: _decide_tools(generate_fn, model, state))
+    workflow.add_node(
+        "decide_tools", lambda state: _decide_tools(generate_fn, model, enable_graph_tool, state),
+    )
     workflow.add_node("execute_tools", lambda state: _execute_tools(session, state))
     workflow.add_node(
         "generate_answer", lambda state: _generate_answer(generate_fn, model, answer_prompt, state),
@@ -271,7 +317,7 @@ def _format_history(messages) -> str:
 @mlflow.trace(span_type=SpanType.CHAIN)
 def run_chat_turn(
     session: Session, session_id: int, role: str, question: str, generate_fn: GenerateFn | None = None,
-    answer_prompt: str = _ANSWER_PROMPT, model: str = _LLM_MODEL,
+    answer_prompt: str = _ANSWER_PROMPT, model: str = _LLM_MODEL, enable_graph_tool: bool = False,
 ) -> dict:
     """Runs one full chat turn: persists the user's question, decides and
     executes tool calls, generates a grounded answer, persists it.
@@ -296,6 +342,11 @@ def run_chat_turn(
             one fixed model regardless of this string). The eval harness
             can pass a larger Ollama model (e.g. `qwen2.5:7b`) to compare
             model size against the live default.
+        enable_graph_tool: offers `lookup_graph_context` (Phase 2's
+            knowledge-graph relationship tool) as a third choice when
+            `True` -- defaults to `False` everywhere, so the live chat
+            page's 2-tool behavior is unchanged until an eval run justifies
+            flipping this default (see the Phase 2 plan).
 
     Returns:
         dict: `{"answer": str, "retrieved_chunks": list[dict] (each
@@ -307,7 +358,9 @@ def run_chat_turn(
     chat_history.append_message(session, session_id, "user", question)
     history_text = _format_history(chat_history.load_recent_messages(session, session_id, limit=10))
 
-    graph = _build_graph(session, generate_fn, model=model, answer_prompt=answer_prompt)
+    graph = _build_graph(
+        session, generate_fn, model=model, answer_prompt=answer_prompt, enable_graph_tool=enable_graph_tool,
+    )
     initial_state: ChatTurnState = {
         "question": question, "history_text": history_text, "role": role,
         "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",
@@ -327,7 +380,7 @@ def run_chat_turn(
 @mlflow.trace(span_type=SpanType.CHAIN)
 def run_retrieval_turn(
     session: Session, role: str, question: str, generate_fn: GenerateFn | None = None,
-    model: str = _LLM_MODEL,
+    model: str = _LLM_MODEL, enable_graph_tool: bool = False,
 ) -> dict:
     """Runs only `decide_tools` -> `execute_tools` -- no answer generation,
     no `ChatSession`/`ChatMessage` persistence. Isolates retrieval
@@ -350,7 +403,7 @@ def run_retrieval_turn(
         "question": question, "history_text": "", "role": role,
         "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",
     }
-    state = _decide_tools(generate_fn, model, state)
+    state = _decide_tools(generate_fn, model, enable_graph_tool, state)
     state = _execute_tools(session, state)
     return {
         "retrieved_chunks": state["retrieved_chunks"],

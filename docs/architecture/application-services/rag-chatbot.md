@@ -345,12 +345,82 @@ equivalent, since the underlying judge methodologies differ):
 
 **Retrieval metrics agree closely across both independent frameworks** (~0.98-1.0 both ways) — real
 cross-validation that retrieval quality is genuine, not an artifact of this project's own scoring
-code. **Faithfulness disagrees substantially** (0.97 vs. 0.68): RAGAS's `faithfulness` decomposes the
-answer into individual atomic claims and checks each one against the context separately, while this
-project's `score_faithfulness` makes one holistic judge call per answer. The gap suggests the
-holistic approach is likely missing partial/single-claim unfaithfulness a per-claim breakdown would
-catch — a methodology difference worth narrowing (e.g. an atomic-claim-decomposition step added to
-`score_faithfulness`), not yet done.
+code. **Faithfulness disagreed substantially** (0.97 vs. 0.68) with the `qwen2.5:1.5b` RAGAS judge:
+side-by-side manual inspection of 4 real questions found the judge's per-claim NLI (entailment)
+verdicts were often simply wrong — e.g. restating the correct fact from context in its own reasoning
+("the context says years_experience: 24") before concluding "not supported" for the answer's
+equivalent claim ("24 years"). Root cause: RAGAS's `faithfulness` is a two-step LLM pipeline
+(decompose the answer into atomic claims, then a binary NLI call per claim against raw context) — a
+harder multi-step reasoning task than this project's own single holistic 1-5 Likert judge call, and
+`qwen2.5:1.5b` visibly botched the NLI step on JSON-shaped context specifically. Not a bug in either
+harness, and not evidence the holistic approach is missing real unfaithfulness — a genuine
+judge-capability gap exposed by a stricter methodology.
+
+**Re-ran with `judge_model=qwen2.5:7b`** (generation left at 1.5b, isolating judge capability), on a
+reduced 15-question sample: `faithfulness` rose from 0.683 to **0.9421**, closing nearly all of the
+gap with this project's own 0.966. This confirms the diagnosis above — a stronger judge largely
+agrees with this project's own holistic score once it's capable enough to execute RAGAS's stricter
+per-claim methodology correctly. The small residual gap (0.9421 vs. 0.966) is plausibly sample-size
+noise (15 questions vs. the original 40-90) rather than a further methodology difference worth
+chasing further.
+
+## Phase 2: Knowledge-Graph Retrieval (`lookup_graph_context`)
+
+Added a 3rd tool the agent can pick, answering relationship/similarity questions ("which other
+candidates are most similar to candidate X," "what jobs best match this candidate's skillset,"
+"what courses would help someone targeting job Y") that neither `search_knowledge_base` (vector)
+nor `lookup_structured_data` (exact single-entity lookup) can answer — they require graph traversal
+(shared-skill adjacency), not a row lookup or embedding similarity.
+
+`app/chatbot/graph_retrieval.py` holds small, standalone Cypher queries against
+`app.graph.neo4j_client` — the same "rank by shared-skill count, `LIMIT` before fetching" bounded
+shape as `app/golden/drilldown/graph_explainability.py`'s ego-network queries, deliberately **not**
+imported directly (that module also builds visualization nodes/edges and an LLM-narrated,
+Postgres-cached summary this text-only agent tool doesn't need, and importing from
+`app.golden.drilldown` would tie this portable package to one UI). Trimmed to just the top-N hits.
+Cross-checked live: `graph_context_for_candidate`/`graph_context_for_job`'s top-5 results are
+confirmed exact subsets of `build_candidate_ego_network`/`build_job_ego_network`'s already-proven
+top-8 results for the same candidate/job — same ranking, just a different default limit.
+
+Gated behind `enable_graph_tool: bool = False` threaded through `_decide_tools`/`_build_graph`/
+`run_chat_turn`/`run_retrieval_turn` — defaults to `False` everywhere, so the live chat page's
+2-tool behavior is **unchanged** until this eval result is reviewed and the default is deliberately
+flipped (not done as part of this pass). `_TOOL_CALL_SCHEMA` became `_tool_call_schema(enable_graph_tool)`
+and `_DECIDE_TOOLS_PROMPT` gained a spliced-in `_GRAPH_TOOL_RULE` block, both no-ops when the flag
+is `False`.
+
+New golden-question category (`golden_questions.py`): "which candidates share the most skills with
+candidate X," "what jobs match X's skillset," "what courses would help someone targeting job Y" —
+ground truth computed via plain SQL joins over `CandidateSkill`/`JobSkill`/`CourseSkill` (top-N by
+shared-skill count), independent of Neo4j/`graph_retrieval.py` — same "avoid circular evaluation"
+discipline as the rest of this file, since Neo4j's graph is itself just a sync of these same
+relational facts. `run_chatbot_eval.py` scores these by id-set overlap (`precision_at_k`/
+`recall_at_k` against the tool's returned ids) instead of chunk-id scoring.
+
+**Live-agent smoke test** (`run_chat_turn(..., enable_graph_tool=True)`): the small model correctly
+routed "which candidates are similar to candidate 1?" and "what courses would help someone
+targeting job 1?" to `lookup_graph_context`, while still routing "what skills does candidate 1
+have?" to `lookup_structured_data` — the MANDATORY-rule prompt split (own facts vs. relationships)
+held up on a live model, not just in principle.
+
+**Eval comparison** (3 candidates + 3 jobs, same question set both runs, `qwen2.5:1.5b`):
+
+| Category | Baseline (2 tools) precision@k / recall@k | +graph tool (3 tools) precision@k / recall@k |
+|---|---|---|
+| candidate_graph | **0.0 / 0.0** | **0.533 / 0.889** |
+| job_graph | **0.0 / 0.0** | **0.133 / 0.222** |
+| candidate_profile (unaffected) | 1.0 / 1.0 | 1.0 / 1.0 |
+| job_description (unaffected) | 0.833 / 0.833 | 0.889 / 0.889 |
+
+The new tool is a real, unambiguous win on the question type it exists for — the baseline agent
+literally cannot score above 0.0 on a relationship question (confirmed, not assumed), and the
+graph-enabled agent scores meaningfully above zero on both new categories, with the pre-existing
+categories unaffected (adding an unused tool option doesn't regress anything). `job_graph`'s
+recall (0.222) is markedly weaker than `candidate_graph`'s (0.889) on this small sample — plausibly
+the "what courses would help targeting job X" phrasing being a harder routing/argument-extraction
+case for the small model than the more direct "similar to candidate X" phrasing; worth a larger
+sample and a look at the specific missed cases before concluding further, not generalized from 3
+jobs here.
 
 ## Known Limitations
 
@@ -394,9 +464,12 @@ catch — a methodology difference worth narrowing (e.g. an atomic-claim-decompo
 
 ## Roadmap
 
-- **Phase 2 — graph retrieval**: a `lookup_graph_context` tool reusing
-  `app/golden/drilldown/graph_explainability.py`'s bounded-query pattern, added as a 3rd tool
-  alongside the two above; same eval harness, `retrieval_mode="graph"` rows for direct comparison.
+- **Phase 2 — graph retrieval: done** (see above) — `lookup_graph_context`, gated behind
+  `enable_graph_tool` (defaults `False`, live page unaffected). Eval confirms it's a real win on
+  the relationship-question category it targets; the live chat page's default has **not** been
+  flipped yet — that's a deliberate follow-up decision, not assumed from this result alone. A
+  larger-sample re-run (beyond the 3+3 candidates/jobs used here) would sharpen the `job_graph`
+  recall number specifically before flipping the default.
 - **Phase 3 — hybrid retrieval + reranking + sweep**: combine vector+graph retrieval, add a
   reranking stage (library choice — `sentence-transformers` cross-encoder vs. an LLM-prompted
   reranker via the existing Ollama client — deliberately left open until this phase), then a
@@ -404,7 +477,7 @@ catch — a methodology difference worth narrowing (e.g. an atomic-claim-decompo
   retrieval modes on this phase's established metrics.
 - The eval-harness scope mismatch flagged in an earlier pass (vector-only retrieval scored against
   ID-specific questions) is now fixed — `run_chatbot_eval.py`/`run_retrieval_eval.py` both route
-  through the full agent, so Phase 2/3's `retrieval_mode="graph"`/`"hybrid"` rows will compare
+  through the full agent, so Phase 2/3's `retrieval_mode="agent+graph"`/`"hybrid"` rows compare
   fairly against Phase 1's `"agent"` rows on the same basis.
 - A uniqueness constraint (or provider+title disambiguation) on `Course.title` would close the one
   remaining precision gap (see Known Limitations) — worth doing before Phase 2/3 numbers are

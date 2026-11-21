@@ -6,23 +6,27 @@ per-question drill-down detail.
 
 Run with: python -m app.chatbot.eval.run_chatbot_eval [--top-k N]
   [--n-candidates N] [--n-jobs N] [--n-skills N] [--n-courses N]
+  [--enable-graph-tool]
 
-`retrieval_mode="agent"` for every row this produces -- the full LangGraph
-agent decides per question whether to call `search_knowledge_base` (vector)
-or `lookup_structured_data` (exact DB lookup by id), same as the live chat
-page. This replaced an earlier `retrieval_mode="vector"` harness that called
-`retrieve_chunks` directly and never exercised the lookup tool -- confirmed
-live (manual diagnostic against the real pgvector index) that candidate/job
-ID questions essentially never retrieve their correct chunk by embedding
-similarity alone: `all-minilm` clusters by semantic shape ("years of
-experience", generic job-posting boilerplate), and a literal id token like
-"#2522" carries ~zero embedding weight among ~2,000-5,000 near-identical-
-shaped chunks. That's exactly what `lookup_structured_data` exists to
-answer instead. Old `retrieval_mode="vector"` rows are left in Postgres for
+`retrieval_mode="agent"` (or `"agent+graph"` with `--enable-graph-tool`) for
+every row this produces -- the full LangGraph agent decides per question
+whether to call `search_knowledge_base` (vector), `lookup_structured_data`
+(exact DB lookup by id), or, when enabled, `lookup_graph_context`
+(knowledge-graph relationship lookup -- Phase 2), same as the live chat
+page's own tool set for that flag's value. This replaced an earlier
+`retrieval_mode="vector"` harness that called `retrieve_chunks` directly and
+never exercised the lookup tool -- confirmed live (manual diagnostic
+against the real pgvector index) that candidate/job ID questions
+essentially never retrieve their correct chunk by embedding similarity
+alone: `all-minilm` clusters by semantic shape ("years of experience",
+generic job-posting boilerplate), and a literal id token like "#2522"
+carries ~zero embedding weight among ~2,000-5,000 near-identical-shaped
+chunks. That's exactly what `lookup_structured_data` exists to answer
+instead. Old `retrieval_mode="vector"` rows are left in Postgres for
 before/after comparison, not deleted.
 
-Phase 2 ("graph") and Phase 3 ("hybrid") add further `retrieval_mode`
-values under the same schema/columns, not a new harness.
+Phase 3 ("hybrid") adds further `retrieval_mode` values under the same
+schema/columns, not a new harness.
 
 Breaks metrics down by `expected_source_type` (candidate/job/skill/course)
 in addition to the overall average -- a flat average hides that, e.g.,
@@ -52,7 +56,7 @@ from app.chatbot.eval.metrics import (
 from app.chatbot.graph import _ANSWER_PROMPT, _ANSWER_PROMPT_TIGHT, _LLM_MODEL, run_chat_turn
 from app.chatbot.llm_backend import GenerateFn, resolve_generate_fn
 from app.chatbot.models import ChatEvalResult
-from app.chatbot.tools import TOOL_LOOKUP_STRUCTURED_DATA
+from app.chatbot.tools import TOOL_LOOKUP_GRAPH_CONTEXT, TOOL_LOOKUP_STRUCTURED_DATA
 from app.common.config import settings
 from app.db import SessionLocal
 from app.evaluation.metrics import precision_at_k, recall_at_k
@@ -61,8 +65,14 @@ logger = logging.getLogger(__name__)
 
 MLFLOW_EXPERIMENT_NAME = "jme-chatbot-rag"
 MLFLOW_TRACKING_URI = settings.mlflow_tracking_uri
-RETRIEVAL_MODE = "agent"
 EVAL_USER_ID = "eval-harness"
+# Phase 2's relationship questions -- scored by id-set overlap against the
+# lookup_graph_context tool's returned hits, not chunk-id precision/recall
+# (see _eval_one_question_unsafe's branch below). golden_questions.py
+# stamps each such question with "expected_result_key" naming which of
+# that tool's result keys (similar_candidates/matching_jobs/
+# relevant_courses) the ids are scored against.
+_GRAPH_CATEGORIES = ("candidate_graph", "job_graph")
 METRIC_NAMES = ("relevance", "coherence", "faithfulness", "groundedness", "precision_at_k", "recall_at_k")
 
 # Maps `expected_source_type` (golden_questions.py's naming, shared with
@@ -82,7 +92,8 @@ def _avg(values: list[float]) -> float:
 
 
 def _log_to_mlflow(
-    run_at: datetime, config_label: str, n: int, averages: dict[str, float], by_category: dict[str, dict],
+    run_at: datetime, retrieval_mode: str, config_label: str, n: int,
+    averages: dict[str, float], by_category: dict[str, dict],
 ) -> None:
     os.environ.setdefault("MLFLOW_SUPPRESS_PRINTING_URL_TO_STDOUT", "true")
     try:
@@ -90,7 +101,7 @@ def _log_to_mlflow(
         mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
         with mlflow.start_run(run_name=f"chatbot-eval-{run_at.isoformat()}"):
             mlflow.log_params({
-                "retrieval_mode": RETRIEVAL_MODE, "config_label": config_label, "n_questions": n,
+                "retrieval_mode": retrieval_mode, "config_label": config_label, "n_questions": n,
             })
             mlflow.log_metrics(averages)
             for category, cat_averages in by_category.items():
@@ -104,7 +115,7 @@ def _log_to_mlflow(
 
 def _eval_one_question(
     item: dict, top_k: int, generate_fn: GenerateFn, judge_generate_fn: GenerateFn, answer_prompt: str,
-    model: str, judge_model: str,
+    model: str, judge_model: str, enable_graph_tool: bool,
 ) -> dict | None:
     """Runs one question end-to-end and scores it -- the unit of work
     parallelized across a thread pool. Opens and closes its own DB session
@@ -130,7 +141,8 @@ def _eval_one_question(
     worker_session = SessionLocal()
     try:
         return _eval_one_question_unsafe(
-            item, top_k, generate_fn, judge_generate_fn, answer_prompt, model, judge_model, worker_session,
+            item, top_k, generate_fn, judge_generate_fn, answer_prompt, model, judge_model,
+            enable_graph_tool, worker_session,
         )
     except Exception:
         logger.warning("Question failed, skipping: %r", item["question"], exc_info=True)
@@ -141,7 +153,7 @@ def _eval_one_question(
 
 def _eval_one_question_unsafe(
     item: dict, top_k: int, generate_fn: GenerateFn, judge_generate_fn: GenerateFn, answer_prompt: str,
-    model: str, judge_model: str, worker_session,
+    model: str, judge_model: str, enable_graph_tool: bool, worker_session,
 ) -> dict:
     # Eval uses the admin role deliberately -- it's measuring the full
     # knowledge base's retrieval/answer quality, not access control
@@ -154,7 +166,7 @@ def _eval_one_question_unsafe(
     chat_session = chat_history.create_session(worker_session, user_id=EVAL_USER_ID, role="admin")
     turn = run_chat_turn(
         worker_session, chat_session.id, role="admin", question=item["question"], generate_fn=generate_fn,
-        answer_prompt=answer_prompt, model=model,
+        answer_prompt=answer_prompt, model=model, enable_graph_tool=enable_graph_tool,
     )
     answer = turn["answer"]
     chunks = turn["retrieved_chunks"]
@@ -182,24 +194,42 @@ def _eval_one_question_unsafe(
     # row, that's a perfect retrieval (the right source, by
     # construction, not an embedding guess); score it 1.0/1.0 rather
     # than 0.0/0.0 as "no chunks retrieved" would otherwise read.
-    expected_id_field = _SOURCE_TYPE_TO_RESULT_ID_FIELD.get(item["expected_source_type"])
-    lookup_hit = any(
-        result.get("tool") == TOOL_LOOKUP_STRUCTURED_DATA
-        and isinstance(result.get("result"), dict)
-        and result["result"].get(expected_id_field) == item["expected_source_entity_id"]
-        for result in turn["tool_results"]
-    )
-
-    if lookup_hit:
-        precision, recall = 1.0, 1.0
+    if item["expected_source_type"] in _GRAPH_CATEGORIES:
+        # No DocumentChunk/lookup involved -- correctness is id-set overlap
+        # between lookup_graph_context's returned hits (under
+        # expected_result_key) and the independently SQL-computed
+        # expected_entity_ids (golden_questions.py). 0.0/0.0 if the graph
+        # tool was never offered/called (enable_graph_tool=False, or the
+        # agent picked something else) -- a real miss, not a parsing gap.
+        graph_result = next(
+            (r["result"] for r in turn["tool_results"]
+             if r.get("tool") == TOOL_LOOKUP_GRAPH_CONTEXT and isinstance(r.get("result"), dict)),
+            {},
+        )
+        hits = graph_result.get(item["expected_result_key"], [])
+        returned_ids = [h["id"] for h in hits if isinstance(h, dict) and "id" in h]
+        expected_ids = set(item["expected_entity_ids"])
+        precision = precision_at_k(returned_ids, expected_ids, top_k) if expected_ids else 0.0
+        recall = recall_at_k(returned_ids, expected_ids, top_k) if expected_ids else 0.0
     else:
-        relevant_ids = {
-            c["chunk_id"] for c in chunks
-            if c["source_type"] == item["expected_source_type"]
-            and c["source_entity_id"] == item["expected_source_entity_id"]
-        }
-        precision = precision_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
-        recall = recall_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
+        expected_id_field = _SOURCE_TYPE_TO_RESULT_ID_FIELD.get(item["expected_source_type"])
+        lookup_hit = any(
+            result.get("tool") == TOOL_LOOKUP_STRUCTURED_DATA
+            and isinstance(result.get("result"), dict)
+            and result["result"].get(expected_id_field) == item["expected_source_entity_id"]
+            for result in turn["tool_results"]
+        )
+
+        if lookup_hit:
+            precision, recall = 1.0, 1.0
+        else:
+            relevant_ids = {
+                c["chunk_id"] for c in chunks
+                if c["source_type"] == item["expected_source_type"]
+                and c["source_entity_id"] == item["expected_source_entity_id"]
+            }
+            precision = precision_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
+            recall = recall_at_k(retrieved_ids, relevant_ids, top_k) if relevant_ids else 0.0
 
     relevance_score, _ = score_relevance(item["question"], answer, judge_generate_fn, judge_model)
     coherence_score, _ = score_coherence(answer, judge_generate_fn, judge_model)
@@ -220,11 +250,20 @@ def run_eval(
     n_skills: int = 10, n_courses: int = 10, embedding_model: str = "all-minilm",
     backend: str = "ollama", judge_backend: str | None = None, max_workers: int = 1, experiment_tag: str = "",
     answer_prompt_variant: str = "default", model: str | None = None, judge_model: str | None = None,
+    enable_graph_tool: bool = False, n_candidate_graph: int = 5, n_job_graph: int = 5,
 ) -> tuple[list[ChatEvalResult], dict[str, float], dict[str, dict[str, float]]]:
+    # "agent" (today's live default: search_knowledge_base + lookup_structured_data) vs
+    # "agent+graph" (Phase 2: + lookup_graph_context) -- see the Phase 2 plan's A/B comparison.
+    retrieval_mode = "agent+graph" if enable_graph_tool else "agent"
+    # Relationship questions are built regardless of enable_graph_tool --
+    # included in the baseline run too (where lookup_graph_context isn't
+    # offered, so they score ~0), so the same question set, not just the
+    # new category's isolated numbers, is directly comparable before/after.
     questions = build_golden_questions(
         session, n_candidates=n_candidates, n_jobs=n_jobs, n_skills=n_skills, n_courses=n_courses,
+        n_candidate_graph=n_candidate_graph, n_job_graph=n_job_graph,
     )
-    config_label = f"retrieval_mode={RETRIEVAL_MODE},backend={backend},embedding_model={embedding_model},top_k={top_k}"
+    config_label = f"retrieval_mode={retrieval_mode},backend={backend},embedding_model={embedding_model},top_k={top_k}"
     if judge_backend and judge_backend != backend:
         config_label += f",judge_backend={judge_backend}"
     if answer_prompt_variant != "default":
@@ -254,7 +293,7 @@ def run_eval(
             per_question = list(pool.map(
                 lambda item: _eval_one_question(
                     item, top_k, generate_fn, judge_generate_fn, answer_prompt, resolved_model,
-                    resolved_judge_model,
+                    resolved_judge_model, enable_graph_tool,
                 ),
                 questions,
             ))
@@ -262,7 +301,7 @@ def run_eval(
         per_question = [
             _eval_one_question(
                 item, top_k, generate_fn, judge_generate_fn, answer_prompt,
-                resolved_model, resolved_judge_model,
+                resolved_model, resolved_judge_model, enable_graph_tool,
             )
             for item in questions
         ]
@@ -282,7 +321,7 @@ def run_eval(
     for row in per_question:
         result = ChatEvalResult(
             run_at=run_at, question=row["question"], expected_answer=row["expected_answer"],
-            retrieval_mode=RETRIEVAL_MODE, retrieved_chunk_ids=row["retrieved_ids"], generated_answer=row["answer"],
+            retrieval_mode=retrieval_mode, retrieved_chunk_ids=row["retrieved_ids"], generated_answer=row["answer"],
             relevance_score=row["relevance"], coherence_score=row["coherence"],
             faithfulness_score=row["faithfulness"], groundedness_score=row["groundedness"],
             precision_at_k=round(row["precision"], 4), recall_at_k=round(row["recall"], 4),
@@ -306,7 +345,7 @@ def run_eval(
         category: {name: _avg(values) for name, values in totals.items()}
         for category, totals in by_category_totals.items()
     }
-    _log_to_mlflow(run_at, config_label, len(questions), averages, by_category)
+    _log_to_mlflow(run_at, retrieval_mode, config_label, len(questions), averages, by_category)
     return results, averages, by_category
 
 
@@ -317,6 +356,14 @@ if __name__ == "__main__":
     parser.add_argument("--n-jobs", type=int, default=10)
     parser.add_argument("--n-skills", type=int, default=10)
     parser.add_argument("--n-courses", type=int, default=10)
+    parser.add_argument(
+        "--enable-graph-tool", action="store_true",
+        help="offer lookup_graph_context (Phase 2's knowledge-graph relationship tool) as a third "
+             "choice -- retrieval_mode becomes 'agent+graph' instead of 'agent'. Defaults to off, "
+             "matching the live chat page's current behavior.",
+    )
+    parser.add_argument("--n-candidate-graph", type=int, default=5)
+    parser.add_argument("--n-job-graph", type=int, default=5)
     parser.add_argument(
         "--backend", choices=["ollama", "vllm"], default="ollama",
         help="ollama (CPU, default, matches the live chat page) or vllm (GPU, continuous batching -- "
@@ -364,8 +411,11 @@ if __name__ == "__main__":
         n_skills=args.n_skills, n_courses=args.n_courses, backend=args.backend,
         judge_backend=args.judge_backend, max_workers=args.max_workers, experiment_tag=args.experiment_tag,
         answer_prompt_variant=args.answer_prompt_variant, model=args.model, judge_model=args.judge_model,
+        enable_graph_tool=args.enable_graph_tool, n_candidate_graph=args.n_candidate_graph,
+        n_job_graph=args.n_job_graph,
     )
-    print(f"Chatbot eval ({RETRIEVAL_MODE}, backend={args.backend}), overall: {avgs}")
+    retrieval_mode = "agent+graph" if args.enable_graph_tool else "agent"
+    print(f"Chatbot eval ({retrieval_mode}, backend={args.backend}), overall: {avgs}")
     for category, cat_avgs in by_cat.items():
         print(f"  [{category}] {cat_avgs}")
     db_session.close()

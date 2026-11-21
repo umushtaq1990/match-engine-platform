@@ -77,14 +77,16 @@ def _build_context(tool_results: list[dict], retrieved_chunks: list[dict]) -> li
     return ["(no information found)"]
 
 
-def _collect_samples(session, questions: list[dict], generate_fn, model: str) -> list[dict]:
+def _collect_samples(
+    session, questions: list[dict], generate_fn, model: str, enable_graph_tool: bool = False,
+) -> list[dict]:
     rows = []
     for item in questions:
         chat_session = chat_history.create_session(session, user_id=EVAL_USER_ID, role="admin")
         try:
             turn = run_chat_turn(
                 session, chat_session.id, role="admin", question=item["question"],
-                generate_fn=generate_fn, model=model,
+                generate_fn=generate_fn, model=model, enable_graph_tool=enable_graph_tool,
             )
         except Exception:
             logger.warning("Question failed, skipping: %r", item["question"], exc_info=True)
@@ -100,13 +102,15 @@ def _collect_samples(session, questions: list[dict], generate_fn, model: str) ->
 
 def run_ragas_eval(
     session, n_candidates: int = 10, n_jobs: int = 10, n_skills: int = 10, n_courses: int = 10,
-    model: str = "qwen2.5:1.5b", judge_model: str = "qwen2.5:1.5b",
+    model: str = "qwen2.5:1.5b", judge_model: str = "qwen2.5:1.5b", enable_graph_tool: bool = False,
+    n_candidate_graph: int = 0, n_job_graph: int = 0,
 ) -> dict[str, float]:
     questions = build_golden_questions(
         session, n_candidates=n_candidates, n_jobs=n_jobs, n_skills=n_skills, n_courses=n_courses,
+        n_candidate_graph=n_candidate_graph, n_job_graph=n_job_graph,
     )
     generate_fn = resolve_generate_fn("ollama")
-    rows = _collect_samples(session, questions, generate_fn, model)
+    rows = _collect_samples(session, questions, generate_fn, model, enable_graph_tool=enable_graph_tool)
     logger.info("Collected %d/%d samples (failures skipped).", len(rows), len(questions))
 
     client = OpenAI(base_url=f"{settings.ollama_url}/v1", api_key="ollama")
@@ -150,12 +154,21 @@ if __name__ == "__main__":
         "--judge-model", default="qwen2.5:1.5b",
         help="Ollama model for RAGAS's own judge calls, independent of --model.",
     )
+    parser.add_argument(
+        "--enable-graph-tool", action="store_true",
+        help="offer lookup_graph_context (Phase 2's knowledge-graph relationship tool), to cross-check "
+             "run_chatbot_eval.py's candidate_graph/job_graph category with RAGAS's own metrics.",
+    )
+    parser.add_argument("--n-candidate-graph", type=int, default=0)
+    parser.add_argument("--n-job-graph", type=int, default=0)
     args = parser.parse_args()
 
     db_session = SessionLocal()
     scores = run_ragas_eval(
         db_session, n_candidates=args.n_candidates, n_jobs=args.n_jobs,
         n_skills=args.n_skills, n_courses=args.n_courses, model=args.model, judge_model=args.judge_model,
+        enable_graph_tool=args.enable_graph_tool, n_candidate_graph=args.n_candidate_graph,
+        n_job_graph=args.n_job_graph,
     )
     print(f"RAGAS eval: {scores}")
     db_session.close()
