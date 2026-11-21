@@ -8,6 +8,15 @@
 -r requirements-graph.txt
 -r requirements-frontend.txt
 -r requirements-golden.txt
+# app/chatbot/graph.py imports langgraph directly -- not otherwise pulled
+# in by any -r above. Pinned to match requirements-golden-drilldown.txt's
+# own forced-upgrade (ragas's dependency tree needs langchain-core 1.x,
+# incompatible with langgraph 0.2.x's own pin) without pulling in that
+# whole file's ragas/langchain-community stack here too, which conflicts
+# with this union's own already-pinned packages (confirmed: `pip install
+# -r requirements-golden-drilldown.txt` alone hits a real, pre-existing
+# ResolutionImpossible -- a separate problem from this one line).
+langgraph==1.2.24
 pytest==8.3.3
 httpx==0.27.2
 ruff==0.7.4
