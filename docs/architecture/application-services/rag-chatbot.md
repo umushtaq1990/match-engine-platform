@@ -415,12 +415,25 @@ held up on a live model, not just in principle.
 The new tool is a real, unambiguous win on the question type it exists for — the baseline agent
 literally cannot score above 0.0 on a relationship question (confirmed, not assumed), and the
 graph-enabled agent scores meaningfully above zero on both new categories, with the pre-existing
-categories unaffected (adding an unused tool option doesn't regress anything). `job_graph`'s
-recall (0.222) is markedly weaker than `candidate_graph`'s (0.889) on this small sample — plausibly
-the "what courses would help targeting job X" phrasing being a harder routing/argument-extraction
-case for the small model than the more direct "similar to candidate X" phrasing; worth a larger
-sample and a look at the specific missed cases before concluding further, not generalized from 3
-jobs here.
+categories unaffected (adding an unused tool option doesn't regress anything).
+
+**Larger-sample re-run** (15 candidate_graph + 15 job_graph questions, same `qwen2.5:1.5b` agent,
+2026-11-21), to check whether `job_graph`'s weaker recall was just small-sample noise:
+
+| Category | n=3 sample | n=15 sample |
+|---|---|---|
+| candidate_graph precision@k / recall@k | 0.533 / 0.889 | 0.5 / 0.833 |
+| job_graph precision@k / recall@k | 0.133 / 0.222 | 0.1 / 0.167 |
+
+Both numbers hold steady (job_graph if anything slightly lower) at 5x the sample size — **not
+sample-size noise**. `job_graph` genuinely underperforms `candidate_graph` on this shared-skill-count
+graph query. Working hypothesis, not yet confirmed: job postings tend to list fewer, more generic
+skill tags than candidate profiles, so "top jobs matching a candidate's skillset" has a weaker
+shared-skill signal to rank on than candidate-to-candidate similarity does — a data/query-signal
+limitation in `graph_retrieval.py`'s `_CANDIDATE_TOP_JOBS`/`_JOB_TOP_PEERS` queries, not a
+tool-routing or prompt problem (the live smoke test above already confirmed routing works).
+Narrowing this further (e.g. weighting by skill rarity instead of raw shared-skill count) is a
+follow-up, not done here.
 
 ## Known Limitations
 
@@ -468,8 +481,9 @@ jobs here.
   `enable_graph_tool` (defaults `False`, live page unaffected). Eval confirms it's a real win on
   the relationship-question category it targets; the live chat page's default has **not** been
   flipped yet — that's a deliberate follow-up decision, not assumed from this result alone. A
-  larger-sample re-run (beyond the 3+3 candidates/jobs used here) would sharpen the `job_graph`
-  recall number specifically before flipping the default.
+  larger-sample re-run (15+15 candidates/jobs, see above) confirmed `job_graph`'s weaker recall is
+  real, not small-sample noise — a graph-signal-quality limitation worth narrowing (e.g. weighting
+  by skill rarity) as a follow-up, separate from the decision to flip the default.
 - **Phase 3 — hybrid retrieval + reranking + sweep**: combine vector+graph retrieval, add a
   reranking stage (library choice — `sentence-transformers` cross-encoder vs. an LLM-prompted
   reranker via the existing Ollama client — deliberately left open until this phase), then a
