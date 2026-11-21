@@ -462,22 +462,28 @@ doesn't currently contain the necessary data to rank candidates," instead of 1.5
 unrelated candidate. This is a genuine instruction-following gap between the two models, not a
 prompt-wording problem -- confirmed by testing the identical prompt text against both.
 
-**Decision: the live chat page's default model is now `qwen2.5:7b`** (`graph.py`'s `_LLM_MODEL`),
-up from `qwen2.5:1.5b`. `settings.ollama_timeout_seconds` (`app/common/config.py`) was also raised
-from 60.0 to 180.0 -- a cold 7b model load (e.g. after Ollama's idle keep-alive evicts it between
-infrequent requests) plus one generate call can exceed 60s even though the model isn't hung, and
-this is now the common case rather than an edge case now that 7b is the live default. Shared by the
-extraction pipeline too (still mostly on the fast 1.5b model there); a longer timeout there only
-delays detecting a genuine hang, not a correctness change.
+**Tried `qwen2.5:7b` first, then settled on `qwen2.5:3b`**: 7b fixed the instruction-following gap
+but was confirmed too slow for interactive use on this CPU-only host -- live user testing hit "no
+response" on real questions. Re-tested the identical fix against `qwen2.5:3b`: it matched 7b's
+correct decline behavior on every case tested (both out-of-scope questions above: `[]` tool calls,
+honest decline + scope reminder) while responding in ~8-25s instead of timing out. Also found, while
+testing, that both `qwen2.5:7b` and `qwen2.5:1.5b` were loaded in Ollama's memory simultaneously
+(leftover from earlier testing), directly competing for CPU on this single-instance, serial-request
+setup -- unloaded the unused one; worth checking `ollama ps` if the live page ever feels slow again.
 
-**Important, separate finding**: neither model can actually *answer* a criteria-ranking question
-like "top 3 candidates with a data engineering profile" -- there is no tool in this system that
-searches/ranks candidates by skill criteria across the whole pool (only exact-id lookup, single-
-entity vector search, and similarity-by-a-known-id exist). The model-size fix only gets an honest
-decline instead of a hallucinated answer; it does not add that capability. A criteria-search/ranking
-tool is a real, separate feature gap, not scoped into this pass -- see Roadmap.
-Narrowing this further (e.g. weighting by skill rarity instead of raw shared-skill count) is a
-follow-up, not done here.
+**Decision: the live chat page's default model is `qwen2.5:3b`** (`graph.py`'s `_LLM_MODEL`), up
+from `qwen2.5:1.5b`. `settings.ollama_timeout_seconds` (`app/common/config.py`) was also raised from
+60.0 to 180.0 as a safety margin for a cold model load (e.g. after Ollama's idle keep-alive evicts a
+model between infrequent requests) plus one generate call -- confirmed live this can exceed 60s even
+though the model isn't hung. Shared by the extraction pipeline too (still mostly on the fast 1.5b
+model there); a longer timeout there only delays detecting a genuine hang, not a correctness change.
+
+**Important, separate finding**: no model size fixes a criteria-ranking question like "top 3
+candidates with a data engineering profile" -- there is no tool in this system that searches/ranks
+candidates by skill criteria across the whole pool (only exact-id lookup, single-entity vector
+search, and similarity-by-a-known-id exist). The model-size fix only gets an honest decline instead
+of a hallucinated answer; it does not add that capability. A criteria-search/ranking tool is a real,
+separate feature gap, not scoped into this pass -- see Roadmap.
 
 ## Known Limitations
 

@@ -34,16 +34,23 @@ from app.chatbot.tools import (
 
 # Ignored outright when `generate_fn` is vLLM's client (it serves one fixed
 # model regardless of this string -- see app.chatbot.llm_backend). Bumped
-# from qwen2.5:1.5b to qwen2.5:7b (2026-11-21): live user testing surfaced
-# the small model repeatedly hallucinating a tool call (a made-up
-# entity_id, or a plausible-looking but wrong one) for questions no tool
-# can actually answer -- "what are trending skills," "top 3 candidates
-# with a data engineering profile" -- rather than following this file's
-# own decide_tools prompt instruction to output [] and decline. Confirmed
-# live, same prompts: qwen2.5:7b reliably follows that instruction
-# (declines honestly, states what it can help with instead) where 1.5b
-# did not. See docs/architecture/application-services/rag-chatbot.md.
-_LLM_MODEL = "qwen2.5:7b"
+# from qwen2.5:1.5b (2026-11-21): live user testing surfaced the small
+# model repeatedly hallucinating a tool call (a made-up entity_id, or a
+# plausible-looking but wrong one) for questions no tool can actually
+# answer -- "what are trending skills," "top 3 candidates with a data
+# engineering profile" -- rather than following this file's own
+# decide_tools prompt instruction to output [] and decline.
+#
+# Tried qwen2.5:7b first: confirmed live, same prompts, it reliably
+# follows that instruction where 1.5b did not -- but also confirmed live
+# it's too slow on this CPU-only host for interactive chat (the user
+# tried it, got no response in a reasonable wait). qwen2.5:3b matched
+# 7b's correct decline behavior on every case tested (same two questions
+# above: [] tool calls, honest decline + scope reminder) while being
+# dramatically faster (~8-25s vs. 7b's "no response") -- the practical
+# sweet spot, not just a compromise. See
+# docs/architecture/application-services/rag-chatbot.md.
+_LLM_MODEL = "qwen2.5:3b"
 
 # Matches run_chatbot_eval.py's/run_retrieval_eval.py's own constants of the
 # same name -- kept in sync manually (no shared import) since those scripts
@@ -473,7 +480,7 @@ def _run_chat_turn(
             eval harness can pass `_ANSWER_PROMPT_TIGHT` or another variant
             to A/B a prompt change without touching the live default.
         model: the Ollama model name passed to `generate_fn` -- defaults to
-            `_LLM_MODEL` (`qwen2.5:7b`, the live chat page's choice);
+            `_LLM_MODEL` (`qwen2.5:3b`, the live chat page's choice);
             ignored outright when `generate_fn` is vLLM's client (it serves
             one fixed model regardless of this string). The eval harness
             can pass a different Ollama model to compare
