@@ -51,7 +51,10 @@ TOOL_SPECS = [
             "type": "object",
             "properties": {
                 "entity_type": {"type": "string", "enum": ["candidate", "job", "skill", "course"]},
-                "entity_id": {"type": "integer", "description": "for candidate/job, named by id in the question"},
+                "entity_id": {
+                    "type": "integer",
+                    "description": "for candidate/job, named by id in the question",
+                },
                 "entity_name": {
                     "type": "string",
                     "description": "for skill/course, named by name/title in the question",

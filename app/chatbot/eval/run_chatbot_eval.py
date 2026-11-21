@@ -263,7 +263,10 @@ def run_eval(
         session, n_candidates=n_candidates, n_jobs=n_jobs, n_skills=n_skills, n_courses=n_courses,
         n_candidate_graph=n_candidate_graph, n_job_graph=n_job_graph,
     )
-    config_label = f"retrieval_mode={retrieval_mode},backend={backend},embedding_model={embedding_model},top_k={top_k}"
+    config_label = (
+        f"retrieval_mode={retrieval_mode},backend={backend},"
+        f"embedding_model={embedding_model},top_k={top_k}"
+    )
     if judge_backend and judge_backend != backend:
         config_label += f",judge_backend={judge_backend}"
     if answer_prompt_variant != "default":
@@ -321,7 +324,8 @@ def run_eval(
     for row in per_question:
         result = ChatEvalResult(
             run_at=run_at, question=row["question"], expected_answer=row["expected_answer"],
-            retrieval_mode=retrieval_mode, retrieved_chunk_ids=row["retrieved_ids"], generated_answer=row["answer"],
+            retrieval_mode=retrieval_mode, retrieved_chunk_ids=row["retrieved_ids"],
+            generated_answer=row["answer"],
             relevance_score=row["relevance"], coherence_score=row["coherence"],
             faithfulness_score=row["faithfulness"], groundedness_score=row["groundedness"],
             precision_at_k=round(row["precision"], 4), recall_at_k=round(row["recall"], 4),

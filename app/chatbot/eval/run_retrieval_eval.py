@@ -61,7 +61,9 @@ def _log_to_mlflow(run_at: datetime, config_label: str, n: int, averages: dict, 
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
         with mlflow.start_run(run_name=f"retrieval-eval-{run_at.isoformat()}"):
-            mlflow.log_params({"retrieval_mode": RETRIEVAL_MODE, "config_label": config_label, "n_questions": n})
+            mlflow.log_params(
+                {"retrieval_mode": RETRIEVAL_MODE, "config_label": config_label, "n_questions": n}
+            )
             mlflow.log_metrics(averages)
             for category, cat_averages in by_category.items():
                 mlflow.log_metrics({f"{name}_{category}": value for name, value in cat_averages.items()})
@@ -72,7 +74,9 @@ def _log_to_mlflow(run_at: datetime, config_label: str, n: int, averages: dict, 
 def _eval_one_question(item: dict, top_k: int, generate_fn: GenerateFn) -> dict:
     worker_session = SessionLocal()
     try:
-        turn = run_retrieval_turn(worker_session, role="admin", question=item["question"], generate_fn=generate_fn)
+        turn = run_retrieval_turn(
+            worker_session, role="admin", question=item["question"], generate_fn=generate_fn,
+        )
         chunks = turn["retrieved_chunks"]
         retrieved_ids = [c["chunk_id"] for c in chunks]
 
@@ -107,13 +111,18 @@ def run_retrieval_eval(
     questions = build_golden_questions(
         session, n_candidates=n_candidates, n_jobs=n_jobs, n_skills=n_skills, n_courses=n_courses,
     )
-    config_label = f"retrieval_mode={RETRIEVAL_MODE},backend={backend},embedding_model={embedding_model},top_k={top_k}"
+    config_label = (
+        f"retrieval_mode={RETRIEVAL_MODE},backend={backend},"
+        f"embedding_model={embedding_model},top_k={top_k}"
+    )
     run_at = datetime.now(timezone.utc)
     generate_fn = resolve_generate_fn(backend)
 
     if max_workers > 1:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            per_question = list(pool.map(lambda item: _eval_one_question(item, top_k, generate_fn), questions))
+            per_question = list(
+                pool.map(lambda item: _eval_one_question(item, top_k, generate_fn), questions)
+            )
     else:
         per_question = [_eval_one_question(item, top_k, generate_fn) for item in questions]
 
