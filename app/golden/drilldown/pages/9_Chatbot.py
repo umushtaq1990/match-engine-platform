@@ -61,7 +61,7 @@ if question:
     session = SessionLocal()
     try:
         with st.spinner("Thinking..."):
-            result = run_chat_turn(session, session_id, role, question)
+            result = run_chat_turn(session, session_id, role, question, enable_graph_tool=True)
     finally:
         session.close()
 
