@@ -492,9 +492,12 @@ def _run_chat_turn(
             flipping this default (see the Phase 2 plan).
 
     Returns:
-        dict: `{"answer": str, "retrieved_chunks": list[dict] (each
-            `{chunk_id, text, source_type, source_entity_id, tags,
-            is_fresh}`, the traceability record), "tool_calls": list[dict]}`.
+        dict: `{"message_id": int (the persisted assistant ChatMessage's id
+            -- what per-message thumbs up/down feedback links to, see
+            app.chatbot.chat_history.save_feedback), "answer": str,
+            "retrieved_chunks": list[dict] (each `{chunk_id, text,
+            source_type, source_entity_id, tags, is_fresh}`, the
+            traceability record), "tool_calls": list[dict]}`.
     """
     _tag_current_trace(session_id, role, question)
     if generate_fn is None:
@@ -512,8 +515,11 @@ def _run_chat_turn(
     final_state = graph.invoke(initial_state)
 
     chunk_ids = [c["chunk_id"] for c in final_state["retrieved_chunks"]]
-    chat_history.append_message(session, session_id, "assistant", final_state["answer"], chunk_ids)
+    assistant_message = chat_history.append_message(
+        session, session_id, "assistant", final_state["answer"], chunk_ids,
+    )
     return {
+        "message_id": assistant_message.id,
         "answer": final_state["answer"],
         "retrieved_chunks": final_state["retrieved_chunks"],
         "tool_calls": final_state["tool_calls"],

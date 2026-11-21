@@ -95,6 +95,30 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column()
 
 
+FEEDBACK_UP = "up"
+FEEDBACK_DOWN = "down"
+
+
+class ChatMessageFeedback(Base):
+    """Thumbs up/down (+ optional comment, standard practice only on a down
+    vote) on one specific assistant `ChatMessage` -- the standard per-message
+    feedback pattern (ChatGPT/Claude/Copilot all use this, not an end-of-
+    session survey), chosen specifically so a flagged answer can be traced
+    back to its exact question/context, not just "something in this session
+    was bad." One row per message (`UniqueConstraint` below) -- re-rating
+    the same message upserts rather than appending a second row.
+    """
+
+    __tablename__ = "chat_message_feedback"
+    __table_args__ = (UniqueConstraint("message_id", name="uq_chat_message_feedback_message_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("chat_messages.id"))
+    rating: Mapped[str] = mapped_column(String(10))
+    comment: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column()
+
+
 class ChatEvalResult(Base):
     """One golden-question's scored run (app/chatbot/eval/run_chatbot_eval.py)
     -- the per-question drill-down detail table, same two-tier shape

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.chatbot.models import ChatMessage, ChatSession
+from app.chatbot.models import ChatMessage, ChatMessageFeedback, ChatSession
 
 
 def create_session(session: Session, user_id: str, role: str) -> ChatSession:
@@ -51,3 +51,31 @@ def load_recent_messages(session: Session, session_id: int, limit: int = 20) -> 
         .limit(limit)
     ).scalars().all()
     return list(reversed(rows))
+
+
+def save_feedback(
+    session: Session, message_id: int, rating: str, comment: str | None = None,
+) -> ChatMessageFeedback:
+    """Records a thumbs up/down (+ optional comment) on one assistant
+    message -- the standard per-message feedback pattern (see
+    `ChatMessageFeedback`'s docstring for why this is per-message, not an
+    end-of-session survey). Upserts on `message_id` (its own unique
+    constraint) rather than appending a new row, so a user changing their
+    mind (down -> up, or editing their comment) overwrites, not duplicates.
+    """
+    existing = session.execute(
+        select(ChatMessageFeedback).where(ChatMessageFeedback.message_id == message_id)
+    ).scalar_one_or_none()
+    if existing is not None:
+        existing.rating = rating
+        existing.comment = comment
+        existing.created_at = datetime.now(timezone.utc)
+        feedback = existing
+    else:
+        feedback = ChatMessageFeedback(
+            message_id=message_id, rating=rating, comment=comment, created_at=datetime.now(timezone.utc),
+        )
+        session.add(feedback)
+    session.commit()
+    session.refresh(feedback)
+    return feedback
