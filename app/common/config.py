@@ -77,10 +77,19 @@ class Settings(BaseSettings):
 
     # --- Model serving (app/extraction/ollama_client.py, app/golden/vllm_client.py) --
     ollama_url: str = "http://ollama:11434"
-    # Tuned around qwen2.5:1.5b's decode speed on CPU — see
-    # app/extraction/ollama_client.py's own comment for why this needed to
-    # be configurable rather than a fixed constant.
-    ollama_timeout_seconds: float = 60.0
+    # Was 60.0, tuned around qwen2.5:1.5b's decode speed on CPU -- bumped
+    # to 180.0 when the live chatbot's default model moved to qwen2.5:7b
+    # (app/chatbot/graph.py's _LLM_MODEL): confirmed live, a cold model
+    # load (not yet resident in Ollama's memory, e.g. after its idle
+    # keep-alive evicts it between infrequent requests) plus one 7b
+    # generate() call can exceed 60s and hit a real ReadTimeout even
+    # though the model itself isn't hung -- see
+    # app/extraction/ollama_client.py's own comment for why this is
+    # configurable rather than a fixed constant. Shared by the extraction
+    # pipeline too (still mostly on the fast 1.5b model there); a longer
+    # timeout there only delays detecting a genuine hang, not a
+    # correctness change.
+    ollama_timeout_seconds: float = 180.0
     vllm_url: str = "http://vllm:8000"
     vllm_model: str = "Qwen/Qwen2.5-1.5B-Instruct"
 

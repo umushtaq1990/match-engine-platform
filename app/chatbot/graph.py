@@ -33,8 +33,17 @@ from app.chatbot.tools import (
 )
 
 # Ignored outright when `generate_fn` is vLLM's client (it serves one fixed
-# model regardless of this string -- see app.chatbot.llm_backend).
-_LLM_MODEL = "qwen2.5:1.5b"
+# model regardless of this string -- see app.chatbot.llm_backend). Bumped
+# from qwen2.5:1.5b to qwen2.5:7b (2026-11-21): live user testing surfaced
+# the small model repeatedly hallucinating a tool call (a made-up
+# entity_id, or a plausible-looking but wrong one) for questions no tool
+# can actually answer -- "what are trending skills," "top 3 candidates
+# with a data engineering profile" -- rather than following this file's
+# own decide_tools prompt instruction to output [] and decline. Confirmed
+# live, same prompts: qwen2.5:7b reliably follows that instruction
+# (declines honestly, states what it can help with instead) where 1.5b
+# did not. See docs/architecture/application-services/rag-chatbot.md.
+_LLM_MODEL = "qwen2.5:7b"
 
 # Matches run_chatbot_eval.py's/run_retrieval_eval.py's own constants of the
 # same name -- kept in sync manually (no shared import) since those scripts
@@ -109,7 +118,36 @@ def _tool_call_schema(enable_graph_tool: bool) -> dict:
         },
     }
 
-_DECIDE_TOOLS_PROMPT = """You are an assistant with access to these tools:
+# Live user feedback (2026-11-21): a real admin session showed the small
+# model handling "hi"/"how are you" with no framing of what the bot is for
+# (odd third-person replies, no onboarding), and "what are trending skills"
+# -- a question NO tool here can actually answer (no aggregate/trend tool
+# exists, only exact-id lookup, vector search, and relationship lookup) --
+# forced a garbage lookup_structured_data call (entity_id="trending_skills")
+# instead of admitting it couldn't help. _BOT_SCOPE is injected into both
+# _DECIDE_TOOLS_PROMPT (so the model can choose "no tool applies") and
+# _ANSWER_PROMPT (so the model explains its scope instead of floundering on
+# empty/failed tool results).
+_BOT_SCOPE = (
+    "You are the recruiting assistant for this platform's internal talent database. You can answer "
+    "questions about: a specific candidate's profile/skills/experience (by id), a specific job's "
+    "requirements (by id), what a specific skill or course covers (by name/title){graph_scope}. You "
+    "CANNOT answer general-knowledge questions, small talk beyond a brief greeting, aggregate/trend "
+    "questions across the whole dataset (e.g. \"what are the most popular/trending skills\", \"how many "
+    "candidates are there\"), or anything unrelated to this platform's candidates/jobs/skills/courses."
+)
+_BOT_SCOPE_GRAPH_ADDITION = (
+    ", and which candidates/jobs are similar to one you name by id, or courses relevant to a job"
+)
+
+
+def _bot_scope(enable_graph_tool: bool) -> str:
+    return _BOT_SCOPE.format(graph_scope=_BOT_SCOPE_GRAPH_ADDITION if enable_graph_tool else "")
+
+
+_DECIDE_TOOLS_PROMPT = """{scope}
+
+You have access to these tools:
 {tool_specs}
 
 lookup_structured_data's arguments MUST use exactly the key "entity_type", plus either "entity_id" \
@@ -146,13 +184,19 @@ Any question naming a specific candidate/job id, or a specific skill/course name
 lookup_structured_data, never search_knowledge_base. Only use search_knowledge_base for open-ended/\
 descriptive questions that name no specific candidate id, job id, skill name, or course title.
 {graph_tool_rule}
+MANDATORY rule, not a suggestion: if the question is small talk/a greeting, a general-knowledge \
+question, an aggregate/trend question (e.g. "what skills are trending", "how many candidates are \
+there"), or anything else no tool above can actually answer, output an empty array [] -- do NOT force \
+a tool call with a made-up or guessed argument just to call something.
+
 Conversation so far:
 {history}
 
 User's new question: {question}
 
 Decide which tool(s) to call to answer this question, and with what arguments. Output a JSON array \
-of {{"name": ..., "arguments": {{...}}}} objects. Call at most 2 tools.
+of {{"name": ..., "arguments": {{...}}}} objects, or [] if no tool applies (see the rule above). Call \
+at most 2 tools.
 """
 
 # Only spliced into _DECIDE_TOOLS_PROMPT when enable_graph_tool=True --
@@ -172,10 +216,18 @@ Do NOT use lookup_graph_context for a question about the entity's own exact fact
 experience, title) -- that is still lookup_structured_data.
 """
 
-_ANSWER_PROMPT = """Answer the user's question using ONLY the information below. Do not invent any \
-detail not present here. Describe things neutrally -- an absent field is simply unknown, not a \
-deficiency. If the information below doesn't answer the question, say so plainly rather than \
-guessing.
+_ANSWER_PROMPT = """{scope}
+
+If the user's new question is just a greeting or small talk (not an actual question), reply briefly \
+and warmly in 1 sentence, then in a second sentence tell them what you can help with. If the \
+question is outside what you can help with (see above -- general knowledge, aggregate/trend stats, \
+anything not about one specific candidate/job/skill/course in this system), say plainly in 1-2 \
+sentences that you can't help with that specific thing, then remind them what you CAN help with -- \
+do not guess or make up an answer for it.
+
+Otherwise, answer the user's question using ONLY the information below. Do not invent any detail not \
+present here. Describe things neutrally -- an absent field is simply unknown, not a deficiency. If \
+the information below doesn't answer the question, say so plainly rather than guessing.
 
 Information:
 {context}
@@ -195,10 +247,16 @@ Answer in 2-4 plain sentences.
 # question, or pads with filler, which a judge scores as less relevant/
 # coherent than a direct, single-fact-first answer would be. Same grounding
 # rules as the default, just more directive about *how* to state the fact.
-_ANSWER_PROMPT_TIGHT = """Using ONLY the information below, answer the user's question in ONE direct \
-sentence that states the fact itself first -- do not restate the question, do not hedge, do not add \
-caveats unless the information is genuinely missing. Do not invent any detail not present here. If \
-the information below doesn't answer the question, say so in one plain sentence rather than guessing.
+_ANSWER_PROMPT_TIGHT = """{scope}
+
+If the user's new question is a greeting/small talk or outside what you can help with (see above), \
+reply in 1-2 sentences accordingly (briefly and warmly for a greeting, or plainly declining and \
+restating your scope otherwise) -- do not guess an answer for it.
+
+Otherwise, using ONLY the information below, answer the user's question in ONE direct sentence that \
+states the fact itself first -- do not restate the question, do not hedge, do not add caveats unless \
+the information is genuinely missing. Do not invent any detail not present here. If the information \
+below doesn't answer the question, say so in one plain sentence rather than guessing.
 
 Information:
 {context}
@@ -226,7 +284,8 @@ def _decide_tools(
     specs = [*TOOL_SPECS, GRAPH_TOOL_SPEC] if enable_graph_tool else TOOL_SPECS
     tool_specs_text = "\n".join(f"- {t['name']}: {t['description']}" for t in specs)
     prompt = _DECIDE_TOOLS_PROMPT.format(
-        tool_specs=tool_specs_text, graph_tool_rule=_GRAPH_TOOL_RULE if enable_graph_tool else "",
+        scope=_bot_scope(enable_graph_tool), tool_specs=tool_specs_text,
+        graph_tool_rule=_GRAPH_TOOL_RULE if enable_graph_tool else "",
         history=state["history_text"] or "(none yet)", question=state["question"],
     )
     raw = generate_fn(model, prompt, response_format=_tool_call_schema(enable_graph_tool))
@@ -317,22 +376,30 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
                 entity_id = int(entity_id) if entity_id is not None else None
                 data = lookup_graph_context(session, state["role"], entity_type, entity_id)
                 results.append({"tool": name, "result": data})
-        except Exception as exc:
-            results.append({"tool": name, "result": f"(tool call failed: {exc})"})
+        except Exception:
+            # Deliberately not the raw exception text -- confirmed live:
+            # leaking it (e.g. "invalid literal for int() with base 10:
+            # 'trending_skills'") into generate_answer's context gave the
+            # small model something to narrate/half-explain instead of
+            # cleanly recognizing "no usable information," even with
+            # _ANSWER_PROMPT's explicit out-of-scope instruction. A plain,
+            # consistent phrase matches that instruction's framing instead.
+            results.append({"tool": name, "result": "(no information available for this request)"})
     state["tool_results"] = results
     state["retrieved_chunks"] = retrieved_chunks
     return state
 
 
 def _generate_answer(
-    generate_fn: GenerateFn, model: str, answer_prompt: str, state: ChatTurnState,
+    generate_fn: GenerateFn, model: str, answer_prompt: str, enable_graph_tool: bool, state: ChatTurnState,
 ) -> ChatTurnState:
     if state["tool_results"]:
         context = json.dumps(state["tool_results"], indent=2, default=str)
     else:
         context = "(no information found)"
     prompt = answer_prompt.format(
-        context=context, history=state["history_text"] or "(none yet)", question=state["question"],
+        scope=_bot_scope(enable_graph_tool), context=context,
+        history=state["history_text"] or "(none yet)", question=state["question"],
     )
     # 2-4 sentences needs well under 100 completion tokens normally, but
     # vllm_client's old hardcoded default (250) was flagged as a plausible
@@ -352,7 +419,8 @@ def _build_graph(
     )
     workflow.add_node("execute_tools", lambda state: _execute_tools(session, state))
     workflow.add_node(
-        "generate_answer", lambda state: _generate_answer(generate_fn, model, answer_prompt, state),
+        "generate_answer",
+        lambda state: _generate_answer(generate_fn, model, answer_prompt, enable_graph_tool, state),
     )
     workflow.set_entry_point("decide_tools")
     workflow.add_edge("decide_tools", "execute_tools")
@@ -405,10 +473,10 @@ def _run_chat_turn(
             eval harness can pass `_ANSWER_PROMPT_TIGHT` or another variant
             to A/B a prompt change without touching the live default.
         model: the Ollama model name passed to `generate_fn` -- defaults to
-            `_LLM_MODEL` (`qwen2.5:1.5b`, the live chat page's choice);
+            `_LLM_MODEL` (`qwen2.5:7b`, the live chat page's choice);
             ignored outright when `generate_fn` is vLLM's client (it serves
             one fixed model regardless of this string). The eval harness
-            can pass a larger Ollama model (e.g. `qwen2.5:7b`) to compare
+            can pass a different Ollama model to compare
             model size against the live default.
         enable_graph_tool: offers `lookup_graph_context` (Phase 2's
             knowledge-graph relationship tool) as a third choice when

@@ -432,6 +432,50 @@ skill tags than candidate profiles, so "top jobs matching a candidate's skillset
 shared-skill signal to rank on than candidate-to-candidate similarity does — a data/query-signal
 limitation in `graph_retrieval.py`'s `_CANDIDATE_TOP_JOBS`/`_JOB_TOP_PEERS` queries, not a
 tool-routing or prompt problem (the live smoke test above already confirmed routing works).
+
+## Scope framing, decline handling, and the live default model (2026-11-21)
+
+Real user testing on the live chat page surfaced two compounding problems with `qwen2.5:1.5b`
+(the live default at the time): no scope framing at all (greetings/small talk got odd third-person
+non-answers, e.g. "The user expressed that they are in a good mood today"), and no way for
+`decide_tools` to say "no tool here can answer this" -- forcing it to call a tool with a made-up or
+guessed argument instead (`lookup_structured_data` with `entity_id: "trending_skills"`, or
+`entity_id: 1` for "top 3 candidates with a data engineering profile," returning an unrelated
+candidate as if it answered the question).
+
+**Fixed at the prompt level** (`app/chatbot/graph.py`): added `_bot_scope()`, a persona/capability
+description ("I can answer questions about a specific candidate/job/skill/course... I cannot answer
+general knowledge, small talk, or aggregate/trend questions") injected into both
+`_DECIDE_TOOLS_PROMPT` (with an explicit "output `[]` if no tool applies" rule) and
+`_ANSWER_PROMPT`/`_ANSWER_PROMPT_TIGHT` (with explicit greeting/out-of-scope decline instructions).
+Also replaced leaked Python exception text in failed tool-call results (e.g. `invalid literal for
+int() with base 10: 'trending_skills'`) with a plain "no information available" string, so a bad
+tool call that does slip through doesn't give the answer step something confusing to narrate around.
+
+**Confirmed live, same prompts, different models**: `qwen2.5:1.5b` reliably follows the new
+instructions for greetings and explicit "how can you help me" questions, but still sometimes forces
+a tool call instead of outputting `[]` for less direct out-of-scope phrasing ("what are trending
+skills," the data-engineering ranking question). `qwen2.5:7b` followed the instructions correctly in
+every case tested, including both cases 1.5b missed -- e.g. for the ranking question, it returned
+`[]` and answered "I don't have enough information to identify the top 3 candidates... our platform
+doesn't currently contain the necessary data to rank candidates," instead of 1.5b's hallucinated,
+unrelated candidate. This is a genuine instruction-following gap between the two models, not a
+prompt-wording problem -- confirmed by testing the identical prompt text against both.
+
+**Decision: the live chat page's default model is now `qwen2.5:7b`** (`graph.py`'s `_LLM_MODEL`),
+up from `qwen2.5:1.5b`. `settings.ollama_timeout_seconds` (`app/common/config.py`) was also raised
+from 60.0 to 180.0 -- a cold 7b model load (e.g. after Ollama's idle keep-alive evicts it between
+infrequent requests) plus one generate call can exceed 60s even though the model isn't hung, and
+this is now the common case rather than an edge case now that 7b is the live default. Shared by the
+extraction pipeline too (still mostly on the fast 1.5b model there); a longer timeout there only
+delays detecting a genuine hang, not a correctness change.
+
+**Important, separate finding**: neither model can actually *answer* a criteria-ranking question
+like "top 3 candidates with a data engineering profile" -- there is no tool in this system that
+searches/ranks candidates by skill criteria across the whole pool (only exact-id lookup, single-
+entity vector search, and similarity-by-a-known-id exist). The model-size fix only gets an honest
+decline instead of a hallucinated answer; it does not add that capability. A criteria-search/ranking
+tool is a real, separate feature gap, not scoped into this pass -- see Roadmap.
 Narrowing this further (e.g. weighting by skill rarity instead of raw shared-skill count) is a
 follow-up, not done here.
 
@@ -477,6 +521,11 @@ follow-up, not done here.
 
 ## Roadmap
 
+- **Candidate/job criteria search & ranking (NEW, not yet scoped)**: "top 3 candidates with a data
+  engineering profile" and similar criteria-ranking questions have no answering tool today -- see
+  above. Would need a 4th tool searching/ranking across `CandidateSkill`/`JobSkill` by criteria
+  (skill names, experience thresholds, etc.), distinct from Phase 2's similarity-by-known-id. A real
+  feature gap surfaced by live user testing, not a model-quality problem.
 - **Phase 2 — graph retrieval: done** (see above) — `lookup_graph_context`, gated behind
   `enable_graph_tool` (defaults `False`, live page unaffected). Eval confirms it's a real win on
   the relationship-question category it targets; the live chat page's default has **not** been
