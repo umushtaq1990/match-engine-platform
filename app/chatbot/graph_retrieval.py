@@ -79,11 +79,18 @@ def graph_context_for_candidate(
     queries this was trimmed from.
 
     Returns:
-        dict: `{"similar_candidates": [{"id", "name", "shared_skill_count"}],
-            "matching_jobs": [{"id", "title", "shared_skill_count"}],
-            "relevant_courses": [{"id", "title", "shared_skill_count"}]}`.
+        dict: `{"subject_candidate_id": int, "similar_candidates": [{"id", "name",
+            "shared_skill_count"}], "matching_jobs": [{"id", "title",
+            "shared_skill_count"}], "relevant_courses": [{"id", "title",
+            "shared_skill_count"}]}`. `subject_candidate_id` exists only so
+            the answer-generation step's context literally states which
+            candidate this data is about -- confirmed live: without it, the
+            small model sometimes answered "candidate 1 is not specified in
+            the provided data" despite being handed exactly candidate 1's
+            results, since nothing in the result itself echoed the id back.
     """
     return {
+        "subject_candidate_id": candidate_id,
         "similar_candidates": _as_hits(_run(_CANDIDATE_TOP_PEERS, candidate_id, max_peers), "name"),
         "matching_jobs": _as_hits(_run(_CANDIDATE_TOP_JOBS, candidate_id, max_jobs), "title"),
         "relevant_courses": _as_hits(_run(_CANDIDATE_TOP_COURSES, candidate_id, max_courses), "title"),
@@ -97,11 +104,15 @@ def graph_context_for_job(
     jobs/courses adjacent to `job_id` via shared required skills.
 
     Returns:
-        dict: `{"matching_candidates": [{"id", "name", "shared_skill_count"}],
-            "similar_jobs": [{"id", "title", "shared_skill_count"}],
-            "relevant_courses": [{"id", "title", "shared_skill_count"}]}`.
+        dict: `{"subject_job_id": int, "matching_candidates": [{"id", "name",
+            "shared_skill_count"}], "similar_jobs": [{"id", "title",
+            "shared_skill_count"}], "relevant_courses": [{"id", "title",
+            "shared_skill_count"}]}`. `subject_job_id` exists for the same
+            reason `graph_context_for_candidate`'s `subject_candidate_id`
+            does -- see its docstring.
     """
     return {
+        "subject_job_id": job_id,
         "matching_candidates": _as_hits(_run(_JOB_TOP_PEERS, job_id, max_peers), "name"),
         "similar_jobs": _as_hits(_run(_JOB_TOP_JOBS, job_id, max_jobs), "title"),
         "relevant_courses": _as_hits(_run(_JOB_TOP_COURSES, job_id, max_courses), "title"),
