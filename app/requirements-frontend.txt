@@ -1,4 +1,5 @@
 streamlit==1.39.0
 requests==2.32.3
-# app.common.config (centralized settings), imported by every app.frontend.* client module
-pydantic-settings==2.5.2
+# app.common.config (centralized settings), imported by every app.frontend.* client module.
+# 2.10.1, matching requirements-base.txt's own bump (see its comment).
+pydantic-settings==2.10.1

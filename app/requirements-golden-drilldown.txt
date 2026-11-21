@@ -31,7 +31,10 @@ mlflow-skinny==3.17.2
 # both together. graph.py was re-verified against the 1.x API after this
 # upgrade (see docs/architecture/application-services/rag-chatbot.md).
 langgraph==1.2.24
-requests==2.32.3
+# 2.32.5, not app/requirements-golden.txt's 2.32.3 -- langchain-community
+# (below) requires requests>=2.32.5. Only bumped here, this file's own
+# pin, not the shared requirements-golden.txt one.
+requests==2.32.5
 # A second, independent evaluation framework (RAGAS) alongside this
 # project's own hand-rolled eval/metrics.py -- cross-checks our
 # custom LLM-judge prompts against a published, community-vetted
