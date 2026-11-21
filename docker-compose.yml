@@ -958,6 +958,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      # Phase 53 live-chatbot-monitoring dashboard reads MLflow's own trace
+      # tables (trace_info/spans) directly -- same Postgres instance, a
+      # different database -- see
+      # docker/grafana/provisioning/datasources/postgres-mlflow.yml.
+      MLFLOW_DB_NAME: ${MLFLOW_DB_NAME}
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana

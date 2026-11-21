@@ -36,6 +36,57 @@ from app.chatbot.tools import (
 # model regardless of this string -- see app.chatbot.llm_backend).
 _LLM_MODEL = "qwen2.5:1.5b"
 
+# Matches run_chatbot_eval.py's/run_retrieval_eval.py's own constants of the
+# same name -- kept in sync manually (no shared import) since those scripts
+# also set this via mlflow.set_experiment() themselves, but only *after*
+# their eval loop already finished calling run_chat_turn/run_retrieval_turn.
+# Confirmed live: every trace from both the live chat page and every past
+# eval run landed in MLflow's "Default" experiment (id 0), undiscoverable
+# by name, because nothing set the active experiment before the traced call
+# actually ran. Setting it here, at the top of the traced function itself,
+# fixes both callers at once.
+_MLFLOW_CHAT_EXPERIMENT = "jme-chatbot-rag"
+_MLFLOW_RETRIEVAL_EXPERIMENT = "jme-chatbot-retrieval"
+
+
+def _set_mlflow_experiment(experiment_name: str) -> None:
+    """Best-effort, same discipline as ollama_client.py's
+    `_set_span_attributes` -- observability must never break a real chat
+    turn, so MLflow being unreachable/misconfigured is swallowed, not
+    raised.
+
+    MUST be called *before* entering the `@mlflow.trace`-decorated function
+    whose trace it's meant to land correctly -- confirmed live:
+    `mlflow.set_experiment()` resets the async trace-export processor, and
+    calling it *inside* an already-started trace kills that same span
+    ("Processor is already shutdown, ignoring call" -- the span silently
+    never gets exported at all, not just mis-filed). That's why this isn't
+    folded into `_tag_current_trace` below and called from inside
+    `run_chat_turn`/`run_retrieval_turn` directly -- see their small
+    `_run_chat_turn`/`_run_retrieval_turn` wrapper split instead."""
+    try:
+        mlflow.set_experiment(experiment_name)
+    except Exception:
+        pass
+
+
+def _tag_current_trace(session_id: int | None, role: str, question: str) -> None:
+    """Best-effort (see `_set_mlflow_experiment` above). Tags the *current*
+    trace with `session_id`/`user` (MLflow's own convention -- stored as
+    `mlflow.trace.session`/`mlflow.trace.user` metadata, filterable in the
+    UI) plus a `question` tag, so a slow or failed trace can be traced back
+    to the chat session and user role that caused it, not just "some call
+    at some time took 60s". Safe to call from inside the traced function
+    (unlike `_set_mlflow_experiment`) -- this only updates the already-
+    active span, it doesn't reset the exporter."""
+    try:
+        kwargs = {"user": role, "tags": {"question": question[:200]}}
+        if session_id is not None:
+            kwargs["session_id"] = str(session_id)
+        mlflow.update_current_trace(**kwargs)
+    except Exception:
+        pass
+
 
 def _tool_call_schema(enable_graph_tool: bool) -> dict:
     """`lookup_graph_context` is only a legal choice when the caller opts
@@ -314,8 +365,25 @@ def _format_history(messages) -> str:
     return "\n".join(f"{m.role}: {m.content}" for m in messages)
 
 
-@mlflow.trace(span_type=SpanType.CHAIN)
 def run_chat_turn(
+    session: Session, session_id: int, role: str, question: str, generate_fn: GenerateFn | None = None,
+    answer_prompt: str = _ANSWER_PROMPT, model: str = _LLM_MODEL, enable_graph_tool: bool = False,
+) -> dict:
+    """Thin wrapper -- sets the active MLflow experiment *before* entering
+    `_run_chat_turn`'s `@mlflow.trace`-decorated body (see
+    `_set_mlflow_experiment`'s docstring for why this can't be done from
+    inside that function instead), then delegates. See `_run_chat_turn` for
+    the actual docstring/behavior; kept separate only for this ordering
+    constraint, not a real API split."""
+    _set_mlflow_experiment(_MLFLOW_CHAT_EXPERIMENT)
+    return _run_chat_turn(
+        session, session_id, role, question, generate_fn=generate_fn,
+        answer_prompt=answer_prompt, model=model, enable_graph_tool=enable_graph_tool,
+    )
+
+
+@mlflow.trace(span_type=SpanType.CHAIN)
+def _run_chat_turn(
     session: Session, session_id: int, role: str, question: str, generate_fn: GenerateFn | None = None,
     answer_prompt: str = _ANSWER_PROMPT, model: str = _LLM_MODEL, enable_graph_tool: bool = False,
 ) -> dict:
@@ -353,6 +421,7 @@ def run_chat_turn(
             `{chunk_id, text, source_type, source_entity_id, tags,
             is_fresh}`, the traceability record), "tool_calls": list[dict]}`.
     """
+    _tag_current_trace(session_id, role, question)
     if generate_fn is None:
         generate_fn = _resolve_generate_fn("ollama")
     chat_history.append_message(session, session_id, "user", question)
@@ -377,8 +446,21 @@ def run_chat_turn(
     }
 
 
-@mlflow.trace(span_type=SpanType.CHAIN)
 def run_retrieval_turn(
+    session: Session, role: str, question: str, generate_fn: GenerateFn | None = None,
+    model: str = _LLM_MODEL, enable_graph_tool: bool = False,
+) -> dict:
+    """Thin wrapper -- see `run_chat_turn`'s wrapper docstring for why this
+    split exists; delegates to `_run_retrieval_turn` for the real
+    docstring/behavior."""
+    _set_mlflow_experiment(_MLFLOW_RETRIEVAL_EXPERIMENT)
+    return _run_retrieval_turn(
+        session, role, question, generate_fn=generate_fn, model=model, enable_graph_tool=enable_graph_tool,
+    )
+
+
+@mlflow.trace(span_type=SpanType.CHAIN)
+def _run_retrieval_turn(
     session: Session, role: str, question: str, generate_fn: GenerateFn | None = None,
     model: str = _LLM_MODEL, enable_graph_tool: bool = False,
 ) -> dict:
@@ -397,6 +479,7 @@ def run_retrieval_turn(
             "tool_results": list[dict]}` -- same shapes as `run_chat_turn`'s,
             minus `"answer"`.
     """
+    _tag_current_trace(None, role, question)
     if generate_fn is None:
         generate_fn = _resolve_generate_fn("ollama")
     state: ChatTurnState = {
