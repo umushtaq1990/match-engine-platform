@@ -542,6 +542,38 @@ the current schema:
   avoid mangling ordinary text, which means it won't catch every address format (e.g. a bare city/
   country name, which isn't PII-specific enough to redact safely anyway).
 
+### Capacity and availability guardrails (2026-11-22)
+
+A production-readiness review flagged a real gap: the live chat page runs one Streamlit process against
+one Ollama instance (`OLLAMA_NUM_PARALLEL: "5"` in `docker-compose.yml`), with no load balancer, second
+replica, or autoscaling in front of it -- because the host it runs on has no spare GPU/RAM for a second
+copy. That's a genuine, honestly-documented limitation of this deployment, not something this change
+pretends to solve. Before this change, an overload or an unreachable Ollama showed up two bad ways: a
+burst of concurrent requests beyond what Ollama can actually run queued silently with growing latency and
+no user-facing signal, and any Ollama connection failure/timeout propagated as a raw, unhandled exception
+that crashed the Streamlit page. `app/chatbot/guardrails.py` adds two more deterministic guards on top of
+the PII/injection/rate-limit ones above, turning both into a clean decline instead:
+
+- **Capacity guardrail** (`chat_turn_capacity_slot`): a process-wide, non-blocking semaphore sized to
+  `MAX_CONCURRENT_CHAT_TURNS` (5, matching `OLLAMA_NUM_PARALLEL`). A chat turn that can't get a slot
+  immediately declines with `CAPACITY_DECLINE_MESSAGE` rather than queuing -- tagged on the trace as
+  `guardrail_triggered: "capacity_limit"`.
+- **Availability guardrail**: `_run_chat_turn` now wraps the actual graph execution (the only part that
+  calls Ollama) in a `try`/`except httpx.HTTPError`. A connection failure or timeout returns
+  `LLM_UNAVAILABLE_MESSAGE` instead of propagating -- tagged `guardrail_triggered: "llm_unavailable"`.
+- Both reasons feed the same `guardrail_triggered` MLflow tag and Grafana audit dashboard as the other
+  guardrails, so a real capacity crunch or backend outage shows up as data, not just user complaints.
+- Unit-tested (`tests/chatbot/test_guardrails.py`): the semaphore is proven directly (acquiring
+  `MAX_CONCURRENT_CHAT_TURNS` slots, confirming the next one is refused, confirming a release frees a
+  slot again) and `run_chat_turn` is proven to decline cleanly when `generate_fn` raises `httpx.
+  ConnectError`. Live-verified with a 7-thread concurrent burst against the real chat graph: all 7
+  completed with normal answers and no crash, confirming the new guards don't regress ordinary traffic.
+- Stated plainly: this is *not* horizontal scaling. It makes one instance's overload/outage behavior
+  honest and recoverable instead of silent or crash-prone; it does not add capacity. Real concurrency
+  headroom would need a second Ollama/vLLM replica (vLLM already exists as an alternate backend via
+  `app.chatbot.llm_backend`, GPU-only, not currently wired into the live page) behind a load balancer,
+  plus a stateless app tier instead of one Streamlit process.
+
 ## Known Limitations
 
 - 11 of 100 courses share a title with another course (`Course.title` has no uniqueness

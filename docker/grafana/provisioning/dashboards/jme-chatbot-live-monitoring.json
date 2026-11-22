@@ -164,7 +164,7 @@
     },
     {
       "title": "Guardrail triggers (selected time range)",
-      "description": "How many run_chat_turn calls were blocked/redacted by app/chatbot/guardrails.py (contact_detail_request, injection, rate_limited, output_pii_redacted -- tagged on the trace as guardrail_triggered). A sustained non-zero rate here is a real signal worth looking at: either genuine abuse/scraping attempts, or a false-positive pattern worth refining the guardrail's rules for.",
+      "description": "How many run_chat_turn calls were blocked/redacted by app/chatbot/guardrails.py (contact_detail_request, injection, rate_limited, output_pii_redacted, capacity_limit, llm_unavailable -- tagged on the trace as guardrail_triggered). A sustained non-zero rate here is a real signal worth looking at: either genuine abuse/scraping attempts, or a false-positive pattern worth refining the guardrail's rules for.",
       "type": "stat",
       "datasource": {
         "type": "postgres",
@@ -186,7 +186,7 @@
     },
     {
       "title": "Guardrail triggers by type over time",
-      "description": "Same trigger events as the stat panel, broken out by reason (contact_detail_request / injection / rate_limited / output_pii_redacted) over time -- a spike in one specific reason points at what to investigate first.",
+      "description": "Same trigger events as the stat panel, broken out by reason (contact_detail_request / injection / rate_limited / output_pii_redacted / capacity_limit / llm_unavailable) over time -- a spike in one specific reason points at what to investigate first.",
       "type": "timeseries",
       "datasource": {
         "type": "postgres",

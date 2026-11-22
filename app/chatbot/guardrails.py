@@ -34,10 +34,29 @@ Both directions are covered:
   silently stop enforcing anything in a real multi-instance deployment;
   the DB-backed count is correct regardless of how many app instances are
   running.
+- `chat_turn_capacity_slot`/`LLM_UNAVAILABLE_MESSAGE`: a fourth concern --
+  this is a single Ollama instance (`OLLAMA_NUM_PARALLEL=5` in
+  docker-compose.yml) with no load balancer or second replica in front of
+  it, because the host it runs on has no spare GPU/RAM for a second copy.
+  That's a real, honestly-documented limit (see
+  docs/architecture/application-services/rag-chatbot.md), not something
+  this layer pretends to fix. What it *does* fix is turning an overload
+  into a clean decline instead of either behavior a caller would otherwise
+  see: a burst of concurrent requests beyond what Ollama can actually run
+  at once queuing silently (growing latency with no user-facing signal),
+  or Ollama being unreachable/erroring crashing the Streamlit page with a
+  raw traceback. `chat_turn_capacity_slot` bounds in-flight chat turns to
+  match `OLLAMA_NUM_PARALLEL`, and `_run_chat_turn` wraps the actual LLM
+  call in a `try`/`except` so a connection failure or timeout becomes a
+  canned decline (tagged on the trace like every other guardrail) rather
+  than an unhandled exception.
 """
 import re
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Iterator
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -236,3 +255,40 @@ def redact_pii_in_value(value):
             any_redacted = any_redacted or inner_redacted
         return result, any_redacted
     return value, False
+
+
+# Matches docker-compose.yml's `OLLAMA_NUM_PARALLEL: "5"` -- letting more
+# chat turns than that run at once wouldn't make them faster (Ollama's own
+# serving layer is the bottleneck, not this process), it would just mean
+# more requests silently queued behind Ollama with no indication to the
+# person waiting on each one. One process-wide semaphore is correct here
+# because the live chat page runs as a single Streamlit process against a
+# single Ollama instance -- this is NOT a substitute for real horizontal
+# scaling (a second Ollama/vLLM replica behind a load balancer), it only
+# makes this one instance's overload behavior honest instead of silent.
+MAX_CONCURRENT_CHAT_TURNS = 5
+_capacity_semaphore = threading.Semaphore(MAX_CONCURRENT_CHAT_TURNS)
+
+CAPACITY_DECLINE_MESSAGE = (
+    "The assistant is handling a lot of questions right now -- please try again in a few seconds."
+)
+LLM_UNAVAILABLE_MESSAGE = (
+    "I couldn't reach the language model backend just now -- please try again shortly. If this "
+    "keeps happening, let an administrator know."
+)
+
+
+@contextmanager
+def chat_turn_capacity_slot() -> Iterator[bool]:
+    """Non-blocking: a caller that doesn't get a slot should decline the
+    turn immediately (see `CAPACITY_DECLINE_MESSAGE`), not queue silently
+    behind `MAX_CONCURRENT_CHAT_TURNS` other in-flight turns. Yields
+    whether a slot was acquired; releases it on exit either way (a no-op
+    when it was never acquired).
+    """
+    acquired = _capacity_semaphore.acquire(blocking=False)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            _capacity_semaphore.release()

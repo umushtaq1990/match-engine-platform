@@ -13,6 +13,7 @@ retrieval) without a rewrite -- see the plan this shipped from.
 import json
 from typing import TypedDict
 
+import httpx
 import mlflow
 from langgraph.graph import END, StateGraph
 from mlflow.entities import SpanType
@@ -20,7 +21,10 @@ from sqlalchemy.orm import Session
 
 from app.chatbot import chat_history
 from app.chatbot.guardrails import (
+    CAPACITY_DECLINE_MESSAGE,
+    LLM_UNAVAILABLE_MESSAGE,
     RATE_LIMIT_DECLINE_MESSAGE,
+    chat_turn_capacity_slot,
     check_input_safety,
     check_rate_limit,
     redact_pii,
@@ -566,18 +570,52 @@ def _run_chat_turn(
             "retrieved_chunks": [], "tool_calls": [], "tool_results": [],
         }
 
-    if generate_fn is None:
-        generate_fn = _resolve_generate_fn("ollama")
-    history_text = _format_history(chat_history.load_recent_messages(session, session_id, limit=10))
+    # Capacity guardrail: this live page runs one Streamlit process against
+    # one Ollama instance (OLLAMA_NUM_PARALLEL=5) -- a non-blocking slot
+    # keeps a burst of concurrent turns from queuing silently behind that
+    # one instance with no indication to anyone waiting. See
+    # app.chatbot.guardrails' module docstring for why this isn't itself a
+    # substitute for real horizontal scaling.
+    with chat_turn_capacity_slot() as acquired:
+        if not acquired:
+            try:
+                mlflow.update_current_trace(tags={"guardrail_triggered": "capacity_limit"})
+            except Exception:
+                pass
+            assistant_message = chat_history.append_message(
+                session, session_id, "assistant", CAPACITY_DECLINE_MESSAGE, [],
+            )
+            return {
+                "message_id": assistant_message.id, "answer": CAPACITY_DECLINE_MESSAGE,
+                "retrieved_chunks": [], "tool_calls": [], "tool_results": [],
+            }
 
-    graph = _build_graph(
-        session, generate_fn, model=model, answer_prompt=answer_prompt, enable_graph_tool=enable_graph_tool,
-    )
-    initial_state: ChatTurnState = {
-        "question": question, "history_text": history_text, "role": role,
-        "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",
-    }
-    final_state = graph.invoke(initial_state)
+        if generate_fn is None:
+            generate_fn = _resolve_generate_fn("ollama")
+        history_text = _format_history(chat_history.load_recent_messages(session, session_id, limit=10))
+
+        graph = _build_graph(
+            session, generate_fn, model=model, answer_prompt=answer_prompt,
+            enable_graph_tool=enable_graph_tool,
+        )
+        initial_state: ChatTurnState = {
+            "question": question, "history_text": history_text, "role": role,
+            "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",
+        }
+        try:
+            final_state = graph.invoke(initial_state)
+        except httpx.HTTPError:
+            try:
+                mlflow.update_current_trace(tags={"guardrail_triggered": "llm_unavailable"})
+            except Exception:
+                pass
+            assistant_message = chat_history.append_message(
+                session, session_id, "assistant", LLM_UNAVAILABLE_MESSAGE, [],
+            )
+            return {
+                "message_id": assistant_message.id, "answer": LLM_UNAVAILABLE_MESSAGE,
+                "retrieved_chunks": [], "tool_calls": [], "tool_results": [],
+            }
 
     chunk_ids = [c["chunk_id"] for c in final_state["retrieved_chunks"]]
     assistant_message = chat_history.append_message(
