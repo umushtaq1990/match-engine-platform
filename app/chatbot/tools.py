@@ -5,7 +5,7 @@ Streamlit app's presentation layer; importing it here would tie this
 otherwise-portable package to one UI, defeating the point of a decoupled
 package a little duplication of a short query is the right tradeoff.
 """
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.chatbot.access_control import allowed_visibilities
@@ -25,6 +25,9 @@ from app.ingestion.source_models import (
 TOOL_SEARCH_KNOWLEDGE_BASE = "search_knowledge_base"
 TOOL_LOOKUP_STRUCTURED_DATA = "lookup_structured_data"
 TOOL_LOOKUP_GRAPH_CONTEXT = "lookup_graph_context"
+TOOL_RANK_BY_CRITERIA = "rank_by_criteria"
+
+RANK_BY_CRITERIA_MAX_TOP_K = 20
 
 TOOL_SPECS = [
     {
@@ -87,6 +90,41 @@ GRAPH_TOOL_SPEC = {
             },
         },
         "required": ["entity_type", "entity_id"],
+    },
+}
+
+# Kept out of TOOL_SPECS, same opt-in discipline as GRAPH_TOOL_SPEC -- see
+# graph.py's enable_rank_tool. Fills a real, previously-unanswerable gap:
+# neither lookup_structured_data (one named id) nor lookup_graph_context
+# (adjacent to one named id) can answer an open-ended, criteria-based
+# question across the WHOLE candidate/job pool ("top candidates with
+# Python and AWS experience") -- see the Roadmap entry this closes in
+# docs/architecture/application-services/rag-chatbot.md.
+RANK_TOOL_SPEC = {
+    "name": TOOL_RANK_BY_CRITERIA,
+    "description": (
+        "Ranks ALL candidates or ALL jobs (not just ones related to one named id) by how well they "
+        "match stated skill criteria -- e.g. 'top candidates with Python and AWS experience', 'which "
+        "jobs need machine learning skills', 'candidates with at least 5 years of experience and SQL'. "
+        "Use for open-ended search/ranking across the whole pool, NOT for 'similar to candidate/job X' "
+        "(use lookup_graph_context for that) and NOT for one named candidate/job's own facts (use "
+        "lookup_structured_data for that)."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "entity_type": {"type": "string", "enum": ["candidate", "job"]},
+            "required_skills": {
+                "type": "array", "items": {"type": "string"},
+                "description": "skill names mentioned in the question, e.g. [\"Python\", \"AWS\"]",
+            },
+            "min_years_experience": {
+                "type": "integer",
+                "description": "candidate searches only; omit entirely for a job search or if unstated",
+            },
+            "top_k": {"type": "integer", "description": "how many ranked results to return, default 5"},
+        },
+        "required": ["entity_type", "required_skills"],
     },
 }
 
@@ -229,3 +267,106 @@ def lookup_graph_context(session: Session, role: str, entity_type: str, entity_i
             return {}
         return graph_context_for_job(entity_id)
     return {}
+
+
+def rank_by_criteria(
+    session: Session, role: str, entity_type: str, required_skills: list[str],
+    min_years_experience: int | None = None, top_k: int = 5,
+) -> dict:
+    """The `rank_by_criteria` tool's real implementation -- an AND-ranked
+    SQL query over `CandidateSkill`/`JobSkill`, scored by how many of
+    `required_skills` each row actually has (not a fuzzy/semantic match --
+    exact, case-insensitive skill-name matches only, same precision-over-
+    recall choice `lookup_structured_data` already makes for exact lookups).
+    Candidate results are gated exactly like `lookup_structured_data`'s
+    candidate branch -- fails closed to `{}` for a role that can't see
+    confidential data.
+
+    Args:
+        session: an active SQLAlchemy session.
+        role: gates candidate results the same way every other tool here does.
+        entity_type: `"candidate"` or `"job"`.
+        required_skills: skill names to match against (unmatched names are
+            silently dropped, not an error -- a question can name a skill
+            that doesn't exist in this dataset).
+        min_years_experience: candidate searches only; ignored for jobs
+            (`Job` has no years-of-experience field).
+        top_k: how many ranked rows to return, capped at
+            `RANK_BY_CRITERIA_MAX_TOP_K` so a bad/huge argument from the
+            model can't turn this into an unbounded result dump.
+
+    Returns:
+        dict: `{"entity_type": str, "matched_skill_names": list[str] (which
+            of `required_skills` actually exist in this dataset), "ranked":
+            list[dict]}`, each ranked row `{"id", "name"/"title",
+            "matched_skill_count", "matched_skills": list[str], plus
+            "years_experience" for a candidate or "company_name" for a job}`,
+            ordered by `matched_skill_count` descending. `{"entity_type": ...,
+            "matched_skill_names": [], "ranked": []}` if none of
+            `required_skills` exist in this dataset, or `{}` for an
+            unrecognized `entity_type` or a candidate search `role` can't see.
+    """
+    if entity_type == "candidate" and "confidential" not in allowed_visibilities(role):
+        return {}
+    if entity_type not in ("candidate", "job"):
+        return {}
+
+    top_k = max(1, min(top_k, RANK_BY_CRITERIA_MAX_TOP_K))
+    skill_rows = session.execute(
+        select(Skill.id, Skill.name).where(
+            func.lower(Skill.name).in_([s.lower() for s in required_skills if s]),
+        )
+    ).all()
+    matched_skill_names = sorted({name for _, name in skill_rows})
+    if not skill_rows:
+        return {"entity_type": entity_type, "matched_skill_names": [], "ranked": []}
+    skill_ids = [skill_id for skill_id, _ in skill_rows]
+
+    if entity_type == "candidate":
+        query = (
+            select(
+                Candidate.id, Candidate.full_name, Candidate.years_experience,
+                func.count(func.distinct(CandidateSkill.skill_id)).label("matched_count"),
+                func.array_agg(func.distinct(Skill.name)).label("matched_skills"),
+            )
+            .join(CandidateSkill, CandidateSkill.candidate_id == Candidate.id)
+            .join(Skill, Skill.id == CandidateSkill.skill_id)
+            .where(CandidateSkill.skill_id.in_(skill_ids))
+        )
+        if min_years_experience is not None:
+            query = query.where(Candidate.years_experience >= min_years_experience)
+        rows = session.execute(
+            query.group_by(Candidate.id, Candidate.full_name, Candidate.years_experience)
+            .order_by(func.count(func.distinct(CandidateSkill.skill_id)).desc())
+            .limit(top_k)
+        ).all()
+        ranked = [
+            {
+                "id": r.id, "name": r.full_name, "years_experience": r.years_experience,
+                "matched_skill_count": r.matched_count, "matched_skills": sorted(r.matched_skills),
+            }
+            for r in rows
+        ]
+    else:
+        rows = session.execute(
+            select(
+                Job.id, Job.title, Job.company_name,
+                func.count(func.distinct(JobSkill.skill_id)).label("matched_count"),
+                func.array_agg(func.distinct(Skill.name)).label("matched_skills"),
+            )
+            .join(JobSkill, JobSkill.job_id == Job.id)
+            .join(Skill, Skill.id == JobSkill.skill_id)
+            .where(JobSkill.skill_id.in_(skill_ids))
+            .group_by(Job.id, Job.title, Job.company_name)
+            .order_by(func.count(func.distinct(JobSkill.skill_id)).desc())
+            .limit(top_k)
+        ).all()
+        ranked = [
+            {
+                "id": r.id, "title": r.title, "company_name": r.company_name,
+                "matched_skill_count": r.matched_count, "matched_skills": sorted(r.matched_skills),
+            }
+            for r in rows
+        ]
+
+    return {"entity_type": entity_type, "matched_skill_names": matched_skill_names, "ranked": ranked}

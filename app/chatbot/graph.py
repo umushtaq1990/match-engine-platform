@@ -34,12 +34,15 @@ from app.chatbot.llm_backend import GenerateFn
 from app.chatbot.llm_backend import resolve_generate_fn as _resolve_generate_fn
 from app.chatbot.tools import (
     GRAPH_TOOL_SPEC,
+    RANK_TOOL_SPEC,
     TOOL_LOOKUP_GRAPH_CONTEXT,
     TOOL_LOOKUP_STRUCTURED_DATA,
+    TOOL_RANK_BY_CRITERIA,
     TOOL_SEARCH_KNOWLEDGE_BASE,
     TOOL_SPECS,
     lookup_graph_context,
     lookup_structured_data,
+    rank_by_criteria,
     search_knowledge_base,
 )
 
@@ -115,15 +118,17 @@ def _tag_current_trace(session_id: int | None, role: str, question: str) -> None
         pass
 
 
-def _tool_call_schema(enable_graph_tool: bool) -> dict:
-    """`lookup_graph_context` is only a legal choice when the caller opts
-    in -- see `_build_graph`'s `enable_graph_tool` param and the Phase 2
-    plan's "measure before adopting" decision; the live chat page's default
-    (`enable_graph_tool=False`) must keep seeing exactly the old 2-tool
-    enum, unchanged."""
+def _tool_call_schema(enable_graph_tool: bool, enable_rank_tool: bool = False) -> dict:
+    """`lookup_graph_context`/`rank_by_criteria` are only legal choices when
+    the caller opts in -- see `_build_graph`'s `enable_graph_tool`/
+    `enable_rank_tool` params and the Phase 2 plan's "measure before
+    adopting" decision; the live chat page's old defaults must keep seeing
+    exactly the old tool enum, unchanged, until each is opted into."""
     names = [TOOL_SEARCH_KNOWLEDGE_BASE, TOOL_LOOKUP_STRUCTURED_DATA]
     if enable_graph_tool:
         names.append(TOOL_LOOKUP_GRAPH_CONTEXT)
+    if enable_rank_tool:
+        names.append(TOOL_RANK_BY_CRITERIA)
     return {
         "type": "array",
         "items": {
@@ -149,7 +154,8 @@ def _tool_call_schema(enable_graph_tool: bool) -> dict:
 _BOT_SCOPE = (
     "You are the recruiting assistant for this platform's internal talent database. You can answer "
     "questions about: a specific candidate's profile/skills/experience (by id), a specific job's "
-    "requirements (by id), what a specific skill or course covers (by name/title){graph_scope}. You "
+    "requirements (by id), what a specific skill or course covers (by name/title){graph_scope}"
+    "{rank_scope}. You "
     "CANNOT answer general-knowledge questions, small talk beyond a brief greeting, aggregate/trend "
     "questions across the whole dataset (e.g. \"what are the most popular/trending skills\", \"how many "
     "candidates are there\"), or anything unrelated to this platform's candidates/jobs/skills/courses."
@@ -157,10 +163,17 @@ _BOT_SCOPE = (
 _BOT_SCOPE_GRAPH_ADDITION = (
     ", and which candidates/jobs are similar to one you name by id, or courses relevant to a job"
 )
+_BOT_SCOPE_RANK_ADDITION = (
+    ", and which candidates/jobs best match named skill criteria across the whole talent pool "
+    "(e.g. top candidates with specific skills)"
+)
 
 
-def _bot_scope(enable_graph_tool: bool) -> str:
-    return _BOT_SCOPE.format(graph_scope=_BOT_SCOPE_GRAPH_ADDITION if enable_graph_tool else "")
+def _bot_scope(enable_graph_tool: bool, enable_rank_tool: bool = False) -> str:
+    return _BOT_SCOPE.format(
+        graph_scope=_BOT_SCOPE_GRAPH_ADDITION if enable_graph_tool else "",
+        rank_scope=_BOT_SCOPE_RANK_ADDITION if enable_rank_tool else "",
+    )
 
 
 _DECIDE_TOOLS_PROMPT = """{scope}
@@ -202,6 +215,7 @@ Any question naming a specific candidate/job id, or a specific skill/course name
 lookup_structured_data, never search_knowledge_base. Only use search_knowledge_base for open-ended/\
 descriptive questions that name no specific candidate id, job id, skill name, or course title.
 {graph_tool_rule}
+{rank_tool_rule}
 MANDATORY rule, not a suggestion: if the question is small talk/a greeting, a general-knowledge \
 question, an aggregate/trend question (e.g. "what skills are trending", "how many candidates are \
 there"), or anything else no tool above can actually answer, output an empty array [] -- do NOT force \
@@ -232,6 +246,24 @@ one named candidate/job (not the entity's own facts) MUST use lookup_graph_conte
 "arguments": {"entity_type": "job", "entity_id": 42}}
 Do NOT use lookup_graph_context for a question about the entity's own exact facts (its own skills, \
 experience, title) -- that is still lookup_structured_data.
+"""
+
+# Only spliced into _DECIDE_TOOLS_PROMPT when enable_rank_tool=True -- same
+# discipline as _GRAPH_TOOL_RULE.
+_RANK_TOOL_RULE = """
+MANDATORY rule, not a suggestion: a question asking for the TOP/BEST candidates or jobs matching \
+named skill criteria ACROSS THE WHOLE POOL -- naming NO specific candidate/job id -- MUST use \
+rank_by_criteria, with "entity_type" ("candidate" or "job") and "required_skills" (a list of the \
+skill names mentioned). Examples:
+- "Top candidates with Python and AWS experience" -> {"name": "rank_by_criteria", "arguments": \
+{"entity_type": "candidate", "required_skills": ["Python", "AWS"]}}
+- "Which jobs need machine learning skills?" -> {"name": "rank_by_criteria", "arguments": \
+{"entity_type": "job", "required_skills": ["Machine Learning"]}}
+- "Candidates with at least 5 years of experience and SQL" -> {"name": "rank_by_criteria", \
+"arguments": {"entity_type": "candidate", "required_skills": ["SQL"], "min_years_experience": 5}}
+Do NOT use rank_by_criteria for a question naming one specific candidate/job id (that is \
+lookup_structured_data or lookup_graph_context instead) -- rank_by_criteria is only for an open-ended \
+search across the whole pool.
 """
 
 _ANSWER_PROMPT = """{scope}
@@ -297,16 +329,22 @@ class ChatTurnState(TypedDict):
 
 
 def _decide_tools(
-    generate_fn: GenerateFn, model: str, enable_graph_tool: bool, state: ChatTurnState,
+    generate_fn: GenerateFn, model: str, enable_graph_tool: bool, enable_rank_tool: bool,
+    state: ChatTurnState,
 ) -> ChatTurnState:
-    specs = [*TOOL_SPECS, GRAPH_TOOL_SPEC] if enable_graph_tool else TOOL_SPECS
+    specs = list(TOOL_SPECS)
+    if enable_graph_tool:
+        specs.append(GRAPH_TOOL_SPEC)
+    if enable_rank_tool:
+        specs.append(RANK_TOOL_SPEC)
     tool_specs_text = "\n".join(f"- {t['name']}: {t['description']}" for t in specs)
     prompt = _DECIDE_TOOLS_PROMPT.format(
-        scope=_bot_scope(enable_graph_tool), tool_specs=tool_specs_text,
+        scope=_bot_scope(enable_graph_tool, enable_rank_tool), tool_specs=tool_specs_text,
         graph_tool_rule=_GRAPH_TOOL_RULE if enable_graph_tool else "",
+        rank_tool_rule=_RANK_TOOL_RULE if enable_rank_tool else "",
         history=state["history_text"] or "(none yet)", question=state["question"],
     )
-    raw = generate_fn(model, prompt, response_format=_tool_call_schema(enable_graph_tool))
+    raw = generate_fn(model, prompt, response_format=_tool_call_schema(enable_graph_tool, enable_rank_tool))
     try:
         calls = json.loads(raw)
     except json.JSONDecodeError:
@@ -400,6 +438,21 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
                 entity_id = int(entity_id) if entity_id is not None else None
                 data = lookup_graph_context(session, state["role"], entity_type, entity_id)
                 results.append({"tool": name, "result": redact_pii_in_value(data)[0]})
+            elif name == TOOL_RANK_BY_CRITERIA:
+                # Only ever emitted by decide_tools when enable_rank_tool
+                # was True (see _tool_call_schema) -- unconditional here is
+                # harmless, not a bypass of that gate, same as the graph
+                # tool branch above.
+                entity_type = str(args.get("entity_type") or "")
+                required_skills = [str(s) for s in (args.get("required_skills") or [])]
+                min_years = args.get("min_years_experience")
+                min_years = int(min_years) if min_years is not None else None
+                top_k = int(args["top_k"]) if args.get("top_k") is not None else 5
+                data = rank_by_criteria(
+                    session, state["role"], entity_type, required_skills,
+                    min_years_experience=min_years, top_k=top_k,
+                )
+                results.append({"tool": name, "result": redact_pii_in_value(data)[0]})
         except Exception:
             # Deliberately not the raw exception text -- confirmed live:
             # leaking it (e.g. "invalid literal for int() with base 10:
@@ -415,14 +468,15 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
 
 
 def _generate_answer(
-    generate_fn: GenerateFn, model: str, answer_prompt: str, enable_graph_tool: bool, state: ChatTurnState,
+    generate_fn: GenerateFn, model: str, answer_prompt: str, enable_graph_tool: bool,
+    enable_rank_tool: bool, state: ChatTurnState,
 ) -> ChatTurnState:
     if state["tool_results"]:
         context = json.dumps(state["tool_results"], indent=2, default=str)
     else:
         context = "(no information found)"
     prompt = answer_prompt.format(
-        scope=_bot_scope(enable_graph_tool), context=context,
+        scope=_bot_scope(enable_graph_tool, enable_rank_tool), context=context,
         history=state["history_text"] or "(none yet)", question=state["question"],
     )
     # 2-4 sentences needs well under 100 completion tokens normally, but
@@ -448,16 +502,19 @@ def _generate_answer(
 
 def _build_graph(
     session: Session, generate_fn: GenerateFn, model: str = _LLM_MODEL, answer_prompt: str = _ANSWER_PROMPT,
-    enable_graph_tool: bool = False,
+    enable_graph_tool: bool = False, enable_rank_tool: bool = False,
 ):
     workflow = StateGraph(ChatTurnState)
     workflow.add_node(
-        "decide_tools", lambda state: _decide_tools(generate_fn, model, enable_graph_tool, state),
+        "decide_tools",
+        lambda state: _decide_tools(generate_fn, model, enable_graph_tool, enable_rank_tool, state),
     )
     workflow.add_node("execute_tools", lambda state: _execute_tools(session, state))
     workflow.add_node(
         "generate_answer",
-        lambda state: _generate_answer(generate_fn, model, answer_prompt, enable_graph_tool, state),
+        lambda state: _generate_answer(
+            generate_fn, model, answer_prompt, enable_graph_tool, enable_rank_tool, state,
+        ),
     )
     workflow.set_entry_point("decide_tools")
     workflow.add_edge("decide_tools", "execute_tools")
@@ -473,6 +530,7 @@ def _format_history(messages) -> str:
 def run_chat_turn(
     session: Session, session_id: int, role: str, question: str, generate_fn: GenerateFn | None = None,
     answer_prompt: str = _ANSWER_PROMPT, model: str = _LLM_MODEL, enable_graph_tool: bool = False,
+    enable_rank_tool: bool = False,
 ) -> dict:
     """Thin wrapper -- sets the active MLflow experiment *before* entering
     `_run_chat_turn`'s `@mlflow.trace`-decorated body (see
@@ -484,6 +542,7 @@ def run_chat_turn(
     return _run_chat_turn(
         session, session_id, role, question, generate_fn=generate_fn,
         answer_prompt=answer_prompt, model=model, enable_graph_tool=enable_graph_tool,
+        enable_rank_tool=enable_rank_tool,
     )
 
 
@@ -491,6 +550,7 @@ def run_chat_turn(
 def _run_chat_turn(
     session: Session, session_id: int, role: str, question: str, generate_fn: GenerateFn | None = None,
     answer_prompt: str = _ANSWER_PROMPT, model: str = _LLM_MODEL, enable_graph_tool: bool = False,
+    enable_rank_tool: bool = False,
 ) -> dict:
     """Runs one full chat turn: persists the user's question, decides and
     executes tool calls, generates a grounded answer, persists it.
@@ -520,6 +580,11 @@ def _run_chat_turn(
             `True` -- defaults to `False` everywhere, so the live chat
             page's 2-tool behavior is unchanged until an eval run justifies
             flipping this default (see the Phase 2 plan).
+        enable_rank_tool: offers `rank_by_criteria` (the whole-pool,
+            criteria-based ranking tool that closes the "Candidate/job
+            criteria search & ranking" Roadmap gap) as an additional choice
+            when `True` -- defaults to `False` everywhere for the same
+            "measure before adopting" reason as `enable_graph_tool`.
 
     Returns:
         dict: `{"message_id": int (the persisted assistant ChatMessage's id
@@ -596,7 +661,7 @@ def _run_chat_turn(
 
         graph = _build_graph(
             session, generate_fn, model=model, answer_prompt=answer_prompt,
-            enable_graph_tool=enable_graph_tool,
+            enable_graph_tool=enable_graph_tool, enable_rank_tool=enable_rank_tool,
         )
         initial_state: ChatTurnState = {
             "question": question, "history_text": history_text, "role": role,
@@ -632,7 +697,7 @@ def _run_chat_turn(
 
 def run_retrieval_turn(
     session: Session, role: str, question: str, generate_fn: GenerateFn | None = None,
-    model: str = _LLM_MODEL, enable_graph_tool: bool = False,
+    model: str = _LLM_MODEL, enable_graph_tool: bool = False, enable_rank_tool: bool = False,
 ) -> dict:
     """Thin wrapper -- see `run_chat_turn`'s wrapper docstring for why this
     split exists; delegates to `_run_retrieval_turn` for the real
@@ -640,13 +705,14 @@ def run_retrieval_turn(
     _set_mlflow_experiment(_MLFLOW_RETRIEVAL_EXPERIMENT)
     return _run_retrieval_turn(
         session, role, question, generate_fn=generate_fn, model=model, enable_graph_tool=enable_graph_tool,
+        enable_rank_tool=enable_rank_tool,
     )
 
 
 @mlflow.trace(span_type=SpanType.CHAIN)
 def _run_retrieval_turn(
     session: Session, role: str, question: str, generate_fn: GenerateFn | None = None,
-    model: str = _LLM_MODEL, enable_graph_tool: bool = False,
+    model: str = _LLM_MODEL, enable_graph_tool: bool = False, enable_rank_tool: bool = False,
 ) -> dict:
     """Runs only `decide_tools` -> `execute_tools` -- no answer generation,
     no `ChatSession`/`ChatMessage` persistence. Isolates retrieval
@@ -670,7 +736,7 @@ def _run_retrieval_turn(
         "question": question, "history_text": "", "role": role,
         "tool_calls": [], "tool_results": [], "retrieved_chunks": [], "answer": "",
     }
-    state = _decide_tools(generate_fn, model, enable_graph_tool, state)
+    state = _decide_tools(generate_fn, model, enable_graph_tool, enable_rank_tool, state)
     state = _execute_tools(session, state)
     return {
         "retrieved_chunks": state["retrieved_chunks"],

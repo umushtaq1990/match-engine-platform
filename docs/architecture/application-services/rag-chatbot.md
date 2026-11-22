@@ -616,18 +616,34 @@ the PII/injection/rate-limit ones above, turning both into a clean decline inste
 
 ## Roadmap
 
-- **Candidate/job criteria search & ranking (NEW, not yet scoped)**: "top 3 candidates with a data
-  engineering profile" and similar criteria-ranking questions have no answering tool today -- see
-  above. Would need a 4th tool searching/ranking across `CandidateSkill`/`JobSkill` by criteria
-  (skill names, experience thresholds, etc.), distinct from Phase 2's similarity-by-known-id. A real
-  feature gap surfaced by live user testing, not a model-quality problem.
+- **Candidate/job criteria search & ranking: done (2026-11-22)** — a real gap surfaced by live user
+  testing ("top 3 candidates with a data engineering profile" and similar questions had no answering
+  tool, only Phase 2's similarity-by-known-id): `rank_by_criteria`, implemented in `app/chatbot/tools.py`,
+  ranks ALL candidates or ALL jobs (not just ones adjacent to a named id) by an exact, case-insensitive
+  AND-match count over named skills -- optionally a candidate's minimum years of experience. Gated
+  behind `enable_rank_tool` (same opt-in discipline as `enable_graph_tool`), and flipped to `True` on
+  the live chat page after live verification showed no regression to the existing two tools' routing.
+  Unit-tested directly against deterministic fixture rows (`tests/chatbot/test_tools_ranking.py` --
+  ranking order, the min-years filter, candidate-visibility fail-closed, unmatched-skill-name handling,
+  the `top_k` cap) and live-verified against the real chat graph: "which candidates have the most
+  experience with Python and SQL" and "which jobs need Kubernetes skills" both correctly routed to
+  `rank_by_criteria`, while exact-id and skill-name lookups still routed to `lookup_structured_data`
+  unaffected. Known limit: exact skill-name matching only, not fuzzy/semantic (a typo or synonym won't
+  match) -- same precision-over-recall tradeoff `lookup_structured_data` already makes for exact
+  lookups, stated plainly rather than silently guessed at. No dedicated LLM-judge eval category exists
+  for this tool yet (unlike Phase 2's `candidate_graph`/`job_graph` categories) -- a reasonable
+  follow-up, not done this pass since the live routing/unit-test verification above already gives
+  confidence without it.
 - **Phase 2 — graph retrieval: done** (see above) — `lookup_graph_context`, gated behind
-  `enable_graph_tool` (defaults `False`, live page unaffected). Eval confirms it's a real win on
-  the relationship-question category it targets; the live chat page's default has **not** been
-  flipped yet — that's a deliberate follow-up decision, not assumed from this result alone. A
-  larger-sample re-run (15+15 candidates/jobs, see above) confirmed `job_graph`'s weaker recall is
-  real, not small-sample noise — a graph-signal-quality limitation worth narrowing (e.g. weighting
-  by skill rarity) as a follow-up, separate from the decision to flip the default.
+  `enable_graph_tool`, flipped to `True` on the live chat page. Eval confirmed it's a real win on
+  the relationship-question category it targets. A larger-sample re-run (15+15 candidates/jobs, see
+  above) confirmed `job_graph`'s weaker recall is real, not small-sample noise — a graph-signal-quality
+  limitation worth narrowing (e.g. weighting by skill rarity) as a follow-up. Also fixed this pass
+  (2026-11-22): `graph_context_for_candidate`/`graph_context_for_job` now return the actual shared
+  skill *names* (`shared_skills`), not just a `shared_skill_count` -- live testing had shown the model
+  inventing plausible-sounding skill names when asked "what skills do they share" because the count
+  alone gave it nothing to ground a name in. Live-verified: asked that exact question, the model's
+  answer now cites the real names present in the tool result, confirmed by direct comparison.
 - **Phase 3 — hybrid retrieval + reranking + sweep**: combine vector+graph retrieval, add a
   reranking stage (library choice — `sentence-transformers` cross-encoder vs. an LLM-prompted
   reranker via the existing Ollama client — deliberately left open until this phase), then a
