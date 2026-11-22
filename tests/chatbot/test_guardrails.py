@@ -39,6 +39,18 @@ def test_redacts_a_street_address():
     assert "123 Main Street" not in text
 
 
+def test_redacts_an_obfuscated_email():
+    text, redacted = redact_pii("contact john dot smith at example dot com for details")
+    assert redacted is True
+    assert "john dot smith" not in text
+
+
+def test_redacts_an_ssn():
+    text, redacted = redact_pii("Their SSN is 123-45-6789 on file.")
+    assert redacted is True
+    assert "123-45-6789" not in text
+
+
 def test_leaves_ordinary_text_untouched():
     text, redacted = redact_pii("Candidate #1 has 5 years of experience and shares 3 skills with job 4.")
     assert redacted is False

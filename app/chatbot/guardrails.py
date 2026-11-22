@@ -81,8 +81,27 @@ _ADDRESS_RE = re.compile(
 # US-style 5(-4) zip or UK-style postcode shape -- only matched standalone
 # (word-boundaried), so it won't catch an ordinary 5-digit id.
 _POSTAL_CODE_RE = re.compile(r"\b\d{5}(?:-\d{4})?\b|\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b")
+# Catches "john dot smith at example dot com" / "jane [dot] doe [at] example
+# [dot] com" -- a plain-text obfuscation someone would type specifically to
+# dodge `_EMAIL_RE`'s literal "@"/"." requirement. Evaluated and rejected
+# Presidio (see rag-chatbot.md's PII hardening section) before writing this:
+# its EMAIL_ADDRESS/PHONE_NUMBER recognizers didn't catch this either (same
+# literal-character assumption as our own regex) -- a real gap neither
+# approach closed until this pattern was added for it specifically.
+_OBFUSCATED_EMAIL_RE = re.compile(
+    r"\b[\w.+-]+(?:\s+dot\s+|\s*\[dot\]\s*|\s*\(dot\)\s*)[\w-]+(?:\s+at\s+|\s*\[at\]\s*|\s*\(at\)\s*)"
+    r"[\w-]+(?:\s+dot\s+|\s*\[dot\]\s*|\s*\(dot\)\s*)[a-zA-Z]{2,}\b",
+    re.IGNORECASE,
+)
+# US SSN shape (###-##-####) -- a distinct enough grouping that it won't
+# collide with this schema's own id formats (plain integers, never
+# dash-grouped) in practice, even though a deliberately adversarial fake id
+# in that exact shape could still trip it -- the same "favor catching a real
+# SSN over protecting a hypothetical id format this schema doesn't use"
+# tradeoff the other patterns in this module already make.
+_SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 
-_PII_PATTERNS = (_EMAIL_RE, _ADDRESS_RE, _PHONE_RE, _POSTAL_CODE_RE)
+_PII_PATTERNS = (_EMAIL_RE, _OBFUSCATED_EMAIL_RE, _ADDRESS_RE, _PHONE_RE, _POSTAL_CODE_RE, _SSN_RE)
 
 # Phrases that indicate the question is trying to get the model to ignore
 # its own instructions/scope rather than ask a real recruiting-data

@@ -707,13 +707,12 @@ default for a role it doesn't recognize.
   model could ignore; stated plainly in `guardrails.py`'s own docstring that a small model known to
   hallucinate facts would hallucinate past a prompt-only instruction just as easily.
 - *PII exfiltration*: `redact_pii` strips anything matching an email/phone/street-address/postal-
-  code shape from tool results (before they reach the answer-generation prompt) and from the final
+  code/SSN shape (plus an obfuscated-email pattern added 2026-11-22, see "PII detection hardening"
+  below) from tool results (before they reach the answer-generation prompt) and from the final
   answer (before it's shown or persisted) — regardless of whether the model echoed real data or
   invented it. This is defense-in-depth on top of `lookup_structured_data` already never selecting
-  those columns, not the only layer. **Known limitation, scoped as its own follow-up (item 4 of the
-  current pass)**: these are hand-written regexes, not a maintained NER-based PII library (e.g.
-  Presidio) — they'll miss shapes not anticipated (names, dates of birth, free-text addresses that
-  don't match the street-suffix pattern, non-US/UK phone/postal formats).
+  those columns, not the only layer. A maintained NER-based library (Presidio) was evaluated for
+  this and deliberately rejected, with evidence — see "PII detection hardening" below for why.
 - *Abuse/scraping*: `check_rate_limit` bounds one user (by `ChatSession.user_id`, across all their
   sessions/tabs) to `RATE_LIMIT_MAX_REQUESTS=20` messages per `RATE_LIMIT_WINDOW_SECONDS=60`,
   backed by a real Postgres count rather than an in-memory counter — correct even if this ever runs
@@ -729,9 +728,11 @@ default for a role it doesn't recognize.
   scope for their role — rate limiting slows this, it doesn't prevent it, and there's no anomaly
   detection on *patterns* of otherwise-individually-legitimate questions.
 - The regex-based PII redaction is pattern-matching, not entity recognition — a sufficiently
-  unusual-looking piece of PII (addresses in non-US/UK format, a candidate's name itself, which this
-  layer never attempts to redact since names aren't structurally distinguishable from any other
-  proper noun) would pass through unredacted if it ever ended up in a chunk or a hallucinated answer.
+  unusual-looking piece of PII (addresses in non-US/UK format without a recognized street suffix)
+  would pass through unredacted if it ever ended up in a chunk or a hallucinated answer. This
+  layer never attempts to redact candidate names — deliberately: this product surfaces candidate
+  full names as normal, intended output (see "PII detection hardening" below for why a general
+  NER-based approach that would redact names was rejected, not just not-yet-built).
 - No per-role rate limit (a `candidate` and an `admin` share the same `RATE_LIMIT_MAX_REQUESTS`) and
   no audit log of *which role* asked *what* beyond what `ChatMessage`/MLflow traces already capture
   for debugging, not for a dedicated security audit trail.
@@ -739,6 +740,53 @@ default for a role it doesn't recognize.
   here too (no TLS, no secrets manager, single static trust boundary) — this page's login adds a
   *user* identity concept this project otherwise doesn't have, it doesn't change the transport or
   secrets posture underneath it.
+
+## PII detection hardening (2026-11-22)
+
+The last item of this pass: evaluate whether a maintained PII-detection library (Presidio was the
+specific suggestion) should replace or extend `redact_pii`'s hand-written regexes, rather than
+assuming it would and integrating it unconditionally.
+
+**Evaluated Presidio directly, with real tests, in an isolated scratch venv — and rejected it**,
+for two independent, measured reasons:
+
+1. **Its dedicated `EMAIL_ADDRESS`/`PHONE_NUMBER` recognizers add zero recall improvement over the
+   existing regex for this project's actual categories.** Ran both side by side against UK mobile/
+   landline numbers, US numbers, a UK postcode, and a non-US address — `redact_pii`'s regex caught
+   everything Presidio's recognizers did, and more (Presidio has no address/postal-code recognizer
+   at all; the regex does). Neither approach caught an obfuscated email ("john dot smith at example
+   dot com") — not a Presidio advantage, a gap in both.
+2. **Its general NER (`PERSON`/`LOCATION`/`ORGANIZATION`/`DATE_TIME`, via spaCy's `en_core_web_sm`)
+   is unsafe to turn on broadly for this product.** Tested against realistic chatbot text: it
+   mislabeled "Python" and "SQL" as `LOCATION`/`ORGANIZATION`, and bare numbers like "42" (a
+   candidate id) or "5 years" (a years-of-experience phrase) as `DATE_TIME` — blindly redacting
+   those entity types would corrupt ordinary, correct chatbot answers, not just catch real PII.
+   Restricting to `PERSON` alone was clean in testing (correctly caught real names, no false
+   positives on skills/job titles/ids) — but that's **the wrong target entirely**: this chatbot
+   deliberately surfaces candidate full names today (`lookup_structured_data`, `graph_retrieval.py`'s
+   `label`/`name` fields) — only email/phone/address/postal-code are the protected categories (see
+   `guardrails.py`'s own docstring: "must never surface a candidate's email, phone, or address").
+   Redacting names would break the product, not harden it.
+3. **Memory cost, measured**: loading `AnalyzerEngine` with the small spaCy model costs ~125MB RSS
+   (confirmed via `psutil`-measured before/after), on a host already documented
+   (`docs/operations/infrastructure-sizing.md`) to have hit real WSL2 memory-ceiling crashes under
+   load. Not disqualifying on its own, but with zero measured recall benefit from point 1 and a
+   product-breaking risk from point 2, there's no case for paying it.
+
+**What was actually hardened instead** — two gaps the Presidio evaluation itself surfaced, both
+closed with new regex patterns in `guardrails.py`, no new dependency: an obfuscated-email pattern
+(`_OBFUSCATED_EMAIL_RE`, catching "word dot word at word dot word" and `[at]`/`[dot]`-bracketed
+variants) and a US SSN-shaped pattern (`_SSN_RE`, `###-##-####`). Both tested against positive
+cases (5/5 caught) and a battery of negative cases (candidate ids, skill names, non-SSN-shaped
+numbers) — one synthetic, deliberately adversarial false positive found (a fictional dash-grouped
+job-posting id matching the SSN shape) and accepted, consistent with this module's existing stated
+tradeoff of favoring catching a real PII shape over protecting a hypothetical id format this
+schema doesn't actually use. Unit-tested (`tests/chatbot/test_guardrails.py`,
+`test_redacts_an_obfuscated_email`/`test_redacts_an_ssn`); full suite still passes (43/43).
+
+**Remaining, honestly unclosed gaps** (neither this fix nor Presidio closes them): free-text
+addresses in non-US formats without a recognized street suffix, and candidate names themselves if
+that were ever decided to need protecting (it currently deliberately isn't — see point 2 above).
 
 ## Known Limitations
 
