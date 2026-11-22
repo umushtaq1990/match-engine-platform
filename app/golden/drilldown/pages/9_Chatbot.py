@@ -4,8 +4,9 @@ candidate profiles, skills, courses), via app.chatbot's decoupled package
 this drilldown app, so it's liftable into another project as-is). The one
 page in this app that requires login (see auth.py's docstring for why).
 
-Vector search, exact-id/name lookup, and knowledge-graph relationship
-queries (Phase 2) are all available to the agent -- see
+Vector search, exact-id/name lookup, knowledge-graph relationship queries
+(Phase 2), and whole-pool criteria ranking (the "Candidate/job criteria
+search & ranking" Roadmap item) are all available to the agent -- see
 docs/architecture/application-services/rag-chatbot.md's roadmap. The
 "Sources" expander below shows exactly which chunks backed each answer,
 and the thumbs up/down under each reply feeds per-message quality
@@ -112,7 +113,9 @@ if question:
     session = SessionLocal()
     try:
         with st.spinner("Thinking..."):
-            result = run_chat_turn(session, session_id, role, question, enable_graph_tool=True)
+            result = run_chat_turn(
+                session, session_id, role, question, enable_graph_tool=True, enable_rank_tool=True,
+            )
     finally:
         session.close()
 

@@ -20,44 +20,57 @@ MAX_PEERS = 5
 MAX_JOBS = 5
 MAX_COURSES = 5
 
+# `ORDER BY shared DESC, <alias>.id ASC` -- the secondary sort matters, not
+# just stylistic. Confirmed live (job 4's course recommendations): most
+# courses teach only 1-2 skills, so many tie on `shared` count, and Neo4j
+# has no defined order among ties without an explicit tie-break. The eval
+# harness's independent SQL ground truth (golden_questions.py's
+# `_top_shared_skill_ids`) breaks ties by ascending id for a deterministic
+# expected answer -- without the same tie-break here, this query could (and
+# measurably did) return a different, equally-valid-looking set of tied
+# rows than the ground truth expects, scoring as a recall miss even though
+# the top-1 (unique, non-tied) result was correct. This was the real,
+# confirmed cause of `job_graph`'s measured weaker recall (see
+# docs/architecture/application-services/rag-chatbot.md), not an inherent
+# graph-signal-quality limitation.
 _CANDIDATE_TOP_PEERS = """
 MATCH (c:Candidate {id: $id})-[:HAS_SKILL]->(sk:Skill)<-[:HAS_SKILL]-(p:Candidate)
 WHERE p.id <> $id
-WITH p, count(DISTINCT sk) AS shared
-ORDER BY shared DESC LIMIT $limit
-RETURN p.id AS id, p.full_name AS label, shared
+WITH p, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
+ORDER BY shared DESC, p.id ASC LIMIT $limit
+RETURN p.id AS id, p.full_name AS label, shared, skill_names
 """
 _CANDIDATE_TOP_JOBS = """
 MATCH (c:Candidate {id: $id})-[:HAS_SKILL]->(sk:Skill)<-[:REQUIRES_SKILL]-(j:Job)
-WITH j, count(DISTINCT sk) AS shared
-ORDER BY shared DESC LIMIT $limit
-RETURN j.id AS id, j.title AS label, shared
+WITH j, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
+ORDER BY shared DESC, j.id ASC LIMIT $limit
+RETURN j.id AS id, j.title AS label, shared, skill_names
 """
 _CANDIDATE_TOP_COURSES = """
 MATCH (c:Candidate {id: $id})-[:HAS_SKILL]->(sk:Skill)<-[:TEACHES_SKILL]-(co:Course)
-WITH co, count(DISTINCT sk) AS shared
-ORDER BY shared DESC LIMIT $limit
-RETURN co.id AS id, co.title AS label, shared
+WITH co, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
+ORDER BY shared DESC, co.id ASC LIMIT $limit
+RETURN co.id AS id, co.title AS label, shared, skill_names
 """
 
 _JOB_TOP_PEERS = """
 MATCH (j:Job {id: $id})-[:REQUIRES_SKILL]->(sk:Skill)<-[:HAS_SKILL]-(c:Candidate)
-WITH c, count(DISTINCT sk) AS shared
-ORDER BY shared DESC LIMIT $limit
-RETURN c.id AS id, c.full_name AS label, shared
+WITH c, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
+ORDER BY shared DESC, c.id ASC LIMIT $limit
+RETURN c.id AS id, c.full_name AS label, shared, skill_names
 """
 _JOB_TOP_JOBS = """
 MATCH (j:Job {id: $id})-[:REQUIRES_SKILL]->(sk:Skill)<-[:REQUIRES_SKILL]-(other:Job)
 WHERE other.id <> $id
-WITH other, count(DISTINCT sk) AS shared
-ORDER BY shared DESC LIMIT $limit
-RETURN other.id AS id, other.title AS label, shared
+WITH other, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
+ORDER BY shared DESC, other.id ASC LIMIT $limit
+RETURN other.id AS id, other.title AS label, shared, skill_names
 """
 _JOB_TOP_COURSES = """
 MATCH (j:Job {id: $id})-[:REQUIRES_SKILL]->(sk:Skill)<-[:TEACHES_SKILL]-(co:Course)
-WITH co, count(DISTINCT sk) AS shared
-ORDER BY shared DESC LIMIT $limit
-RETURN co.id AS id, co.title AS label, shared
+WITH co, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
+ORDER BY shared DESC, co.id ASC LIMIT $limit
+RETURN co.id AS id, co.title AS label, shared, skill_names
 """
 
 
@@ -67,7 +80,16 @@ def _run(query: str, center_id: int, limit: int) -> list[dict]:
 
 
 def _as_hits(rows: list[dict], key: str) -> list[dict]:
-    return [{"id": r["id"], key: r["label"], "shared_skill_count": r["shared"]} for r in rows]
+    # `shared_skills` (the actual skill names, not just the count) is what
+    # lets the answer-generation prompt cite real skills instead of
+    # inventing plausible-sounding ones -- confirmed live pre-fix: asked
+    # "what skills do candidate 1 and candidate 3 share," the model
+    # fabricated specific skill names because `shared_skill_count` alone
+    # gave it a number with nothing to ground a name in.
+    return [
+        {"id": r["id"], key: r["label"], "shared_skill_count": r["shared"], "shared_skills": r["skill_names"]}
+        for r in rows
+    ]
 
 
 def graph_context_for_candidate(
@@ -80,9 +102,12 @@ def graph_context_for_candidate(
 
     Returns:
         dict: `{"subject_candidate_id": int, "similar_candidates": [{"id", "name",
-            "shared_skill_count"}], "matching_jobs": [{"id", "title",
-            "shared_skill_count"}], "relevant_courses": [{"id", "title",
-            "shared_skill_count"}]}`. `subject_candidate_id` exists only so
+            "shared_skill_count", "shared_skills": list[str]}], "matching_jobs":
+            [{"id", "title", "shared_skill_count", "shared_skills"}], "relevant_courses":
+            [{"id", "title", "shared_skill_count", "shared_skills"}]}`. `shared_skills`
+            names the actual overlapping skills (not just a count), so the
+            answer-generation prompt can cite real names instead of guessing one --
+            see `_as_hits`. `subject_candidate_id` exists only so
             the answer-generation step's context literally states which
             candidate this data is about -- confirmed live: without it, the
             small model sometimes answered "candidate 1 is not specified in
@@ -105,9 +130,9 @@ def graph_context_for_job(
 
     Returns:
         dict: `{"subject_job_id": int, "matching_candidates": [{"id", "name",
-            "shared_skill_count"}], "similar_jobs": [{"id", "title",
-            "shared_skill_count"}], "relevant_courses": [{"id", "title",
-            "shared_skill_count"}]}`. `subject_job_id` exists for the same
+            "shared_skill_count", "shared_skills": list[str]}], "similar_jobs":
+            [{"id", "title", "shared_skill_count", "shared_skills"}], "relevant_courses":
+            [{"id", "title", "shared_skill_count", "shared_skills"}]}`. `subject_job_id` exists for the same
             reason `graph_context_for_candidate`'s `subject_candidate_id`
             does -- see its docstring.
     """

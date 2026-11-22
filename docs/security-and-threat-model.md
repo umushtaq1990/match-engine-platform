@@ -64,6 +64,7 @@ enforced across workers, not a true global limit. **Fixed** by pointing `api` an
 
 ## Related Documents
 
+- [`docs/architecture/application-services/rag-chatbot.md`](architecture/application-services/rag-chatbot.md) : the Chatbot page's own auth boundary (real Keycloak login, role-based document visibility) and guardrail layer (prompt-injection blocking, PII redaction, rate limiting, capacity/availability declines) — load-tested and threat-modeled there, not duplicated here.
 - [`docs/architecture/data-platform/redis-infrastructure.md`](architecture/data-platform/redis-infrastructure.md) : the Redis-backed rate-limiting fix in full.
 - [`docs/operations/production-readiness.md`](operations/production-readiness.md) : the consolidated production-gap view this document feeds into.
 - [`docs/assumptions-register.md`](assumptions-register.md) : assumptions A7 (secrets), A9 (auth).

@@ -427,11 +427,8 @@ categories unaffected (adding an unused tool option doesn't regress anything).
 
 Both numbers hold steady (job_graph if anything slightly lower) at 5x the sample size — **not
 sample-size noise**. `job_graph` genuinely underperforms `candidate_graph` on this shared-skill-count
-graph query. Working hypothesis, not yet confirmed: job postings tend to list fewer, more generic
-skill tags than candidate profiles, so "top jobs matching a candidate's skillset" has a weaker
-shared-skill signal to rank on than candidate-to-candidate similarity does — a data/query-signal
-limitation in `graph_retrieval.py`'s `_CANDIDATE_TOP_JOBS`/`_JOB_TOP_PEERS` queries, not a
-tool-routing or prompt problem (the live smoke test above already confirmed routing works).
+graph query. Working hypothesis at the time, since confirmed wrong — see "Retrieval accuracy fixes"
+below for the real, measured cause (a missing tie-break, not a data/signal limitation).
 
 ## Scope framing, decline handling, and the live default model (2026-11-21)
 
@@ -485,6 +482,312 @@ search, and similarity-by-a-known-id exist). The model-size fix only gets an hon
 of a hallucinated answer; it does not add that capability. A criteria-search/ranking tool is a real,
 separate feature gap, not scoped into this pass -- see Roadmap.
 
+## Input/Output Guardrails (2026-11-22)
+
+A real user asked specifically for enterprise-grade PII protection: the chatbot must never surface a
+candidate's email, phone, or address, and should be resilient to prompt-injection attempts -- not just
+"well-behaved by default." `lookup_structured_data`'s candidate branch already never selected those
+columns and `_build_candidate_chunks` never embedded them, so the live model's refusal to answer those
+questions was already the right behavior today -- but that's an absence of a leak, not an enforced
+guarantee, and both are one future ingestion/prompt change away from silently breaking. `app/chatbot/
+guardrails.py` makes it an explicit, deterministic, testable layer instead of an emergent property of
+the current schema:
+
+- **Input guardrail** (`check_input_safety`): runs on the raw question *before* any LLM call.
+  - Direct requests for a candidate's contact details ("what is candidate 1's email/phone/address")
+    get a canned decline immediately -- no tool call, no model call, same behavior regardless of role.
+  - Prompt-injection phrasing ("ignore previous instructions", "reveal your system prompt", "you are
+    now...", "jailbreak") gets a canned decline instead of being handed to the model at all.
+  - Both tag the MLflow trace (`guardrail_triggered: "contact_detail_request"` /
+    `"injection"`) for audit visibility (see the existing live-monitoring Grafana dashboard).
+- **Output guardrail** (`redact_pii` / `redact_pii_in_value`): regex-based email/phone/street-address/
+  postal-code redaction, applied in two places:
+  1. Every tool result (`_execute_tools`), before it enters the answer-generation prompt or the
+     "Sources" panel -- defense in depth against a future ingestion pass embedding raw PII in a
+     `DocumentChunk` (a real risk if raw resume text is ever added; today's synthesized candidate
+     chunks don't have this problem, but nothing stops a future change from reintroducing it).
+  2. The final generated answer (`_generate_answer`), tagging the trace
+     (`guardrail_triggered: "output_pii_redacted"`) if anything was actually redacted -- catches the
+     model inventing something in a PII shape, not just echoing a leaked source.
+- Deliberately regex/rule-based, not an LLM self-check -- this project has already seen the small model
+  hallucinate facts not present in any tool result (see Phase 2's `subject_candidate_id` fix); a model
+  that will hallucinate a skill will hallucinate a phone number just as readily. A deterministic layer
+  doesn't depend on the model choosing to comply.
+- **Rate limiting** (`check_rate_limit`): a third, separate concern -- bounds each user to
+  `RATE_LIMIT_MAX_REQUESTS` (20) user messages per `RATE_LIMIT_WINDOW_SECONDS` (60), checked first (before
+  the PII/injection checks) since abuse protection should apply even to a question that would otherwise
+  pass every other guardrail. Backed by a Postgres query over `ChatSession`/`ChatMessage`
+  (`ChatSession.user_id`, across all of that user's sessions, not just the current one) rather than an
+  in-memory counter -- an in-memory counter resets on every restart and doesn't see requests landing on a
+  different worker/container, so it would silently stop enforcing anything in a real multi-instance
+  deployment.
+- **Audit visibility**: every guardrail trigger (`contact_detail_request`, `injection`, `rate_limited`,
+  `output_pii_redacted`) is tagged on the MLflow trace via the existing `guardrail_triggered` tag, and
+  `docker/grafana/provisioning/dashboards/jme-chatbot-live-monitoring.json` now has three panels reading
+  it: a total-triggers stat, a by-reason-over-time timeseries, and a per-event detail table (session,
+  role, reason, question) for abuse investigation or false-positive tuning. Verified live: triggered each
+  of the four reasons once against the real chat graph, confirmed all four rows land in `trace_tags` with
+  the right `guardrail_triggered` value and the dashboard's panel queries return them correctly.
+- Unit-tested directly (`tests/chatbot/test_guardrails.py`, no LLM involved -- including the rate limiter
+  against a real Postgres-backed session fixture) and verified live against the real chat graph: the two
+  PII-request phrasings, the injection phrasing, and a simulated 21st-message burst all short-circuited
+  with zero tool calls, while an ordinary in-scope question (`job 4`'s title/company) was unaffected.
+- Known limits, stated plainly rather than overclaimed: the PII-request check is phrase-based (keyword +
+  "candidate" co-occurrence), not a full intent classifier, so an unusually indirect phrasing could slip
+  past it -- the output redaction is the actual backstop for that case, not the input check alone. The
+  address regex is deliberately conservative (requires a number + a recognized street-suffix word) to
+  avoid mangling ordinary text, which means it won't catch every address format (e.g. a bare city/
+  country name, which isn't PII-specific enough to redact safely anyway).
+
+### Capacity and availability guardrails (2026-11-22)
+
+A production-readiness review flagged a real gap: the live chat page runs one Streamlit process against
+one Ollama instance (`OLLAMA_NUM_PARALLEL: "5"` in `docker-compose.yml`), with no load balancer, second
+replica, or autoscaling in front of it -- because the host it runs on has no spare GPU/RAM for a second
+copy. That's a genuine, honestly-documented limitation of this deployment, not something this change
+pretends to solve. Before this change, an overload or an unreachable Ollama showed up two bad ways: a
+burst of concurrent requests beyond what Ollama can actually run queued silently with growing latency and
+no user-facing signal, and any Ollama connection failure/timeout propagated as a raw, unhandled exception
+that crashed the Streamlit page. `app/chatbot/guardrails.py` adds two more deterministic guards on top of
+the PII/injection/rate-limit ones above, turning both into a clean decline instead:
+
+- **Capacity guardrail** (`chat_turn_capacity_slot`): a process-wide, non-blocking semaphore sized to
+  `MAX_CONCURRENT_CHAT_TURNS` (5, matching `OLLAMA_NUM_PARALLEL`). A chat turn that can't get a slot
+  immediately declines with `CAPACITY_DECLINE_MESSAGE` rather than queuing -- tagged on the trace as
+  `guardrail_triggered: "capacity_limit"`.
+- **Availability guardrail**: `_run_chat_turn` now wraps the actual graph execution (the only part that
+  calls Ollama) in a `try`/`except httpx.HTTPError`. A connection failure or timeout returns
+  `LLM_UNAVAILABLE_MESSAGE` instead of propagating -- tagged `guardrail_triggered: "llm_unavailable"`.
+- Both reasons feed the same `guardrail_triggered` MLflow tag and Grafana audit dashboard as the other
+  guardrails, so a real capacity crunch or backend outage shows up as data, not just user complaints.
+- Unit-tested (`tests/chatbot/test_guardrails.py`): the semaphore is proven directly (acquiring
+  `MAX_CONCURRENT_CHAT_TURNS` slots, confirming the next one is refused, confirming a release frees a
+  slot again) and `run_chat_turn` is proven to decline cleanly when `generate_fn` raises `httpx.
+  ConnectError`. Live-verified with a 7-thread concurrent burst against the real chat graph: all 7
+  completed with normal answers and no crash, confirming the new guards don't regress ordinary traffic.
+- Stated plainly: this is *not* horizontal scaling. It makes one instance's overload/outage behavior
+  honest and recoverable instead of silent or crash-prone; it does not add capacity. Real concurrency
+  headroom would need a second Ollama/vLLM replica (vLLM already exists as an alternate backend via
+  `app.chatbot.llm_backend`, GPU-only, not currently wired into the live page) behind a load balancer,
+  plus a stateless app tier instead of one Streamlit process.
+
+## Retrieval accuracy fixes (2026-11-22)
+
+A follow-up pass to close two previously-documented accuracy gaps: `job_graph`'s weaker recall, and
+a reported vector-search miss on category/topic questions (e.g. "what jobs are related to mechanical
+engineering?").
+
+**`job_graph`'s weaker recall was a missing tie-break, not a graph-signal-quality limitation.**
+Earlier passes (above) measured `job_graph` scoring well below `candidate_graph` and hypothesized it
+was because job postings carry fewer/more generic skill tags, giving the shared-skill-count ranking a
+weaker signal to work with. That hypothesis was never actually confirmed, and it was wrong. The real
+cause: most courses/candidates/jobs tie on shared-skill count (many courses teach only 1-2 skills),
+and `graph_retrieval.py`'s six Cypher queries had no tie-break, so Neo4j returned an arbitrary tied
+set on each run — while the eval harness's independent SQL ground truth (`golden_questions.py`'s
+`_top_shared_skill_ids`) breaks ties by ascending id for a deterministic expected answer. Without the
+same convention on the Neo4j side, a query could (and measurably did) return a different, equally
+valid-looking set of tied rows, scoring as a recall miss even when the top-1, non-tied result was
+correct. Confirmed directly on job 4's course recommendations: course id 17 was entirely missing from
+the old top-5 (replaced by an arbitrary tie at `shared_skill_count=1`); after adding `, <alias>.id ASC`
+to all six queries' `ORDER BY`, the top-3 exactly matched the SQL ground truth `[91, 12, 17]`.
+Re-running the same 15-question `job_graph` eval that had earlier shown 0.1/0.167 precision@k/recall@k
+confirmed it at scale: **0.1 → 0.6 precision@k, 0.167 → 1.0 recall@k**, n=15, same `qwen2.5:1.5b`
+agent, same question set. `candidate_graph`'s queries had the same missing tie-break and got the same
+fix, though that category's recall was already closer to ground truth at this sample size since its
+higher-cardinality skill sets tie less often.
+
+**The vector-search miss was a separate, more systemic pgvector issue, not specific to any one
+query's wording.** `entity_embeddings` has a single HNSW index (`ix_entity_embeddings_ann`) shared
+across every `entity_type`/`dimension`/`embedding_model` combination in the table — candidate and job
+component embeddings (experience/skills/overall) *and* this chatbot's `document_chunk` vectors all
+mixed into one index, with chunks only ~40% of the rows. pgvector's documented behavior for
+`ORDER BY vector <=> query LIMIT k` combined with a `WHERE` filter on other columns is to examine only
+`hnsw.ef_search` (default 40) globally-nearest candidates from the index, *then* apply the filter — so
+`retrieve_chunks`'s `entity_type`/`dimension`/`embedding_model` filter could silently starve the ANN
+search whenever a query's true nearest neighbors (across the whole mixed table) skewed toward
+non-chunk rows. Confirmed directly, not assumed: "mechanical engineering" returned 0 of 5 requested
+chunks at the default `ef_search`; a 5-query generalization test ("mechanical engineering," "strong
+communication skills," "candidates with leadership experience," "cloud infrastructure and devops,"
+"what training is available for project management") found default `ef_search=40` under-returned on
+2 of 5 real queries. Swept `ef_search` at 40/100/200/400/800/1000: 400 got the full requested count on
+all 5 test queries at acceptable latency (worst case ~90ms added versus ef=40, negligible next to this
+page's 8-25s LLM round trip); 1000 showed no further recall improvement but cost ~1.5s more per call.
+Fixed in `app/chatbot/retrieval.py`: a `_HNSW_EF_SEARCH = 400` constant and `SET hnsw.ef_search = 400`
+issued on the session right before the ANN query in `retrieve_chunks`. `tests/chatbot/` (41 tests)
+passes clean with this change; no dedicated unit test for `retrieval.py` existed before or exists
+after this fix (a reasonable follow-up, not done this pass).
+
+**Separately observed, not fixed this pass**: investigating the mechanical-engineering question live
+also surfaced a tool-routing issue — with `enable_graph_tool`/`enable_rank_tool` both on, `qwen2.5:1.5b`
+sometimes calls `lookup_graph_context` with an `entity_name` argument that tool doesn't accept (it
+takes `entity_id`), the call fails closed to `{}`, and the model's final answer still hallucinates
+specific, ungrounded job titles rather than reporting no information found. This is the same class of
+small-model tool-routing fragility already noted under Known Limitations, not a new failure mode —
+logged there rather than fixed here.
+
+## Load testing & threat model (2026-11-22)
+
+A follow-up to the capacity/availability guardrails above and the project-wide
+`docs/security-and-threat-model.md`: load-test the chatbot specifically (not covered by that
+doc's existing `scripts/load_test.py`/`load_test_llm.py`, which test `api`'s and `extraction`'s
+HTTP endpoints — the chatbot has none of its own; it's a Streamlit page calling `run_chat_turn`
+in-process), and write down, honestly, what this page's auth boundary does and doesn't protect
+against.
+
+### Load test
+
+New script, `scripts/load_test_chatbot.py`, same methodology as the other two (plain
+`ThreadPoolExecutor`, client-side timing, no new dependency), adapted for an in-process call
+instead of an HTTP one: each worker thread opens its own DB session and chat session and calls
+`run_chat_turn` directly, bucketing results into `ok` / `capacity_decline` / `llm_unavailable` /
+`error:<ExceptionType>` by comparing the returned message against the guardrails module's own
+decline-message constants (not by guessing from text content).
+
+Run at concurrency 10 (double `MAX_CONCURRENT_CHAT_TURNS=5`) against the live `qwen2.5:3b` agent,
+15 real chat turns, each exercising all three tools (`enable_graph_tool`/`enable_rank_tool` both
+on, the live page's own configuration):
+
+```
+model=qwen2.5:3b concurrency=10 requests=15
+n=15 throughput=0.080req/s outcomes={'capacity_decline': 10, 'ok': 5} p50=2.67s p95=186.47s p99=186.47s mean=63.35s max=186.47s
+```
+
+Takeaways:
+- **The capacity guardrail triggered exactly as designed under real load, not just the earlier
+  7-thread smoke test**: exactly 5 of 15 requests (matching `MAX_CONCURRENT_CHAT_TURNS`) completed
+  normally, the other 10 got a clean `CAPACITY_DECLINE_MESSAGE` decline — not a crash, not an
+  unbounded queue, not a hang.
+- **No errors, no `llm_unavailable` outcomes** — Ollama stayed healthy throughout; the
+  single-instance limitation documented above is about *capacity* (only 5 fit at once), not
+  *stability* (what does run doesn't crash it).
+- The bimodal latency (p50 2.67s — the instant declines — vs. p95/p99/max 186.47s — the 5 turns
+  that actually ran, each needing multiple sequential tool-call/LLM round trips under
+  `OLLAMA_NUM_PARALLEL=5` contention) is the expected shape for this design: declines are cheap and
+  immediate, admitted turns are slower under contention than the ~8-25s single-user baseline
+  documented above but still complete, not hang. This is exactly the "honest, not silent"
+  degradation the guardrail was built for, now measured, not just asserted.
+- Noted, not investigated further: the run's stderr printed several "Processor is already shutdown,
+  ignoring call" lines from MLflow's async trace-export queue — looks like a benign race between
+  worker-thread trace flushes and process exit under this many concurrent threads, not a chat-turn
+  failure (all 15 outcomes above are accounted for as ok/capacity_decline, none as an error). Worth
+  a second look if it ever appears outside this synthetic all-at-once burst.
+- Not a soak test (this is a fixed-count burst, see `scripts/load_test.py`'s soak-mode precedent)
+  — sustained load over minutes/hours, and behavior with real concurrent *users* each sending
+  several messages rather than one burst of single turns, remain unmeasured. A reasonable
+  follow-up, not done this pass since the one-shot burst already answers the question this pass
+  needed answered: does the guardrail actually trigger under load heavier than the original
+  smoke test, and does anything break when it does.
+
+### Threat model: the chatbot page's auth boundary and guardrails
+
+This section covers what's specific to the Chatbot page; see `docs/security-and-threat-model.md`
+for the project-wide API-key/rate-limit/TLS/secrets posture, which this page sits alongside, not
+instead of.
+
+**Auth boundary**: the Chatbot page (`app/golden/drilldown/pages/9_Chatbot.py`) is the one page
+in the drilldown app that requires login (`app/golden/drilldown/auth.py`'s `require_login`) — the
+other 7 pages have none, a deliberately narrow change rather than retrofitting auth onto an
+already-working internal tool. Login is a real OAuth2 Resource Owner Password grant against
+Keycloak (`app.frontend.oidc.password_grant_login`, reused unmodified from the main frontend's
+login flow) — the username/password are checked server-side by Keycloak, not by this app. `role`
+(which gates `DocumentChunk.visibility` via `app.chatbot.access_control.allowed_visibilities`) comes
+from the resulting ID token's `realm_access.roles` claim. **Known, accepted gap**: the ID token's
+signature is not verified client-side (`app.frontend.oidc.decode_id_token` just base64-decodes the
+JWT payload) — accepted because the token is freshly issued by a real, trusted Keycloak call in the
+same request, held only in server-side Streamlit session state (`st.session_state["chatbot_claims"]`,
+never sent to or editable by the browser directly), not because signature verification doesn't
+matter in general. An unrecognized or missing role maps to `ROLE_CANDIDATE`, the most restrictive
+role, not an exception — fails closed, consistent with `allowed_visibilities`'s own fail-closed
+default for a role it doesn't recognize.
+
+**What the guardrail layer (`app/chatbot/guardrails.py`) protects against, concretely**:
+- *Prompt injection*: `check_input_safety` pattern-matches the raw question for phrases like
+  "ignore previous instructions," "you are now," "reveal your system prompt," "jailbreak" —
+  declines before the LLM is ever called. Deterministic, not a "please don't" instruction the
+  model could ignore; stated plainly in `guardrails.py`'s own docstring that a small model known to
+  hallucinate facts would hallucinate past a prompt-only instruction just as easily.
+- *PII exfiltration*: `redact_pii` strips anything matching an email/phone/street-address/postal-
+  code/SSN shape (plus an obfuscated-email pattern added 2026-11-22, see "PII detection hardening"
+  below) from tool results (before they reach the answer-generation prompt) and from the final
+  answer (before it's shown or persisted) — regardless of whether the model echoed real data or
+  invented it. This is defense-in-depth on top of `lookup_structured_data` already never selecting
+  those columns, not the only layer. A maintained NER-based library (Presidio) was evaluated for
+  this and deliberately rejected, with evidence — see "PII detection hardening" below for why.
+- *Abuse/scraping*: `check_rate_limit` bounds one user (by `ChatSession.user_id`, across all their
+  sessions/tabs) to `RATE_LIMIT_MAX_REQUESTS=20` messages per `RATE_LIMIT_WINDOW_SECONDS=60`,
+  backed by a real Postgres count rather than an in-memory counter — correct even if this ever runs
+  as more than one app instance, unlike an in-memory counter (same class of bug the project-wide
+  rate-limiter doc already found and fixed for the `api`/`analytics` services, see
+  `docs/security-and-threat-model.md`).
+- *Overload/outage*: covered above (capacity guardrail + the `httpx.HTTPError` catch) and now load-
+  tested, not just unit-tested.
+
+**What none of this protects against, stated plainly**:
+- A user who IS logged in and IS within their role's visibility (e.g. a legitimate `employer`) can
+  still ask the same question repeatedly across many short sessions to slowly map out what's in
+  scope for their role — rate limiting slows this, it doesn't prevent it, and there's no anomaly
+  detection on *patterns* of otherwise-individually-legitimate questions.
+- The regex-based PII redaction is pattern-matching, not entity recognition — a sufficiently
+  unusual-looking piece of PII (addresses in non-US/UK format without a recognized street suffix)
+  would pass through unredacted if it ever ended up in a chunk or a hallucinated answer. This
+  layer never attempts to redact candidate names — deliberately: this product surfaces candidate
+  full names as normal, intended output (see "PII detection hardening" below for why a general
+  NER-based approach that would redact names was rejected, not just not-yet-built).
+- No per-role rate limit (a `candidate` and an `admin` share the same `RATE_LIMIT_MAX_REQUESTS`) and
+  no audit log of *which role* asked *what* beyond what `ChatMessage`/MLflow traces already capture
+  for debugging, not for a dedicated security audit trail.
+- Everything in `docs/security-and-threat-model.md`'s project-wide "Known Limitations" still applies
+  here too (no TLS, no secrets manager, single static trust boundary) — this page's login adds a
+  *user* identity concept this project otherwise doesn't have, it doesn't change the transport or
+  secrets posture underneath it.
+
+## PII detection hardening (2026-11-22)
+
+The last item of this pass: evaluate whether a maintained PII-detection library (Presidio was the
+specific suggestion) should replace or extend `redact_pii`'s hand-written regexes, rather than
+assuming it would and integrating it unconditionally.
+
+**Evaluated Presidio directly, with real tests, in an isolated scratch venv — and rejected it**,
+for two independent, measured reasons:
+
+1. **Its dedicated `EMAIL_ADDRESS`/`PHONE_NUMBER` recognizers add zero recall improvement over the
+   existing regex for this project's actual categories.** Ran both side by side against UK mobile/
+   landline numbers, US numbers, a UK postcode, and a non-US address — `redact_pii`'s regex caught
+   everything Presidio's recognizers did, and more (Presidio has no address/postal-code recognizer
+   at all; the regex does). Neither approach caught an obfuscated email ("john dot smith at example
+   dot com") — not a Presidio advantage, a gap in both.
+2. **Its general NER (`PERSON`/`LOCATION`/`ORGANIZATION`/`DATE_TIME`, via spaCy's `en_core_web_sm`)
+   is unsafe to turn on broadly for this product.** Tested against realistic chatbot text: it
+   mislabeled "Python" and "SQL" as `LOCATION`/`ORGANIZATION`, and bare numbers like "42" (a
+   candidate id) or "5 years" (a years-of-experience phrase) as `DATE_TIME` — blindly redacting
+   those entity types would corrupt ordinary, correct chatbot answers, not just catch real PII.
+   Restricting to `PERSON` alone was clean in testing (correctly caught real names, no false
+   positives on skills/job titles/ids) — but that's **the wrong target entirely**: this chatbot
+   deliberately surfaces candidate full names today (`lookup_structured_data`, `graph_retrieval.py`'s
+   `label`/`name` fields) — only email/phone/address/postal-code are the protected categories (see
+   `guardrails.py`'s own docstring: "must never surface a candidate's email, phone, or address").
+   Redacting names would break the product, not harden it.
+3. **Memory cost, measured**: loading `AnalyzerEngine` with the small spaCy model costs ~125MB RSS
+   (confirmed via `psutil`-measured before/after), on a host already documented
+   (`docs/operations/infrastructure-sizing.md`) to have hit real WSL2 memory-ceiling crashes under
+   load. Not disqualifying on its own, but with zero measured recall benefit from point 1 and a
+   product-breaking risk from point 2, there's no case for paying it.
+
+**What was actually hardened instead** — two gaps the Presidio evaluation itself surfaced, both
+closed with new regex patterns in `guardrails.py`, no new dependency: an obfuscated-email pattern
+(`_OBFUSCATED_EMAIL_RE`, catching "word dot word at word dot word" and `[at]`/`[dot]`-bracketed
+variants) and a US SSN-shaped pattern (`_SSN_RE`, `###-##-####`). Both tested against positive
+cases (5/5 caught) and a battery of negative cases (candidate ids, skill names, non-SSN-shaped
+numbers) — one synthetic, deliberately adversarial false positive found (a fictional dash-grouped
+job-posting id matching the SSN shape) and accepted, consistent with this module's existing stated
+tradeoff of favoring catching a real PII shape over protecting a hypothetical id format this
+schema doesn't actually use. Unit-tested (`tests/chatbot/test_guardrails.py`,
+`test_redacts_an_obfuscated_email`/`test_redacts_an_ssn`); full suite still passes (43/43).
+
+**Remaining, honestly unclosed gaps** (neither this fix nor Presidio closes them): free-text
+addresses in non-US formats without a recognized street suffix, and candidate names themselves if
+that were ever decided to need protecting (it currently deliberately isn't — see point 2 above).
+
 ## Known Limitations
 
 - 11 of 100 courses share a title with another course (`Course.title` has no uniqueness
@@ -512,6 +815,12 @@ separate feature gap, not scoped into this pass -- see Roadmap.
   `search_knowledge_base` called twice with a cosmetic "language" argument difference, or
   `lookup_structured_data` called twice identically) — harmless redundancy, not a correctness
   issue, not fixed this pass.
+- With `enable_graph_tool`/`enable_rank_tool` both on, `qwen2.5:1.5b` sometimes calls
+  `lookup_graph_context` with an invalid `entity_name` argument (that tool takes `entity_id`) instead
+  of the right tool/argument — the call fails closed to `{}`, but the model's final answer still
+  hallucinates specific, ungrounded details rather than reporting no information found (observed on
+  "what jobs are related to mechanical engineering?", 2026-11-22). Same class as the prompt-wording
+  sensitivity noted above, not a new issue; not fixed this pass.
 - The `qwen2.5:7b`-vs-`qwen2.5:1.5b` model-size comparison, like the earlier vLLM/Ollama one, has
   each model judging itself — the groundedness improvement and relevance drop it showed haven't
   been re-verified under a fixed judge, so neither should be read as a settled model-size
@@ -527,18 +836,35 @@ separate feature gap, not scoped into this pass -- see Roadmap.
 
 ## Roadmap
 
-- **Candidate/job criteria search & ranking (NEW, not yet scoped)**: "top 3 candidates with a data
-  engineering profile" and similar criteria-ranking questions have no answering tool today -- see
-  above. Would need a 4th tool searching/ranking across `CandidateSkill`/`JobSkill` by criteria
-  (skill names, experience thresholds, etc.), distinct from Phase 2's similarity-by-known-id. A real
-  feature gap surfaced by live user testing, not a model-quality problem.
+- **Candidate/job criteria search & ranking: done (2026-11-22)** — a real gap surfaced by live user
+  testing ("top 3 candidates with a data engineering profile" and similar questions had no answering
+  tool, only Phase 2's similarity-by-known-id): `rank_by_criteria`, implemented in `app/chatbot/tools.py`,
+  ranks ALL candidates or ALL jobs (not just ones adjacent to a named id) by an exact, case-insensitive
+  AND-match count over named skills -- optionally a candidate's minimum years of experience. Gated
+  behind `enable_rank_tool` (same opt-in discipline as `enable_graph_tool`), and flipped to `True` on
+  the live chat page after live verification showed no regression to the existing two tools' routing.
+  Unit-tested directly against deterministic fixture rows (`tests/chatbot/test_tools_ranking.py` --
+  ranking order, the min-years filter, candidate-visibility fail-closed, unmatched-skill-name handling,
+  the `top_k` cap) and live-verified against the real chat graph: "which candidates have the most
+  experience with Python and SQL" and "which jobs need Kubernetes skills" both correctly routed to
+  `rank_by_criteria`, while exact-id and skill-name lookups still routed to `lookup_structured_data`
+  unaffected. Known limit: exact skill-name matching only, not fuzzy/semantic (a typo or synonym won't
+  match) -- same precision-over-recall tradeoff `lookup_structured_data` already makes for exact
+  lookups, stated plainly rather than silently guessed at. No dedicated LLM-judge eval category exists
+  for this tool yet (unlike Phase 2's `candidate_graph`/`job_graph` categories) -- a reasonable
+  follow-up, not done this pass since the live routing/unit-test verification above already gives
+  confidence without it.
 - **Phase 2 — graph retrieval: done** (see above) — `lookup_graph_context`, gated behind
-  `enable_graph_tool` (defaults `False`, live page unaffected). Eval confirms it's a real win on
-  the relationship-question category it targets; the live chat page's default has **not** been
-  flipped yet — that's a deliberate follow-up decision, not assumed from this result alone. A
-  larger-sample re-run (15+15 candidates/jobs, see above) confirmed `job_graph`'s weaker recall is
-  real, not small-sample noise — a graph-signal-quality limitation worth narrowing (e.g. weighting
-  by skill rarity) as a follow-up, separate from the decision to flip the default.
+  `enable_graph_tool`, flipped to `True` on the live chat page. Eval confirmed it's a real win on
+  the relationship-question category it targets. `job_graph`'s weaker recall, suspected to be a
+  graph-signal-quality limitation, was root-caused and fixed (2026-11-22, see "Retrieval accuracy
+  fixes" above): a missing deterministic tie-break, not a data limitation — fixing it brought
+  `job_graph` to 0.6/1.0 precision@k/recall@k (n=15) from 0.1/0.167. Also fixed 2026-11-22:
+  `graph_context_for_candidate`/`graph_context_for_job` now return the actual shared skill *names*
+  (`shared_skills`), not just a `shared_skill_count` -- live testing had shown the model inventing
+  plausible-sounding skill names when asked "what skills do they share" because the count alone gave
+  it nothing to ground a name in. Live-verified: asked that exact question, the model's answer now
+  cites the real names present in the tool result, confirmed by direct comparison.
 - **Phase 3 — hybrid retrieval + reranking + sweep**: combine vector+graph retrieval, add a
   reranking stage (library choice — `sentence-transformers` cross-encoder vs. an LLM-prompted
   reranker via the existing Ollama client — deliberately left open until this phase), then a
@@ -554,6 +880,8 @@ separate feature gap, not scoped into this pass -- see Roadmap.
 
 ## Related Documents
 
+- `docs/security-and-threat-model.md` — the project-wide API-key/rate-limit/TLS/secrets posture
+  this page's auth boundary and guardrails sit alongside, not instead of.
 - `docs/architecture/data-platform/knowledge-graph.md` — the graph-based-CF investigation and the
   `graph_explainability.py` pattern Phase 2's graph-retrieval tool will reuse.
 - `docs/architecture/data-platform/embedding-matching.md` — the `EntityEmbedding`/pgvector ANN
