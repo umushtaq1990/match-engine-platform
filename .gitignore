@@ -14,6 +14,12 @@ venv/
 # Docker
 *.log
 
+# Local MLflow file-store fallback, created when a script is run directly
+# against a tracking URI that isn't reachable (best-effort logging kicks
+# in, but the client library still creates these locally first).
+mlflow.db
+mlruns/
+
 # OS
 .DS_Store
 Thumbs.db

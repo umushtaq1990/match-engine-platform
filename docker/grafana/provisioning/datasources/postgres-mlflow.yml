@@ -1,0 +1,22 @@
+apiVersion: 1
+
+# Phase 53: a second Postgres data source, same instance as postgres.yml's
+# but pointed at the mlflow database instead of the main app one --
+# MLflow's own trace_info/spans tables are where every chatbot LLM call's
+# model/latency/status actually lives (see app/chatbot/graph.py's
+# @mlflow.trace instrumentation), and querying them directly is simpler
+# than going through MLflow's own UI for a always-on monitoring dashboard.
+datasources:
+  - name: Postgres-MLflow
+    uid: postgres-mlflow
+    type: postgres
+    access: proxy
+    url: db:5432
+    user: $POSTGRES_USER
+    database: $MLFLOW_DB_NAME
+    isDefault: false
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600

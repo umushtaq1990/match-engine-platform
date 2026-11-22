@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.analytics import models as analytics_models  # noqa: E402,F401
 from app.audit import models as audit_models  # noqa: E402,F401
+from app.chatbot import models as chatbot_models  # noqa: E402,F401
 from app.clustering import models as clustering_models  # noqa: E402,F401
 from app.db import DATABASE_URL, Base  # noqa: E402
 from app.embeddings import models as embeddings_models  # noqa: E402,F401

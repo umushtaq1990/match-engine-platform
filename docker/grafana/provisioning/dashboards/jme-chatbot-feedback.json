@@ -1,0 +1,78 @@
+{
+  "title": "JME Chatbot User Feedback",
+  "uid": "jme-chatbot-feedback",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-30d", "to": "now" },
+  "panels": [
+    {
+      "title": "Thumbs up vs. down (selected time range)",
+      "description": "Per-message feedback (app/golden/drilldown/pages/9_Chatbot.py's thumbs up/down, saved via app.chatbot.chat_history.save_feedback) -- the standard per-answer rating pattern, not an end-of-session survey, so a drop here can be traced to the specific messages below.",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) FILTER (WHERE rating = 'up') AS thumbs_up, count(*) FILTER (WHERE rating = 'down') AS thumbs_down FROM chat_message_feedback WHERE created_at BETWEEN $__timeFrom() AND $__timeTo()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Thumbs down rate (selected time range)",
+      "description": "Share of rated messages marked down -- the single number worth watching for a regression after a prompt/model change.",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE rating = 'down') / greatest(count(*), 1), 1) AS down_pct FROM chat_message_feedback WHERE created_at BETWEEN $__timeFrom() AND $__timeTo()",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 15 },
+            { "color": "red", "value": 35 }
+          ] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Feedback volume over time",
+      "description": "Daily thumbs up/down counts -- a sudden drop means feedback collection itself may be broken, not necessarily that answers got better.",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, count(*) FILTER (WHERE rating = 'up') AS up, count(*) FILTER (WHERE rating = 'down') AS down FROM chat_message_feedback WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Negative feedback detail (session, question, answer, comment)",
+      "description": "Every thumbs-down, with the exact question/answer it was about and any comment left -- what to actually read for quality improvement, not just the aggregate rate above. session_id links back to app.chatbot.chat_history's ChatSession for full conversation context.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  f.created_at,\n  cm.session_id,\n  f.comment,\n  (SELECT content FROM chat_messages WHERE session_id = cm.session_id AND created_at < cm.created_at AND role = 'user' ORDER BY created_at DESC LIMIT 1) AS question,\n  cm.content AS answer\nFROM chat_message_feedback f\nJOIN chat_messages cm ON cm.id = f.message_id\nWHERE f.rating = 'down' AND f.created_at BETWEEN $__timeFrom() AND $__timeTo()\nORDER BY f.created_at DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -42,6 +42,7 @@ def generate(
     prompt: str,
     response_format: dict | str | None = None,
     temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> str:
     """Calls /api/generate. `response_format` can be the loose string "json"
     (valid JSON, any shape) or a JSON Schema dict (Ollama constrains output
@@ -62,8 +63,13 @@ def generate(
     payload = {"model": model, "prompt": prompt, "stream": False}
     if response_format is not None:
         payload["format"] = response_format
+    options = {}
     if temperature is not None:
-        payload["options"] = {"temperature": temperature}
+        options["temperature"] = temperature
+    if max_tokens is not None:
+        options["num_predict"] = max_tokens
+    if options:
+        payload["options"] = options
     response = httpx.post(
         f"{OLLAMA_URL}/api/generate",
         json=payload,

@@ -1,0 +1,110 @@
+{
+  "title": "JME Chatbot Evaluation",
+  "uid": "jme-chatbot-evaluation",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": { "from": "now-90d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "run_at",
+        "type": "query",
+        "label": "Eval run",
+        "datasource": { "type": "postgres", "uid": "postgres-jme" },
+        "query": "SELECT run_at AS __value, (to_char(run_at, 'YYYY-MM-DD HH24:MI') || ' | ' || config_label || ' | n=' || count(*)) AS __text FROM chat_eval_results GROUP BY run_at, config_label ORDER BY run_at DESC",
+        "refresh": 1,
+        "sort": 0,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "All eval runs (compare models/prompts over time)",
+      "description": "One row per run (run_at + config_label) -- overall averages across all 6 metrics, so different backends/prompts/models tried in app/chatbot/eval/run_chatbot_eval.py can be compared side by side without re-running anything. config_label encodes retrieval_mode/backend/embedding_model/top_k as set at run time.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  run_at,\n  config_label,\n  count(*) AS n_questions,\n  round(avg(relevance_score)::numeric, 3) AS relevance,\n  round(avg(coherence_score)::numeric, 3) AS coherence,\n  round(avg(faithfulness_score)::numeric, 3) AS faithfulness,\n  round(avg(groundedness_score)::numeric, 3) AS groundedness,\n  round(avg(precision_at_k)::numeric, 3) AS precision_at_k,\n  round(avg(recall_at_k)::numeric, 3) AS recall_at_k\nFROM chat_eval_results\nGROUP BY run_at, config_label\nORDER BY run_at DESC\nLIMIT 100",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "relevance|coherence|faithfulness|groundedness" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [
+                { "color": "red", "value": null },
+                { "color": "orange", "value": 2.5 },
+                { "color": "green", "value": 3.5 }
+              ] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byRegexp", "options": "precision_at_k|recall_at_k" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [
+                { "color": "red", "value": null },
+                { "color": "orange", "value": 0.6 },
+                { "color": "green", "value": 0.9 }
+              ] } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Per-category breakdown for selected run",
+      "description": "Category is inferred from the golden question's own phrasing (app/chatbot/eval/golden_questions.py's four templates) -- ChatEvalResult has no stored category column, so this pattern-matches the question text rather than requiring a schema change.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  CASE\n    WHEN question LIKE 'How many years of experience%' OR question LIKE 'What occupation is candidate%' OR question LIKE 'What skills does candidate%' THEN 'candidate_profile'\n    WHEN question LIKE 'What company posted job%' OR question LIKE 'What is the job title for job%' OR question LIKE 'What skills are required for job%' THEN 'job_description'\n    WHEN question LIKE 'What category is the skill%' THEN 'skill'\n    WHEN question LIKE 'Who provides the course%' OR question LIKE 'What skills does the course%' THEN 'course'\n    ELSE 'other'\n  END AS category,\n  count(*) AS n_questions,\n  round(avg(relevance_score)::numeric, 3) AS relevance,\n  round(avg(coherence_score)::numeric, 3) AS coherence,\n  round(avg(faithfulness_score)::numeric, 3) AS faithfulness,\n  round(avg(groundedness_score)::numeric, 3) AS groundedness,\n  round(avg(precision_at_k)::numeric, 3) AS precision_at_k,\n  round(avg(recall_at_k)::numeric, 3) AS recall_at_k\nFROM chat_eval_results\nWHERE run_at = $run_at\nGROUP BY category\nORDER BY category",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Per-question detail for selected run",
+      "description": "Every golden question's own scores plus the generated answer and expected answer, for drilling into a specific low-scoring question.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres-jme" },
+      "gridPos": { "h": 18, "w": 24, "x": 0, "y": 18 },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  id, question, expected_answer, generated_answer,\n  relevance_score, coherence_score, faithfulness_score, groundedness_score,\n  precision_at_k, recall_at_k\nFROM chat_eval_results\nWHERE run_at = $run_at\nORDER BY (relevance_score + coherence_score + faithfulness_score + groundedness_score) ASC\nLIMIT 500",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*_score" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [
+                { "color": "red", "value": null },
+                { "color": "orange", "value": 2.5 },
+                { "color": "green", "value": 3.5 }
+              ] } }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
