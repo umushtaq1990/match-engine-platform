@@ -427,11 +427,8 @@ categories unaffected (adding an unused tool option doesn't regress anything).
 
 Both numbers hold steady (job_graph if anything slightly lower) at 5x the sample size — **not
 sample-size noise**. `job_graph` genuinely underperforms `candidate_graph` on this shared-skill-count
-graph query. Working hypothesis, not yet confirmed: job postings tend to list fewer, more generic
-skill tags than candidate profiles, so "top jobs matching a candidate's skillset" has a weaker
-shared-skill signal to rank on than candidate-to-candidate similarity does — a data/query-signal
-limitation in `graph_retrieval.py`'s `_CANDIDATE_TOP_JOBS`/`_JOB_TOP_PEERS` queries, not a
-tool-routing or prompt problem (the live smoke test above already confirmed routing works).
+graph query. Working hypothesis at the time, since confirmed wrong — see "Retrieval accuracy fixes"
+below for the real, measured cause (a missing tie-break, not a data/signal limitation).
 
 ## Scope framing, decline handling, and the live default model (2026-11-21)
 
@@ -574,6 +571,60 @@ the PII/injection/rate-limit ones above, turning both into a clean decline inste
   `app.chatbot.llm_backend`, GPU-only, not currently wired into the live page) behind a load balancer,
   plus a stateless app tier instead of one Streamlit process.
 
+## Retrieval accuracy fixes (2026-11-22)
+
+A follow-up pass to close two previously-documented accuracy gaps: `job_graph`'s weaker recall, and
+a reported vector-search miss on category/topic questions (e.g. "what jobs are related to mechanical
+engineering?").
+
+**`job_graph`'s weaker recall was a missing tie-break, not a graph-signal-quality limitation.**
+Earlier passes (above) measured `job_graph` scoring well below `candidate_graph` and hypothesized it
+was because job postings carry fewer/more generic skill tags, giving the shared-skill-count ranking a
+weaker signal to work with. That hypothesis was never actually confirmed, and it was wrong. The real
+cause: most courses/candidates/jobs tie on shared-skill count (many courses teach only 1-2 skills),
+and `graph_retrieval.py`'s six Cypher queries had no tie-break, so Neo4j returned an arbitrary tied
+set on each run — while the eval harness's independent SQL ground truth (`golden_questions.py`'s
+`_top_shared_skill_ids`) breaks ties by ascending id for a deterministic expected answer. Without the
+same convention on the Neo4j side, a query could (and measurably did) return a different, equally
+valid-looking set of tied rows, scoring as a recall miss even when the top-1, non-tied result was
+correct. Confirmed directly on job 4's course recommendations: course id 17 was entirely missing from
+the old top-5 (replaced by an arbitrary tie at `shared_skill_count=1`); after adding `, <alias>.id ASC`
+to all six queries' `ORDER BY`, the top-3 exactly matched the SQL ground truth `[91, 12, 17]`.
+Re-running the same 15-question `job_graph` eval that had earlier shown 0.1/0.167 precision@k/recall@k
+confirmed it at scale: **0.1 → 0.6 precision@k, 0.167 → 1.0 recall@k**, n=15, same `qwen2.5:1.5b`
+agent, same question set. `candidate_graph`'s queries had the same missing tie-break and got the same
+fix, though that category's recall was already closer to ground truth at this sample size since its
+higher-cardinality skill sets tie less often.
+
+**The vector-search miss was a separate, more systemic pgvector issue, not specific to any one
+query's wording.** `entity_embeddings` has a single HNSW index (`ix_entity_embeddings_ann`) shared
+across every `entity_type`/`dimension`/`embedding_model` combination in the table — candidate and job
+component embeddings (experience/skills/overall) *and* this chatbot's `document_chunk` vectors all
+mixed into one index, with chunks only ~40% of the rows. pgvector's documented behavior for
+`ORDER BY vector <=> query LIMIT k` combined with a `WHERE` filter on other columns is to examine only
+`hnsw.ef_search` (default 40) globally-nearest candidates from the index, *then* apply the filter — so
+`retrieve_chunks`'s `entity_type`/`dimension`/`embedding_model` filter could silently starve the ANN
+search whenever a query's true nearest neighbors (across the whole mixed table) skewed toward
+non-chunk rows. Confirmed directly, not assumed: "mechanical engineering" returned 0 of 5 requested
+chunks at the default `ef_search`; a 5-query generalization test ("mechanical engineering," "strong
+communication skills," "candidates with leadership experience," "cloud infrastructure and devops,"
+"what training is available for project management") found default `ef_search=40` under-returned on
+2 of 5 real queries. Swept `ef_search` at 40/100/200/400/800/1000: 400 got the full requested count on
+all 5 test queries at acceptable latency (worst case ~90ms added versus ef=40, negligible next to this
+page's 8-25s LLM round trip); 1000 showed no further recall improvement but cost ~1.5s more per call.
+Fixed in `app/chatbot/retrieval.py`: a `_HNSW_EF_SEARCH = 400` constant and `SET hnsw.ef_search = 400`
+issued on the session right before the ANN query in `retrieve_chunks`. `tests/chatbot/` (41 tests)
+passes clean with this change; no dedicated unit test for `retrieval.py` existed before or exists
+after this fix (a reasonable follow-up, not done this pass).
+
+**Separately observed, not fixed this pass**: investigating the mechanical-engineering question live
+also surfaced a tool-routing issue — with `enable_graph_tool`/`enable_rank_tool` both on, `qwen2.5:1.5b`
+sometimes calls `lookup_graph_context` with an `entity_name` argument that tool doesn't accept (it
+takes `entity_id`), the call fails closed to `{}`, and the model's final answer still hallucinates
+specific, ungrounded job titles rather than reporting no information found. This is the same class of
+small-model tool-routing fragility already noted under Known Limitations, not a new failure mode —
+logged there rather than fixed here.
+
 ## Known Limitations
 
 - 11 of 100 courses share a title with another course (`Course.title` has no uniqueness
@@ -601,6 +652,12 @@ the PII/injection/rate-limit ones above, turning both into a clean decline inste
   `search_knowledge_base` called twice with a cosmetic "language" argument difference, or
   `lookup_structured_data` called twice identically) — harmless redundancy, not a correctness
   issue, not fixed this pass.
+- With `enable_graph_tool`/`enable_rank_tool` both on, `qwen2.5:1.5b` sometimes calls
+  `lookup_graph_context` with an invalid `entity_name` argument (that tool takes `entity_id`) instead
+  of the right tool/argument — the call fails closed to `{}`, but the model's final answer still
+  hallucinates specific, ungrounded details rather than reporting no information found (observed on
+  "what jobs are related to mechanical engineering?", 2026-11-22). Same class as the prompt-wording
+  sensitivity noted above, not a new issue; not fixed this pass.
 - The `qwen2.5:7b`-vs-`qwen2.5:1.5b` model-size comparison, like the earlier vLLM/Ollama one, has
   each model judging itself — the groundedness improvement and relevance drop it showed haven't
   been re-verified under a fixed judge, so neither should be read as a settled model-size
@@ -636,14 +693,15 @@ the PII/injection/rate-limit ones above, turning both into a clean decline inste
   confidence without it.
 - **Phase 2 — graph retrieval: done** (see above) — `lookup_graph_context`, gated behind
   `enable_graph_tool`, flipped to `True` on the live chat page. Eval confirmed it's a real win on
-  the relationship-question category it targets. A larger-sample re-run (15+15 candidates/jobs, see
-  above) confirmed `job_graph`'s weaker recall is real, not small-sample noise — a graph-signal-quality
-  limitation worth narrowing (e.g. weighting by skill rarity) as a follow-up. Also fixed this pass
-  (2026-11-22): `graph_context_for_candidate`/`graph_context_for_job` now return the actual shared
-  skill *names* (`shared_skills`), not just a `shared_skill_count` -- live testing had shown the model
-  inventing plausible-sounding skill names when asked "what skills do they share" because the count
-  alone gave it nothing to ground a name in. Live-verified: asked that exact question, the model's
-  answer now cites the real names present in the tool result, confirmed by direct comparison.
+  the relationship-question category it targets. `job_graph`'s weaker recall, suspected to be a
+  graph-signal-quality limitation, was root-caused and fixed (2026-11-22, see "Retrieval accuracy
+  fixes" above): a missing deterministic tie-break, not a data limitation — fixing it brought
+  `job_graph` to 0.6/1.0 precision@k/recall@k (n=15) from 0.1/0.167. Also fixed 2026-11-22:
+  `graph_context_for_candidate`/`graph_context_for_job` now return the actual shared skill *names*
+  (`shared_skills`), not just a `shared_skill_count` -- live testing had shown the model inventing
+  plausible-sounding skill names when asked "what skills do they share" because the count alone gave
+  it nothing to ground a name in. Live-verified: asked that exact question, the model's answer now
+  cites the real names present in the tool result, confirmed by direct comparison.
 - **Phase 3 — hybrid retrieval + reranking + sweep**: combine vector+graph retrieval, add a
   reranking stage (library choice — `sentence-transformers` cross-encoder vs. an LLM-prompted
   reranker via the existing Ollama client — deliberately left open until this phase), then a

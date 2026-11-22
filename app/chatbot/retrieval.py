@@ -6,7 +6,7 @@ rewrite). Same two-stage "ANN query, not a brute-force scan" shape as
 """
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.chatbot.access_control import allowed_visibilities
@@ -14,6 +14,28 @@ from app.chatbot.chunk_embeddings import DIMENSION, ENTITY_TYPE
 from app.chatbot.models import DEFAULT_CHUNK_EMBEDDING_MODEL, DocumentChunk
 from app.embeddings.models import EntityEmbedding
 from app.extraction.ollama_client import embed
+
+# `entity_embeddings`'s single HNSW index (`ix_entity_embeddings_ann`) covers
+# EVERY entity_type/dimension/embedding_model combination mixed together
+# (candidate experience/skills/overall vectors, job experience/skills/overall
+# vectors, AND these document_chunk vectors all in one index) -- document
+# chunks are only ~40% of the table. pgvector's documented behavior for
+# `ORDER BY ... <=> ... LIMIT k` combined with a WHERE filter on other
+# columns is to fetch only `hnsw.ef_search` (default 40) globally-nearest
+# candidates from the index, THEN apply the filter -- so if a query's
+# nearest neighbors happen to skew toward non-chunk rows, the filtered
+# result can come back short, even empty, regardless of how many genuinely
+# relevant chunks exist. Confirmed live, not assumed: "mechanical
+# engineering" returned 0 of 5 requested chunks at the default ef_search,
+# and a second query ("what training is available for project management")
+# returned 4 of 5 -- both real, previously-unexplained retrieval misses.
+# Raising ef_search widens that pre-filter candidate pool. Measured directly
+# (5 real queries): ef_search=40 missed on 2/5; _HNSW_EF_SEARCH found the
+# full requested count on all 5, adding single-digit-to-low-hundreds of ms
+# (worst case ~90ms) -- negligible next to this page's 8-25s LLM round
+# trip. ef_search=1000 was also tried and discarded: no better recall than
+# 400, but ~1.5s slower per call.
+_HNSW_EF_SEARCH = 400
 
 
 @dataclass
@@ -62,6 +84,11 @@ def retrieve_chunks(
     """
     query_vector = embed(embedding_model, query_text)
     allowed = allowed_visibilities(role)
+
+    # See _HNSW_EF_SEARCH's module-level comment -- without this, the
+    # entity_type/dimension/embedding_model filter below can silently
+    # starve the ANN search of real matches.
+    session.execute(text(f"SET hnsw.ef_search = {_HNSW_EF_SEARCH}"))
 
     stmt = (
         select(EntityEmbedding, DocumentChunk)

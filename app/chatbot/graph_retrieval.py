@@ -20,43 +20,56 @@ MAX_PEERS = 5
 MAX_JOBS = 5
 MAX_COURSES = 5
 
+# `ORDER BY shared DESC, <alias>.id ASC` -- the secondary sort matters, not
+# just stylistic. Confirmed live (job 4's course recommendations): most
+# courses teach only 1-2 skills, so many tie on `shared` count, and Neo4j
+# has no defined order among ties without an explicit tie-break. The eval
+# harness's independent SQL ground truth (golden_questions.py's
+# `_top_shared_skill_ids`) breaks ties by ascending id for a deterministic
+# expected answer -- without the same tie-break here, this query could (and
+# measurably did) return a different, equally-valid-looking set of tied
+# rows than the ground truth expects, scoring as a recall miss even though
+# the top-1 (unique, non-tied) result was correct. This was the real,
+# confirmed cause of `job_graph`'s measured weaker recall (see
+# docs/architecture/application-services/rag-chatbot.md), not an inherent
+# graph-signal-quality limitation.
 _CANDIDATE_TOP_PEERS = """
 MATCH (c:Candidate {id: $id})-[:HAS_SKILL]->(sk:Skill)<-[:HAS_SKILL]-(p:Candidate)
 WHERE p.id <> $id
 WITH p, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
-ORDER BY shared DESC LIMIT $limit
+ORDER BY shared DESC, p.id ASC LIMIT $limit
 RETURN p.id AS id, p.full_name AS label, shared, skill_names
 """
 _CANDIDATE_TOP_JOBS = """
 MATCH (c:Candidate {id: $id})-[:HAS_SKILL]->(sk:Skill)<-[:REQUIRES_SKILL]-(j:Job)
 WITH j, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
-ORDER BY shared DESC LIMIT $limit
+ORDER BY shared DESC, j.id ASC LIMIT $limit
 RETURN j.id AS id, j.title AS label, shared, skill_names
 """
 _CANDIDATE_TOP_COURSES = """
 MATCH (c:Candidate {id: $id})-[:HAS_SKILL]->(sk:Skill)<-[:TEACHES_SKILL]-(co:Course)
 WITH co, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
-ORDER BY shared DESC LIMIT $limit
+ORDER BY shared DESC, co.id ASC LIMIT $limit
 RETURN co.id AS id, co.title AS label, shared, skill_names
 """
 
 _JOB_TOP_PEERS = """
 MATCH (j:Job {id: $id})-[:REQUIRES_SKILL]->(sk:Skill)<-[:HAS_SKILL]-(c:Candidate)
 WITH c, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
-ORDER BY shared DESC LIMIT $limit
+ORDER BY shared DESC, c.id ASC LIMIT $limit
 RETURN c.id AS id, c.full_name AS label, shared, skill_names
 """
 _JOB_TOP_JOBS = """
 MATCH (j:Job {id: $id})-[:REQUIRES_SKILL]->(sk:Skill)<-[:REQUIRES_SKILL]-(other:Job)
 WHERE other.id <> $id
 WITH other, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
-ORDER BY shared DESC LIMIT $limit
+ORDER BY shared DESC, other.id ASC LIMIT $limit
 RETURN other.id AS id, other.title AS label, shared, skill_names
 """
 _JOB_TOP_COURSES = """
 MATCH (j:Job {id: $id})-[:REQUIRES_SKILL]->(sk:Skill)<-[:TEACHES_SKILL]-(co:Course)
 WITH co, count(DISTINCT sk) AS shared, collect(DISTINCT sk.name) AS skill_names
-ORDER BY shared DESC LIMIT $limit
+ORDER BY shared DESC, co.id ASC LIMIT $limit
 RETURN co.id AS id, co.title AS label, shared, skill_names
 """
 
