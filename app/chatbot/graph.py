@@ -19,6 +19,7 @@ from mlflow.entities import SpanType
 from sqlalchemy.orm import Session
 
 from app.chatbot import chat_history
+from app.chatbot.guardrails import check_input_safety, redact_pii, redact_pii_in_value
 from app.chatbot.llm_backend import GenerateFn
 from app.chatbot.llm_backend import resolve_generate_fn as _resolve_generate_fn
 from app.chatbot.tools import (
@@ -362,18 +363,24 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
         try:
             if name == TOOL_SEARCH_KNOWLEDGE_BASE:
                 chunks = search_knowledge_base(session, state["role"], args.get("query", state["question"]))
-                results.append({"tool": name, "result": [c.text for c in chunks]})
+                # Output guardrail: redact before this text ever reaches the
+                # answer-generation prompt or the "Sources" panel, not just
+                # before the final answer -- see app.chatbot.guardrails'
+                # module docstring (defense in depth against a future
+                # ingestion pass embedding raw PII in chunk text).
+                redacted_texts = [redact_pii(c.text)[0] for c in chunks]
+                results.append({"tool": name, "result": redacted_texts})
                 retrieved_chunks.extend({
-                    "chunk_id": c.chunk_id, "text": c.text, "source_type": c.source_type,
+                    "chunk_id": c.chunk_id, "text": redacted_text, "source_type": c.source_type,
                     "source_entity_id": c.source_entity_id, "tags": c.tags, "is_fresh": c.is_fresh,
-                } for c in chunks)
+                } for c, redacted_text in zip(chunks, redacted_texts))
             elif name == TOOL_LOOKUP_STRUCTURED_DATA:
                 normalized = _normalize_lookup_args(args)
                 data = lookup_structured_data(
                     session, state["role"], normalized["entity_type"],
                     entity_id=normalized["entity_id"], entity_name=normalized["entity_name"],
                 )
-                results.append({"tool": name, "result": data})
+                results.append({"tool": name, "result": redact_pii_in_value(data)[0]})
             elif name == TOOL_LOOKUP_GRAPH_CONTEXT:
                 # Only ever emitted by decide_tools when enable_graph_tool
                 # was True (see _tool_call_schema) -- unconditional here is
@@ -382,7 +389,7 @@ def _execute_tools(session: Session, state: ChatTurnState) -> ChatTurnState:
                 entity_id = args.get("entity_id")
                 entity_id = int(entity_id) if entity_id is not None else None
                 data = lookup_graph_context(session, state["role"], entity_type, entity_id)
-                results.append({"tool": name, "result": data})
+                results.append({"tool": name, "result": redact_pii_in_value(data)[0]})
         except Exception:
             # Deliberately not the raw exception text -- confirmed live:
             # leaking it (e.g. "invalid literal for int() with base 10:
@@ -412,7 +419,20 @@ def _generate_answer(
     # vllm_client's old hardcoded default (250) was flagged as a plausible
     # cause of answers that looked cut off mid-thought -- explicit headroom
     # here rules that out rather than leaving it an open question.
-    state["answer"] = generate_fn(model, prompt, max_tokens=400).strip()
+    answer = generate_fn(model, prompt, max_tokens=400).strip()
+    # Output guardrail, last line of defense: even though tool results are
+    # already redacted above, this also catches anything the model itself
+    # might invent in a PII shape (it has already been seen hallucinating
+    # facts not present in any tool result -- see graph_retrieval.py's
+    # subject_candidate_id fix history) and anything from a future tool
+    # that doesn't go through _execute_tools' redaction.
+    answer, redacted = redact_pii(answer)
+    if redacted:
+        try:
+            mlflow.update_current_trace(tags={"guardrail_triggered": "output_pii_redacted"})
+        except Exception:
+            pass
+    state["answer"] = answer
     return state
 
 
@@ -500,9 +520,28 @@ def _run_chat_turn(
             traceability record), "tool_calls": list[dict]}`.
     """
     _tag_current_trace(session_id, role, question)
+    chat_history.append_message(session, session_id, "user", question)
+
+    # Input guardrail: runs before any LLM call, on the raw question --
+    # deterministic, not a prompt instruction the model could ignore. See
+    # app.chatbot.guardrails' module docstring. A blocked question never
+    # reaches decide_tools/execute_tools/generate_answer at all.
+    input_check = check_input_safety(question)
+    if input_check.blocked:
+        try:
+            mlflow.update_current_trace(tags={"guardrail_triggered": input_check.reason})
+        except Exception:
+            pass
+        assistant_message = chat_history.append_message(
+            session, session_id, "assistant", input_check.decline_message, [],
+        )
+        return {
+            "message_id": assistant_message.id, "answer": input_check.decline_message,
+            "retrieved_chunks": [], "tool_calls": [], "tool_results": [],
+        }
+
     if generate_fn is None:
         generate_fn = _resolve_generate_fn("ollama")
-    chat_history.append_message(session, session_id, "user", question)
     history_text = _format_history(chat_history.load_recent_messages(session, session_id, limit=10))
 
     graph = _build_graph(

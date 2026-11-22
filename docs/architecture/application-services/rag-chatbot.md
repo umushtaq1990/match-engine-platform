@@ -485,6 +485,47 @@ search, and similarity-by-a-known-id exist). The model-size fix only gets an hon
 of a hallucinated answer; it does not add that capability. A criteria-search/ranking tool is a real,
 separate feature gap, not scoped into this pass -- see Roadmap.
 
+## Input/Output Guardrails (2026-11-22)
+
+A real user asked specifically for enterprise-grade PII protection: the chatbot must never surface a
+candidate's email, phone, or address, and should be resilient to prompt-injection attempts -- not just
+"well-behaved by default." `lookup_structured_data`'s candidate branch already never selected those
+columns and `_build_candidate_chunks` never embedded them, so the live model's refusal to answer those
+questions was already the right behavior today -- but that's an absence of a leak, not an enforced
+guarantee, and both are one future ingestion/prompt change away from silently breaking. `app/chatbot/
+guardrails.py` makes it an explicit, deterministic, testable layer instead of an emergent property of
+the current schema:
+
+- **Input guardrail** (`check_input_safety`): runs on the raw question *before* any LLM call.
+  - Direct requests for a candidate's contact details ("what is candidate 1's email/phone/address")
+    get a canned decline immediately -- no tool call, no model call, same behavior regardless of role.
+  - Prompt-injection phrasing ("ignore previous instructions", "reveal your system prompt", "you are
+    now...", "jailbreak") gets a canned decline instead of being handed to the model at all.
+  - Both tag the MLflow trace (`guardrail_triggered: "contact_detail_request"` /
+    `"injection"`) for audit visibility (see the existing live-monitoring Grafana dashboard).
+- **Output guardrail** (`redact_pii` / `redact_pii_in_value`): regex-based email/phone/street-address/
+  postal-code redaction, applied in two places:
+  1. Every tool result (`_execute_tools`), before it enters the answer-generation prompt or the
+     "Sources" panel -- defense in depth against a future ingestion pass embedding raw PII in a
+     `DocumentChunk` (a real risk if raw resume text is ever added; today's synthesized candidate
+     chunks don't have this problem, but nothing stops a future change from reintroducing it).
+  2. The final generated answer (`_generate_answer`), tagging the trace
+     (`guardrail_triggered: "output_pii_redacted"`) if anything was actually redacted -- catches the
+     model inventing something in a PII shape, not just echoing a leaked source.
+- Deliberately regex/rule-based, not an LLM self-check -- this project has already seen the small model
+  hallucinate facts not present in any tool result (see Phase 2's `subject_candidate_id` fix); a model
+  that will hallucinate a skill will hallucinate a phone number just as readily. A deterministic layer
+  doesn't depend on the model choosing to comply.
+- Unit-tested directly (`tests/chatbot/test_guardrails.py`, no LLM involved) and verified live against
+  the real chat graph: the two PII-request phrasings and the injection phrasing all short-circuited with
+  zero tool calls, while an ordinary in-scope question (`job 4`'s title/company) was unaffected.
+- Known limits, stated plainly rather than overclaimed: the PII-request check is phrase-based (keyword +
+  "candidate" co-occurrence), not a full intent classifier, so an unusually indirect phrasing could slip
+  past it -- the output redaction is the actual backstop for that case, not the input check alone. The
+  address regex is deliberately conservative (requires a number + a recognized street-suffix word) to
+  avoid mangling ordinary text, which means it won't catch every address format (e.g. a bare city/
+  country name, which isn't PII-specific enough to redact safely anyway).
+
 ## Known Limitations
 
 - 11 of 100 courses share a title with another course (`Course.title` has no uniqueness
