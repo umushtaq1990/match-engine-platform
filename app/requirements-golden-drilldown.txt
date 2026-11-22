@@ -10,7 +10,7 @@ wordcloud==1.9.6
 # app.golden.select -> app.golden.seed_curated_occupations ->
 # app.ingestion.generate_synthetic_data imports Faker at module level even
 # though this app never calls anything that uses it.
-Faker==30.3.0
+Faker==40.54.0
 # Knowledge graph position panel (graph_explainability.py/graph_chart.py):
 # neo4j matches app/requirements-graph.txt's pin. Ego-network layout is a
 # hand-written deterministic radial layout (graph_chart.py), not networkx --
