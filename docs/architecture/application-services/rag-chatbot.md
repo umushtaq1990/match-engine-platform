@@ -625,6 +625,121 @@ specific, ungrounded job titles rather than reporting no information found. This
 small-model tool-routing fragility already noted under Known Limitations, not a new failure mode —
 logged there rather than fixed here.
 
+## Load testing & threat model (2026-11-22)
+
+A follow-up to the capacity/availability guardrails above and the project-wide
+`docs/security-and-threat-model.md`: load-test the chatbot specifically (not covered by that
+doc's existing `scripts/load_test.py`/`load_test_llm.py`, which test `api`'s and `extraction`'s
+HTTP endpoints — the chatbot has none of its own; it's a Streamlit page calling `run_chat_turn`
+in-process), and write down, honestly, what this page's auth boundary does and doesn't protect
+against.
+
+### Load test
+
+New script, `scripts/load_test_chatbot.py`, same methodology as the other two (plain
+`ThreadPoolExecutor`, client-side timing, no new dependency), adapted for an in-process call
+instead of an HTTP one: each worker thread opens its own DB session and chat session and calls
+`run_chat_turn` directly, bucketing results into `ok` / `capacity_decline` / `llm_unavailable` /
+`error:<ExceptionType>` by comparing the returned message against the guardrails module's own
+decline-message constants (not by guessing from text content).
+
+Run at concurrency 10 (double `MAX_CONCURRENT_CHAT_TURNS=5`) against the live `qwen2.5:3b` agent,
+15 real chat turns, each exercising all three tools (`enable_graph_tool`/`enable_rank_tool` both
+on, the live page's own configuration):
+
+```
+model=qwen2.5:3b concurrency=10 requests=15
+n=15 throughput=0.080req/s outcomes={'capacity_decline': 10, 'ok': 5} p50=2.67s p95=186.47s p99=186.47s mean=63.35s max=186.47s
+```
+
+Takeaways:
+- **The capacity guardrail triggered exactly as designed under real load, not just the earlier
+  7-thread smoke test**: exactly 5 of 15 requests (matching `MAX_CONCURRENT_CHAT_TURNS`) completed
+  normally, the other 10 got a clean `CAPACITY_DECLINE_MESSAGE` decline — not a crash, not an
+  unbounded queue, not a hang.
+- **No errors, no `llm_unavailable` outcomes** — Ollama stayed healthy throughout; the
+  single-instance limitation documented above is about *capacity* (only 5 fit at once), not
+  *stability* (what does run doesn't crash it).
+- The bimodal latency (p50 2.67s — the instant declines — vs. p95/p99/max 186.47s — the 5 turns
+  that actually ran, each needing multiple sequential tool-call/LLM round trips under
+  `OLLAMA_NUM_PARALLEL=5` contention) is the expected shape for this design: declines are cheap and
+  immediate, admitted turns are slower under contention than the ~8-25s single-user baseline
+  documented above but still complete, not hang. This is exactly the "honest, not silent"
+  degradation the guardrail was built for, now measured, not just asserted.
+- Noted, not investigated further: the run's stderr printed several "Processor is already shutdown,
+  ignoring call" lines from MLflow's async trace-export queue — looks like a benign race between
+  worker-thread trace flushes and process exit under this many concurrent threads, not a chat-turn
+  failure (all 15 outcomes above are accounted for as ok/capacity_decline, none as an error). Worth
+  a second look if it ever appears outside this synthetic all-at-once burst.
+- Not a soak test (this is a fixed-count burst, see `scripts/load_test.py`'s soak-mode precedent)
+  — sustained load over minutes/hours, and behavior with real concurrent *users* each sending
+  several messages rather than one burst of single turns, remain unmeasured. A reasonable
+  follow-up, not done this pass since the one-shot burst already answers the question this pass
+  needed answered: does the guardrail actually trigger under load heavier than the original
+  smoke test, and does anything break when it does.
+
+### Threat model: the chatbot page's auth boundary and guardrails
+
+This section covers what's specific to the Chatbot page; see `docs/security-and-threat-model.md`
+for the project-wide API-key/rate-limit/TLS/secrets posture, which this page sits alongside, not
+instead of.
+
+**Auth boundary**: the Chatbot page (`app/golden/drilldown/pages/9_Chatbot.py`) is the one page
+in the drilldown app that requires login (`app/golden/drilldown/auth.py`'s `require_login`) — the
+other 7 pages have none, a deliberately narrow change rather than retrofitting auth onto an
+already-working internal tool. Login is a real OAuth2 Resource Owner Password grant against
+Keycloak (`app.frontend.oidc.password_grant_login`, reused unmodified from the main frontend's
+login flow) — the username/password are checked server-side by Keycloak, not by this app. `role`
+(which gates `DocumentChunk.visibility` via `app.chatbot.access_control.allowed_visibilities`) comes
+from the resulting ID token's `realm_access.roles` claim. **Known, accepted gap**: the ID token's
+signature is not verified client-side (`app.frontend.oidc.decode_id_token` just base64-decodes the
+JWT payload) — accepted because the token is freshly issued by a real, trusted Keycloak call in the
+same request, held only in server-side Streamlit session state (`st.session_state["chatbot_claims"]`,
+never sent to or editable by the browser directly), not because signature verification doesn't
+matter in general. An unrecognized or missing role maps to `ROLE_CANDIDATE`, the most restrictive
+role, not an exception — fails closed, consistent with `allowed_visibilities`'s own fail-closed
+default for a role it doesn't recognize.
+
+**What the guardrail layer (`app/chatbot/guardrails.py`) protects against, concretely**:
+- *Prompt injection*: `check_input_safety` pattern-matches the raw question for phrases like
+  "ignore previous instructions," "you are now," "reveal your system prompt," "jailbreak" —
+  declines before the LLM is ever called. Deterministic, not a "please don't" instruction the
+  model could ignore; stated plainly in `guardrails.py`'s own docstring that a small model known to
+  hallucinate facts would hallucinate past a prompt-only instruction just as easily.
+- *PII exfiltration*: `redact_pii` strips anything matching an email/phone/street-address/postal-
+  code shape from tool results (before they reach the answer-generation prompt) and from the final
+  answer (before it's shown or persisted) — regardless of whether the model echoed real data or
+  invented it. This is defense-in-depth on top of `lookup_structured_data` already never selecting
+  those columns, not the only layer. **Known limitation, scoped as its own follow-up (item 4 of the
+  current pass)**: these are hand-written regexes, not a maintained NER-based PII library (e.g.
+  Presidio) — they'll miss shapes not anticipated (names, dates of birth, free-text addresses that
+  don't match the street-suffix pattern, non-US/UK phone/postal formats).
+- *Abuse/scraping*: `check_rate_limit` bounds one user (by `ChatSession.user_id`, across all their
+  sessions/tabs) to `RATE_LIMIT_MAX_REQUESTS=20` messages per `RATE_LIMIT_WINDOW_SECONDS=60`,
+  backed by a real Postgres count rather than an in-memory counter — correct even if this ever runs
+  as more than one app instance, unlike an in-memory counter (same class of bug the project-wide
+  rate-limiter doc already found and fixed for the `api`/`analytics` services, see
+  `docs/security-and-threat-model.md`).
+- *Overload/outage*: covered above (capacity guardrail + the `httpx.HTTPError` catch) and now load-
+  tested, not just unit-tested.
+
+**What none of this protects against, stated plainly**:
+- A user who IS logged in and IS within their role's visibility (e.g. a legitimate `employer`) can
+  still ask the same question repeatedly across many short sessions to slowly map out what's in
+  scope for their role — rate limiting slows this, it doesn't prevent it, and there's no anomaly
+  detection on *patterns* of otherwise-individually-legitimate questions.
+- The regex-based PII redaction is pattern-matching, not entity recognition — a sufficiently
+  unusual-looking piece of PII (addresses in non-US/UK format, a candidate's name itself, which this
+  layer never attempts to redact since names aren't structurally distinguishable from any other
+  proper noun) would pass through unredacted if it ever ended up in a chunk or a hallucinated answer.
+- No per-role rate limit (a `candidate` and an `admin` share the same `RATE_LIMIT_MAX_REQUESTS`) and
+  no audit log of *which role* asked *what* beyond what `ChatMessage`/MLflow traces already capture
+  for debugging, not for a dedicated security audit trail.
+- Everything in `docs/security-and-threat-model.md`'s project-wide "Known Limitations" still applies
+  here too (no TLS, no secrets manager, single static trust boundary) — this page's login adds a
+  *user* identity concept this project otherwise doesn't have, it doesn't change the transport or
+  secrets posture underneath it.
+
 ## Known Limitations
 
 - 11 of 100 courses share a title with another course (`Course.title` has no uniqueness
@@ -717,6 +832,8 @@ logged there rather than fixed here.
 
 ## Related Documents
 
+- `docs/security-and-threat-model.md` — the project-wide API-key/rate-limit/TLS/secrets posture
+  this page's auth boundary and guardrails sit alongside, not instead of.
 - `docs/architecture/data-platform/knowledge-graph.md` — the graph-based-CF investigation and the
   `graph_explainability.py` pattern Phase 2's graph-retrieval tool will reuse.
 - `docs/architecture/data-platform/embedding-matching.md` — the `EntityEmbedding`/pgvector ANN
