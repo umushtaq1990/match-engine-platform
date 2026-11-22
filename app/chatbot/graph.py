@@ -19,7 +19,13 @@ from mlflow.entities import SpanType
 from sqlalchemy.orm import Session
 
 from app.chatbot import chat_history
-from app.chatbot.guardrails import check_input_safety, redact_pii, redact_pii_in_value
+from app.chatbot.guardrails import (
+    RATE_LIMIT_DECLINE_MESSAGE,
+    check_input_safety,
+    check_rate_limit,
+    redact_pii,
+    redact_pii_in_value,
+)
 from app.chatbot.llm_backend import GenerateFn
 from app.chatbot.llm_backend import resolve_generate_fn as _resolve_generate_fn
 from app.chatbot.tools import (
@@ -521,6 +527,26 @@ def _run_chat_turn(
     """
     _tag_current_trace(session_id, role, question)
     chat_history.append_message(session, session_id, "user", question)
+
+    # Rate-limit guardrail: checked first (cheapest check, and abuse
+    # protection matters even for a question that would otherwise pass
+    # every other guardrail) -- DB-backed, see check_rate_limit's
+    # docstring for why not an in-memory counter.
+    rate_limit = check_rate_limit(session, session_id)
+    if rate_limit.blocked:
+        try:
+            mlflow.update_current_trace(tags={
+                "guardrail_triggered": "rate_limited", "rate_limit_count": str(rate_limit.request_count),
+            })
+        except Exception:
+            pass
+        assistant_message = chat_history.append_message(
+            session, session_id, "assistant", RATE_LIMIT_DECLINE_MESSAGE, [],
+        )
+        return {
+            "message_id": assistant_message.id, "answer": RATE_LIMIT_DECLINE_MESSAGE,
+            "retrieved_chunks": [], "tool_calls": [], "tool_results": [],
+        }
 
     # Input guardrail: runs before any LLM call, on the raw question --
     # deterministic, not a prompt instruction the model could ignore. See

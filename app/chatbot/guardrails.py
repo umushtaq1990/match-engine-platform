@@ -26,9 +26,23 @@ Both directions are covered:
   or persisted) -- strips anything that matches an email/phone/street-
   address/postal-code shape, regardless of where it came from or whether
   the model echoed or invented it.
+- `check_rate_limit`: a third, separate concern from PII/injection --
+  bounds how many questions one user can ask per minute, backed by a
+  Postgres query over `ChatMessage`/`ChatSession` rather than an in-memory
+  counter. An in-memory counter resets on every restart and doesn't see
+  requests landing on a different worker process/container, so it would
+  silently stop enforcing anything in a real multi-instance deployment;
+  the DB-backed count is correct regardless of how many app instances are
+  running.
 """
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.chatbot.models import ChatMessage, ChatSession
 
 _REDACTED = "[redacted]"
 
@@ -135,6 +149,61 @@ def redact_pii(text: str) -> tuple[str, bool]:
             redacted = True
             text = new_text
     return text, redacted
+
+
+# Generous enough not to interrupt real interactive use (the slowest
+# single-question round trip seen live is ~25s, so a person can't
+# naturally exceed this), tight enough to stop a scripted scrape/abuse
+# loop -- a judgment call, not a measured threshold; revisit if real
+# usage patterns show otherwise.
+RATE_LIMIT_MAX_REQUESTS = 20
+RATE_LIMIT_WINDOW_SECONDS = 60
+
+RATE_LIMIT_DECLINE_MESSAGE = (
+    "You've sent a lot of messages in a short time -- please wait a moment before asking again. "
+    "This limit protects the service for everyone."
+)
+
+
+@dataclass
+class RateLimitResult:
+    """Attributes:
+    blocked: `True` if this user has hit `RATE_LIMIT_MAX_REQUESTS` within
+        `RATE_LIMIT_WINDOW_SECONDS`.
+    request_count: how many user messages this user has sent across all
+        their sessions within the window -- included for the trace tag/log,
+        not just a bare bool.
+    """
+
+    blocked: bool
+    request_count: int
+
+
+def check_rate_limit(
+    session: Session, session_id: int,
+    max_requests: int = RATE_LIMIT_MAX_REQUESTS, window_seconds: int = RATE_LIMIT_WINDOW_SECONDS,
+) -> RateLimitResult:
+    """Counts this user's own messages (by `ChatSession.user_id`, not just
+    this one `session_id` -- a user opening a second browser tab gets a
+    second `ChatSession` row but is still one person who can exhaust the
+    same limit) across all their sessions in the trailing `window_seconds`.
+    Call with the *new* message already persisted (see `_run_chat_turn`),
+    so the count includes the request being checked.
+    """
+    chat_session = session.get(ChatSession, session_id)
+    if chat_session is None:
+        return RateLimitResult(blocked=False, request_count=0)
+    since = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+    count = session.execute(
+        select(func.count(ChatMessage.id))
+        .join(ChatSession, ChatSession.id == ChatMessage.session_id)
+        .where(
+            ChatSession.user_id == chat_session.user_id,
+            ChatMessage.role == "user",
+            ChatMessage.created_at >= since,
+        )
+    ).scalar_one()
+    return RateLimitResult(blocked=count > max_requests, request_count=count)
 
 
 def redact_pii_in_value(value):

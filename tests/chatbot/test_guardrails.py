@@ -3,7 +3,8 @@ output PII and prompt-injection layer that doesn't rely on the LLM
 self-censoring. See that module's docstring for why it exists as its own
 layer rather than just prompt instructions.
 """
-from app.chatbot.guardrails import check_input_safety, redact_pii, redact_pii_in_value
+from app.chatbot.chat_history import append_message, create_session
+from app.chatbot.guardrails import check_input_safety, check_rate_limit, redact_pii, redact_pii_in_value
 
 
 def test_redacts_an_email():
@@ -66,3 +67,39 @@ def test_allows_an_ordinary_in_scope_question():
     result = check_input_safety("What is the title and company for job 4?")
     assert result.blocked is False
     assert result.decline_message is None
+
+
+def test_rate_limit_allows_a_normal_number_of_messages(chatbot_db_session):
+    chat_session = create_session(chatbot_db_session, user_id="rate-limit-user-1", role="admin")
+    for i in range(5):
+        append_message(chatbot_db_session, chat_session.id, "user", f"question {i}")
+
+    result = check_rate_limit(chatbot_db_session, chat_session.id, max_requests=20, window_seconds=60)
+
+    assert result.blocked is False
+    assert result.request_count == 5
+
+
+def test_rate_limit_blocks_once_the_threshold_is_exceeded(chatbot_db_session):
+    chat_session = create_session(chatbot_db_session, user_id="rate-limit-user-2", role="admin")
+    for i in range(6):
+        append_message(chatbot_db_session, chat_session.id, "user", f"question {i}")
+
+    result = check_rate_limit(chatbot_db_session, chat_session.id, max_requests=5, window_seconds=60)
+
+    assert result.blocked is True
+    assert result.request_count == 6
+
+
+def test_rate_limit_counts_across_a_users_other_sessions_too(chatbot_db_session):
+    first_session = create_session(chatbot_db_session, user_id="rate-limit-user-3", role="admin")
+    second_session = create_session(chatbot_db_session, user_id="rate-limit-user-3", role="admin")
+    for i in range(3):
+        append_message(chatbot_db_session, first_session.id, "user", f"question {i}")
+    for i in range(3):
+        append_message(chatbot_db_session, second_session.id, "user", f"question {i}")
+
+    result = check_rate_limit(chatbot_db_session, second_session.id, max_requests=5, window_seconds=60)
+
+    assert result.blocked is True
+    assert result.request_count == 6

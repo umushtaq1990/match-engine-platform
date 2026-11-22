@@ -5,14 +5,25 @@
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "panels": [
     {
       "title": "Chat turn latency over time",
       "description": "One point per live/eval run_chat_turn call (the full decide_tools -> execute_tools -> generate_answer chain), from MLflow's own trace_info table -- not a synthetic metric, the actual wall-clock duration MLflow recorded for that call, color-split by OK/ERROR. A cluster of ERROR points at ~60000ms is the Ollama client's hardcoded timeout (app/extraction/ollama_client.py's _TIMEOUT_SECONDS) firing, not a crash.",
       "type": "timeseries",
-      "datasource": { "type": "postgres", "uid": "postgres-mlflow" },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-mlflow"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
         {
           "format": "time_series",
@@ -21,7 +32,9 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "ms" },
+        "defaults": {
+          "unit": "ms"
+        },
         "overrides": []
       }
     },
@@ -29,8 +42,16 @@
       "title": "Error rate (selected time range)",
       "description": "Share of run_chat_turn calls (live chat page + eval harness) that errored, usually the Ollama client's 60s timeout under load -- see the latency panel above for exactly which calls.",
       "type": "stat",
-      "datasource": { "type": "postgres", "uid": "postgres-mlflow" },
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 9 },
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-mlflow"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 9
+      },
       "targets": [
         {
           "format": "table",
@@ -41,11 +62,23 @@
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "thresholds": { "mode": "absolute", "steps": [
-            { "color": "green", "value": null },
-            { "color": "orange", "value": 5 },
-            { "color": "red", "value": 20 }
-          ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -54,8 +87,16 @@
       "title": "P50 / P95 / avg latency by model (LLM spans)",
       "description": "Per-call Ollama/vLLM generate() latency broken out by model_name -- MLflow's spans table already tracks this per LLM-type span (app/extraction/ollama_client.py's generate()/embed(), @mlflow.trace(span_type=SpanType.LLM)), so this is the real per-model decode speed, not an estimate. Useful for comparing the live 1.5b default against any larger model tried via the eval harness's model-size knob.",
       "type": "table",
-      "datasource": { "type": "postgres", "uid": "postgres-mlflow" },
-      "gridPos": { "h": 7, "w": 18, "x": 6, "y": 9 },
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-mlflow"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 18,
+        "x": 6,
+        "y": 9
+      },
       "targets": [
         {
           "format": "table",
@@ -68,8 +109,16 @@
       "title": "Recent chat requests (session / user / latency / status)",
       "description": "Per-request traceability: which chat session and role asked what, how long it took, and whether it errored -- tagged by app/chatbot/graph.py's _tag_current_trace() (session_id as MLflow's own session_id column, role via the mlflow.trace.user convention, the question text as a 'question' tag). Click a row's trace in the MLflow UI (http://localhost:5000) for the full span breakdown (tool calls, prompt/completion tokens, per-call duration).",
       "type": "table",
-      "datasource": { "type": "postgres", "uid": "postgres-mlflow" },
-      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 16 },
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-mlflow"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
       "targets": [
         {
           "format": "table",
@@ -81,16 +130,103 @@
         "defaults": {},
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "status" },
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
             "properties": [
-              { "id": "custom.cellOptions", "value": { "type": "color-background" } },
-              { "id": "mappings", "value": [
-                { "type": "value", "options": { "OK": { "color": "green" }, "ERROR": { "color": "red" } } }
-              ] }
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "OK": {
+                        "color": "green"
+                      },
+                      "ERROR": {
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              }
             ]
           }
         ]
       }
+    },
+    {
+      "title": "Guardrail triggers (selected time range)",
+      "description": "How many run_chat_turn calls were blocked/redacted by app/chatbot/guardrails.py (contact_detail_request, injection, rate_limited, output_pii_redacted -- tagged on the trace as guardrail_triggered). A sustained non-zero rate here is a real signal worth looking at: either genuine abuse/scraping attempts, or a false-positive pattern worth refining the guardrail's rules for.",
+      "type": "stat",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-mlflow"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT count(*) AS triggers\nFROM trace_info ti\nJOIN trace_tags tt ON tt.request_id = ti.request_id AND tt.key = 'guardrail_triggered'\nWHERE ti.experiment_id = (SELECT experiment_id FROM experiments WHERE name = 'jme-chatbot-rag')\n  AND $__unixEpochFilter(ti.timestamp_ms / 1000)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Guardrail triggers by type over time",
+      "description": "Same trigger events as the stat panel, broken out by reason (contact_detail_request / injection / rate_limited / output_pii_redacted) over time -- a spike in one specific reason points at what to investigate first.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-mlflow"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 18,
+        "x": 6,
+        "y": 27
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT\n  date_trunc('hour', to_timestamp(ti.timestamp_ms / 1000.0)) AS time,\n  tt.value AS metric,\n  count(*) AS value\nFROM trace_info ti\nJOIN trace_tags tt ON tt.request_id = ti.request_id AND tt.key = 'guardrail_triggered'\nWHERE ti.experiment_id = (SELECT experiment_id FROM experiments WHERE name = 'jme-chatbot-rag')\n  AND $__unixEpochFilter(ti.timestamp_ms / 1000)\nGROUP BY 1, 2\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Recent guardrail-triggered requests (session / role / reason / question)",
+      "description": "Per-event detail for audit: which session/role triggered which guardrail, on what question -- the actual rows to read for abuse investigation or false-positive tuning, not just the aggregate counts above.",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres-mlflow"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT\n  to_timestamp(ti.timestamp_ms / 1000.0) AS time,\n  ti.session_id,\n  trm.value AS role,\n  tt.value AS guardrail_triggered,\n  tq.value AS question\nFROM trace_info ti\nJOIN trace_tags tt ON tt.request_id = ti.request_id AND tt.key = 'guardrail_triggered'\nLEFT JOIN trace_request_metadata trm ON trm.request_id = ti.request_id AND trm.key = 'mlflow.trace.user'\nLEFT JOIN trace_tags tq ON tq.request_id = ti.request_id AND tq.key = 'question'\nWHERE ti.experiment_id = (SELECT experiment_id FROM experiments WHERE name = 'jme-chatbot-rag')\n  AND $__unixEpochFilter(ti.timestamp_ms / 1000)\nORDER BY ti.timestamp_ms DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }

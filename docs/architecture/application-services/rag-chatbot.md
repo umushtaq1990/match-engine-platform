@@ -516,9 +516,25 @@ the current schema:
   hallucinate facts not present in any tool result (see Phase 2's `subject_candidate_id` fix); a model
   that will hallucinate a skill will hallucinate a phone number just as readily. A deterministic layer
   doesn't depend on the model choosing to comply.
-- Unit-tested directly (`tests/chatbot/test_guardrails.py`, no LLM involved) and verified live against
-  the real chat graph: the two PII-request phrasings and the injection phrasing all short-circuited with
-  zero tool calls, while an ordinary in-scope question (`job 4`'s title/company) was unaffected.
+- **Rate limiting** (`check_rate_limit`): a third, separate concern -- bounds each user to
+  `RATE_LIMIT_MAX_REQUESTS` (20) user messages per `RATE_LIMIT_WINDOW_SECONDS` (60), checked first (before
+  the PII/injection checks) since abuse protection should apply even to a question that would otherwise
+  pass every other guardrail. Backed by a Postgres query over `ChatSession`/`ChatMessage`
+  (`ChatSession.user_id`, across all of that user's sessions, not just the current one) rather than an
+  in-memory counter -- an in-memory counter resets on every restart and doesn't see requests landing on a
+  different worker/container, so it would silently stop enforcing anything in a real multi-instance
+  deployment.
+- **Audit visibility**: every guardrail trigger (`contact_detail_request`, `injection`, `rate_limited`,
+  `output_pii_redacted`) is tagged on the MLflow trace via the existing `guardrail_triggered` tag, and
+  `docker/grafana/provisioning/dashboards/jme-chatbot-live-monitoring.json` now has three panels reading
+  it: a total-triggers stat, a by-reason-over-time timeseries, and a per-event detail table (session,
+  role, reason, question) for abuse investigation or false-positive tuning. Verified live: triggered each
+  of the four reasons once against the real chat graph, confirmed all four rows land in `trace_tags` with
+  the right `guardrail_triggered` value and the dashboard's panel queries return them correctly.
+- Unit-tested directly (`tests/chatbot/test_guardrails.py`, no LLM involved -- including the rate limiter
+  against a real Postgres-backed session fixture) and verified live against the real chat graph: the two
+  PII-request phrasings, the injection phrasing, and a simulated 21st-message burst all short-circuited
+  with zero tool calls, while an ordinary in-scope question (`job 4`'s title/company) was unaffected.
 - Known limits, stated plainly rather than overclaimed: the PII-request check is phrase-based (keyword +
   "candidate" co-occurrence), not a full intent classifier, so an unusually indirect phrasing could slip
   past it -- the output redaction is the actual backstop for that case, not the input check alone. The
